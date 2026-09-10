@@ -1,0 +1,13 @@
+// "shared" — код, общий для сервера и клиента: ECS-компоненты, системы,
+// которые должны работать одинаково на обеих сторонах, и сетевой протокол.
+// Java-версия и плагин java-library уже настроены централизованно в
+// корневом build.gradle (см. configure(subprojects - project(':android'))).
+
+[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+eclipse.project.name = appName + '-shared'
+
+dependencies {
+  api "com.badlogicgames.gdx:gdx:$gdxVersion"
+  api "com.badlogicgames.ashley:ashley:$ashleyVersion"
+  api "com.esotericsoftware:kryonet:$kryonetVersion"
+}

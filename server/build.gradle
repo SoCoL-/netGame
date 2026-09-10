@@ -1,0 +1,38 @@
+// "server" — headless-приложение (без gdx-backend, без графики). Хранит
+// авторитетную ECS-симуляцию, принимает команды от клиентов и рассылает
+// снапшоты. Запуск: ./gradlew :server:run
+// Java-версия уже настроена централизованно в корневом build.gradle.
+
+plugins {
+  id "application"
+}
+
+[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+application.mainClass = 'ru.socol.supreme.server.GameServerMain'
+eclipse.project.name = appName + '-server'
+
+dependencies {
+  implementation project(':shared')
+}
+
+// Собирает самодостаточный runnable jar (все зависимости — shared, ashley,
+// kryonet, gdx-core — внутри одного файла): java -jar server.jar и всё,
+// Gradle/IDE после сборки не нужны. Тот же приём, что уже настроен для
+// lwjgl3 (там это называется client.jar) — просто без графических натиков,
+// которые серверу не нужны.
+jar {
+  archiveFileName.set('server.jar')
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+  dependsOn configurations.runtimeClasspath
+  from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+  exclude('META-INF/INDEX.LIST', 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA')
+  dependencies {
+    exclude('META-INF/INDEX.LIST', 'META-INF/maven/**')
+  }
+  manifest {
+    attributes 'Main-Class': application.mainClass
+  }
+  doLast {
+    file(archiveFile).setExecutable(true, false)
+  }
+}
