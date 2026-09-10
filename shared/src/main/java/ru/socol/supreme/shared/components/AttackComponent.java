@@ -1,6 +1,7 @@
 package ru.socol.supreme.shared.components;
 
 import com.badlogic.ashley.core.Component;
+import com.badlogic.gdx.utils.Pool;
 
 /**
  * Приказ на атаку: id цели и таймер перезарядки. Присутствие этого
@@ -9,7 +10,7 @@ import com.badlogic.ashley.core.Component;
  * тик на сервере. Обычный приказ на движение (MoveUnitRequest) снимает этот
  * компонент — как в большинстве RTS, новый приказ отменяет атаку.
  */
-public class AttackComponent implements Component {
+public class AttackComponent implements Component, Pool.Poolable {
 
     public int targetUnitId;
 
@@ -22,5 +23,11 @@ public class AttackComponent implements Component {
     public AttackComponent(int targetUnitId) {
         this.targetUnitId = targetUnitId;
         this.cooldown = 0f;
+    }
+
+    @Override
+    public void reset() {
+        targetUnitId = 0;
+        cooldown = 0f;
     }
 }

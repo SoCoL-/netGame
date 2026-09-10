@@ -1,9 +1,10 @@
 package ru.socol.supreme.shared.components;
 
 import com.badlogic.ashley.core.Component;
+import com.badlogic.gdx.utils.Pool;
 
 /** Владелец юнита: 0 или 1, т.к. в игре ровно 2 игрока (см. GameConstants.MAX_PLAYERS). */
-public class OwnerComponent implements Component {
+public class OwnerComponent implements Component, Pool.Poolable {
 
     public int playerId;
 
@@ -12,5 +13,10 @@ public class OwnerComponent implements Component {
 
     public OwnerComponent(int playerId) {
         this.playerId = playerId;
+    }
+
+    @Override
+    public void reset() {
+        playerId = 0;
     }
 }

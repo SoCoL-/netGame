@@ -1,6 +1,8 @@
 package ru.socol.supreme.shared.components;
 
 import com.badlogic.ashley.core.Component;
+import com.badlogic.gdx.utils.Pool;
+
 import ru.socol.supreme.shared.UnitType;
 
 /**
@@ -11,7 +13,7 @@ import ru.socol.supreme.shared.UnitType;
  * ProductionComponent.producesUnitType (какой тип они производят, а не
  * какой тип они сами — здание не сражается).
  */
-public class UnitTypeComponent implements Component {
+public class UnitTypeComponent implements Component, Pool.Poolable {
 
     public UnitType type = UnitType.WARRIOR;
 
@@ -20,5 +22,10 @@ public class UnitTypeComponent implements Component {
 
     public UnitTypeComponent(UnitType type) {
         this.type = type;
+    }
+
+    @Override
+    public void reset() {
+        type = UnitType.WARRIOR;
     }
 }

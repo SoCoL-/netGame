@@ -1,6 +1,8 @@
 package ru.socol.supreme.shared.components;
 
 import com.badlogic.ashley.core.Component;
+import com.badlogic.gdx.utils.Pool;
+
 import ru.socol.supreme.shared.UnitType;
 
 /**
@@ -9,7 +11,7 @@ import ru.socol.supreme.shared.UnitType;
  * последнее значение из снапшота, нужное только для отрисовки панели
  * постройки (см. GameScreen.drawProductionPanel).
  */
-public class ProductionComponent implements Component {
+public class ProductionComponent implements Component, Pool.Poolable {
 
     /** Сколько юнитов ещё осталось произвести, включая тот, что сейчас строится. */
     public int queuedCount;
@@ -19,4 +21,11 @@ public class ProductionComponent implements Component {
 
     /** Какой тип юнита строит это здание — задаётся один раз при создании здания и не меняется. */
     public UnitType producesUnitType = UnitType.WARRIOR;
+
+    @Override
+    public void reset() {
+        queuedCount = 0;
+        progress = 0f;
+        producesUnitType = UnitType.WARRIOR;
+    }
 }

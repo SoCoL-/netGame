@@ -6,10 +6,13 @@ import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.utils.Array;
+
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
+import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 
 import java.util.Map;
 
@@ -41,6 +44,8 @@ public class CollisionSystem extends IteratingSystem {
 
     private static final ComponentMapper<PositionComponent> POSITION =
             ComponentMapper.getFor(PositionComponent.class);
+    private static final ComponentMapper<BuildingComponent> BUILDING =
+        ComponentMapper.getFor(BuildingComponent.class);
 
     /** Тот же реестр unitId -> Entity, что и в GameServer — передаётся по ссылке, не копируется. */
     private final Map<Integer, Entity> unitsById;
@@ -48,21 +53,57 @@ public class CollisionSystem extends IteratingSystem {
     /** Переиспользуемый вектор для направления отталкивания — чтобы не аллоцировать новый на каждую пару каждый тик. */
     private final Vector2 pushDirection = new Vector2();
 
-    public CollisionSystem(Map<Integer, Entity> unitsById) {
+    private final SpatialHashGrid grid;
+
+    public CollisionSystem(Map<Integer, Entity> unitsById, SpatialHashGrid grid) {
         super(Family.all(PositionComponent.class, DirectionComponent.class).get(), 20);
         this.unitsById = unitsById;
+        this.grid = grid;
+    }
+
+    /**
+     * Перестраиваем spatial hash в начале каждого тика.
+     * Это нужно, потому что MovementSystem (приоритет 10) уже сдвинул
+     * юнитов — позиции в сетке от прошлого тика устарели.
+     */
+    @Override
+    public void update(float deltaTime) {
+        grid.clear();
+        for (Entity e : unitsById.values()) {
+            PositionComponent pos = POSITION.get(e);
+            if (pos == null) continue;
+
+            if (BUILDING.has(e)) {
+                // Здания — как прямоугольники, во все перекрываемые ячейки.
+                float half = GameConstants.BUILDING_HALF_SIZE;
+                grid.insertRect(e,
+                    pos.position.x - half, pos.position.y - half,
+                    pos.position.x + half, pos.position.y + half);
+            } else {
+                // Юниты — как точки.
+                grid.insert(e, pos.position.x, pos.position.y);
+            }
+        }
+
+        super.update(deltaTime);
     }
 
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
         PositionComponent position = POSITION.get(entity);
 
-        for (Entity other : unitsById.values()) {
+        // Радиус запроса: должен покрывать и столкновения юнит-юнит
+        // (UNIT_RADIUS * 2 = 20), и выталкивание из зданий
+        // (BUILDING_HALF_SIZE + UNIT_RADIUS = 35). Берём больший.
+        float queryRadius = GameConstants.BUILDING_HALF_SIZE + GameConstants.UNIT_RADIUS;
+        Array<Entity> nearby = grid.query(position.position.x, position.position.y, queryRadius);
+
+        for (Entity other : nearby) {
             if (other == entity) {
                 continue;
             }
 
-            if (other.getComponent(BuildingComponent.class) != null) {
+            if (BUILDING.has(other)) {
                 PositionComponent buildingPosition = POSITION.get(other);
                 float half = GameConstants.BUILDING_HALF_SIZE;
                 pushOutOfRect(position,

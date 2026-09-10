@@ -1,6 +1,7 @@
 package ru.socol.supreme.shared.components;
 
 import com.badlogic.ashley.core.Component;
+import com.badlogic.gdx.utils.Pool;
 
 /**
  * Маркер без полей: сущность — здание, а не юнит. У зданий никогда нет
@@ -10,5 +11,9 @@ import com.badlogic.ashley.core.Component;
  * важно явно отличить "это здание": спавн на сервере, снапшот, отрисовка и
  * фильтрация выделения на клиенте.
  */
-public class BuildingComponent implements Component {
+public class BuildingComponent implements Component, Pool.Poolable {
+    @Override
+    public void reset() {
+        //Nothing
+    }
 }

@@ -5,12 +5,15 @@ import com.badlogic.ashley.core.Engine;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
+import com.badlogic.gdx.utils.Array;
+
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
+import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 
 import java.util.Map;
 
@@ -46,13 +49,15 @@ public class AggroSystem extends IteratingSystem {
 
     /** Тот же реестр unitId -> Entity, что и в GameServer — передаётся по ссылке, не копируется. */
     private final Map<Integer, Entity> unitsById;
+    private final SpatialHashGrid grid;
 
     private Engine engine;
 
-    public AggroSystem(Map<Integer, Entity> unitsById) {
+    public AggroSystem(Map<Integer, Entity> unitsById, SpatialHashGrid grid) {
         super(Family.all(PositionComponent.class, OwnerComponent.class, DirectionComponent.class)
                 .exclude(AttackComponent.class).get(), -10);
         this.unitsById = unitsById;
+        this.grid = grid;
     }
 
     @Override
@@ -61,15 +66,36 @@ public class AggroSystem extends IteratingSystem {
         this.engine = engine;
     }
 
+    /**
+     * Перестраиваем spatial hash в начале каждого тика.
+     * AggroSystem работает первой (приоритет -10), до MovementSystem,
+     * но позиции могли измениться в предыдущем тике, так что
+     * перестройка необходима.
+     */
+    @Override
+    public void update(float deltaTime) {
+        grid.clear();
+        for (Entity e : unitsById.values()) {
+            PositionComponent pos = POSITION.get(e);
+            if (pos == null) continue;
+            // Для aggro все сущности — точки (проверяем дистанцию центр-центр).
+            grid.insert(e, pos.position.x, pos.position.y);
+        }
+
+        super.update(deltaTime);
+    }
+
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
         PositionComponent position = POSITION.get(entity);
         OwnerComponent owner = OWNER.get(entity);
 
+        Array<Entity> nearby = grid.query(position.position.x, position.position.y, GameConstants.AGGRO_RADIUS);
+
         Entity nearestEnemy = null;
         float nearestDistanceSq = GameConstants.AGGRO_RADIUS * GameConstants.AGGRO_RADIUS;
 
-        for (Entity other : unitsById.values()) {
+        for (Entity other : nearby) {
             if (other == entity) {
                 continue;
             }
@@ -94,7 +120,6 @@ public class AggroSystem extends IteratingSystem {
         // объекты компонентов, а AttackComponent не реализует Poolable —
         // явно обнуляем cooldown, чтобы не унаследовать "грязное" значение.
         AttackComponent attack = engine.createComponent(AttackComponent.class);
-        attack.cooldown = 0f;
         attack.targetUnitId = nearestEnemy.getComponent(UnitComponent.class).unitId;
         entity.add(attack);
     }

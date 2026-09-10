@@ -2,6 +2,7 @@ package ru.socol.supreme.shared.components;
 
 import com.badlogic.ashley.core.Component;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.utils.Pool;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,7 +15,7 @@ import java.util.List;
  * требовался (прямая видимость до цели была свободна), он вообще не
  * выдаётся — прямая линия остаётся быстрым путём по умолчанию.
  */
-public class PathComponent implements Component {
+public class PathComponent implements Component, Pool.Poolable {
 
     public final List<Vector2> waypoints = new ArrayList<>();
 
@@ -25,4 +26,11 @@ public class PathComponent implements Component {
      */
     public int destinationCellX = -1;
     public int destinationCellY = -1;
+
+    @Override
+    public void reset() {
+        destinationCellX = -1;
+        destinationCellY = -1;
+        waypoints.clear();
+    }
 }

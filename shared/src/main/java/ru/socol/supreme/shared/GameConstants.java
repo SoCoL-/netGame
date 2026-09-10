@@ -191,4 +191,13 @@ public final class GameConstants {
 
     /** Частота рассылки снапшотов мира клиентам. Также используется клиентом как длительность интерполяции. */
     public static final float SNAPSHOT_RATE = 1f / 15f;
+
+    /**
+     * Размер ячейки spatial hash grid. Равен максимальному радиусу
+     * взаимодействия — max(AGGRO_RADIUS, BUILDING_HALF_SIZE + UNIT_RADIUS) = 35,
+     * округлён до 40 — чтобы любой запрос укладывался в 3×3 ячейки
+     * (в большинстве случаев даже 2×2), и каждая ячейка была достаточно
+     * крупной, чтобы в ней редко было больше 1–2 юнитов.
+     */
+    public static final float SPATIAL_HASH_CELL_SIZE = 40f;
 }
