@@ -6,7 +6,7 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.math.Vector2;
-import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
@@ -19,12 +19,13 @@ import java.util.Map;
 
 /**
  * Обрабатывает приказы на атаку: пока цель дальше дальности атаки (зависит
- * от типа юнита — см. GameConstants.attackRangeFor) — юнит идёт к ней
+ * от типа юнита — см. UnitDefinitions.attackRadiusFor) — юнит идёт к ней
  * (перезаписывая DirectionComponent, как обычный приказ на движение,
  * только цель "живая" и обновляется каждый тик); как только цель в
  * радиусе — юнит останавливается и стреляет по кулдауну FIRE_INTERVAL,
- * снимая DAMAGE_PER_SHOT здоровья. При 0 HP цель удаляется из движка и
- * из общего реестра юнитов сервера.
+ * снимая урон (UnitDefinitions.damageFor, тоже по типу атакующего)
+ * здоровья. При 0 HP цель удаляется из движка и из общего реестра юнитов
+ * сервера.
  *
  * Приоритет 0 — раньше MovementSystem (приоритет 10) — чтобы направление
  * погони, выставленное здесь, в этом же тике подхватила MovementSystem.
@@ -90,7 +91,7 @@ public class CombatSystem extends IteratingSystem {
 
         UnitTypeComponent attackerTypeComponent = UNIT_TYPE.get(attacker);
         UnitType attackerType = attackerTypeComponent != null ? attackerTypeComponent.type : UnitType.WARRIOR;
-        float attackRange = GameConstants.attackRangeFor(attackerType);
+        float attackRange = UnitDefinitions.attackRadiusFor(attackerType);
 
         PositionComponent myPosition = POSITION.get(attacker);
         PositionComponent targetPosition = POSITION.get(target);
@@ -111,6 +112,14 @@ public class CombatSystem extends IteratingSystem {
             // больше BUILDING_HALF_SIZE + PATH_CLEARANCE.
             // targetPosition читается заново каждый тик — если цель
             // сдвинулась в другую клетку сетки, путь пересчитается сам.
+            //
+            // ВАЖНО про units.json: attackRadius в файле должен оставаться
+            // больше, чем самая большая раздутая (на PATH_CLEARANCE)
+            // половина здания (сейчас максимум — 62, у дома), иначе точка
+            // подхода будет попадать ВНУТРЬ заблокированной зоны здания, и
+            // Pathfinding.setDestination будет её игнорировать — юнит с
+            // слишком маленьким attackRadius не сможет атаковать здания
+            // издалека вообще.
             approachPoint.set(myPosition.position).sub(targetPosition.position).nor()
                     .scl(attackRange).add(targetPosition.position);
             Pathfinding.setDestination(attacker, myPosition, direction, approachPoint.x, approachPoint.y);
@@ -125,10 +134,10 @@ public class CombatSystem extends IteratingSystem {
             return;
         }
 
-        attack.cooldown = GameConstants.FIRE_INTERVAL;
+        attack.cooldown = UnitDefinitions.fireIntervalFor(attackerType);
 
         HealthComponent targetHealth = HEALTH.get(target);
-        targetHealth.currentHealth -= GameConstants.DAMAGE_PER_SHOT;
+        targetHealth.currentHealth -= UnitDefinitions.damageFor(attackerType);
 
         if (shotFiredListener != null) {
             shotFiredListener.onShotFired(attackerType,

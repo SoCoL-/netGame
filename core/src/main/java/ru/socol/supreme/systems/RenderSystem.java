@@ -14,14 +14,18 @@ import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
+import ru.socol.supreme.shared.components.ProductionComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 
 /**
  * Рисует каждую сущность: юнит — кружком (у стрелка ещё белая точка
- * внутри, чтобы отличать от воина), здание — квадратом покрупнее; у
- * обоих полоска здоровья над ними и (для выделенных юнитов) кольцо
- * подсветки. Приоритет 10 — выполняется после InterpolationSystem
- * (приоритет 0), чтобы рисовать уже посчитанную на этот кадр позицию.
+ * внутри, чтобы отличать от воина), здание — прямоугольником нужной
+ * формы (дом 2x2 клетки с золотой звездой, казарма стрелков 1x2 с белой
+ * "крышечкой" — единственный способ различить их на глаз, раз цвет у
+ * обоих один и тот же — цвет игрока). У всех — полоска здоровья над ними
+ * и (для выделенных юнитов) кольцо подсветки. Приоритет 10 — выполняется
+ * после InterpolationSystem (приоритет 0), чтобы рисовать уже
+ * посчитанную на этот кадр позицию.
  */
 public class RenderSystem extends IteratingSystem {
 
@@ -35,6 +39,8 @@ public class RenderSystem extends IteratingSystem {
             ComponentMapper.getFor(SelectedComponent.class);
     private static final ComponentMapper<BuildingComponent> BUILDING =
             ComponentMapper.getFor(BuildingComponent.class);
+    private static final ComponentMapper<ProductionComponent> PRODUCTION =
+            ComponentMapper.getFor(ProductionComponent.class);
     private static final ComponentMapper<UnitTypeComponent> UNIT_TYPE =
             ComponentMapper.getFor(UnitTypeComponent.class);
 
@@ -45,13 +51,13 @@ public class RenderSystem extends IteratingSystem {
 
     private static final float SELECTION_RING_RADIUS = GameConstants.UNIT_RADIUS + 3f;
 
-    private static final float BUILDING_HALF_SIZE = GameConstants.BUILDING_HALF_SIZE;
+    private static final Color HQ_STAR_COLOR = Color.GOLD;
+    private static final Color ARCHER_ROOF_COLOR = Color.WHITE;
 
     private static final float HEALTH_BAR_HEIGHT = 4f;
     private static final float UNIT_HEALTH_BAR_WIDTH = 24f;
     private static final float UNIT_HEALTH_BAR_Y_OFFSET = 18f;
-    private static final float BUILDING_HEALTH_BAR_WIDTH = BUILDING_HALF_SIZE * 2f;
-    private static final float BUILDING_HEALTH_BAR_Y_OFFSET = BUILDING_HALF_SIZE + 10f;
+    private static final float BUILDING_HEALTH_BAR_Y_MARGIN = 10f;
 
     private final ShapeRenderer shapeRenderer;
 
@@ -74,13 +80,7 @@ public class RenderSystem extends IteratingSystem {
         HealthComponent health = HEALTH.get(entity);
 
         if (BUILDING.has(entity)) {
-            shapeRenderer.setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
-            shapeRenderer.rect(
-                    position.position.x - BUILDING_HALF_SIZE,
-                    position.position.y - BUILDING_HALF_SIZE,
-                    BUILDING_HALF_SIZE * 2f,
-                    BUILDING_HALF_SIZE * 2f);
-            drawHealthBar(position, health, BUILDING_HEALTH_BAR_Y_OFFSET, BUILDING_HEALTH_BAR_WIDTH);
+            drawBuilding(entity, position, owner, health);
             return;
         }
 
@@ -106,6 +106,54 @@ public class RenderSystem extends IteratingSystem {
         }
 
         drawHealthBar(position, health, UNIT_HEALTH_BAR_Y_OFFSET, UNIT_HEALTH_BAR_WIDTH);
+    }
+
+    private void drawBuilding(Entity entity, PositionComponent position, OwnerComponent owner, HealthComponent health) {
+        // producesUnitType решает и форму здания (см. GameConstants
+        // .buildingHalfWidthFor/HeightFor), и какой символ на нём рисовать —
+        // дом и казарма красятся в один и тот же цвет игрока, форма и
+        // значок сверху это единственное, что их отличает на глаз.
+        ProductionComponent production = PRODUCTION.get(entity);
+        UnitType producesType = production != null ? production.producesUnitType : UnitType.WARRIOR;
+        float halfWidth = GameConstants.buildingHalfWidthFor(producesType);
+        float halfHeight = GameConstants.buildingHalfHeightFor(producesType);
+
+        shapeRenderer.setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
+        shapeRenderer.rect(
+                position.position.x - halfWidth,
+                position.position.y - halfHeight,
+                halfWidth * 2f,
+                halfHeight * 2f);
+
+        if (producesType == UnitType.ARCHER) {
+            drawRoofCap(position.position.x, position.position.y + halfHeight, halfWidth);
+        } else {
+            drawStar(position.position.x, position.position.y, Math.min(halfWidth, halfHeight) * 0.6f);
+        }
+
+        drawHealthBar(position, health, halfHeight + BUILDING_HEALTH_BAR_Y_MARGIN, halfWidth * 2f);
+    }
+
+    /**
+     * Шестиконечная звезда (два наложенных треугольника) — простая
+     * геометрия, которую можно нарисовать двумя filled-треугольниками, без
+     * отдельного прохода ShapeType.Line или сложной "полигон-веером"
+     * логики для настоящей пятиконечной звезды.
+     */
+    private void drawStar(float cx, float cy, float radius) {
+        float tall = radius * 0.8660254f; // radius * sqrt(3)/2
+        float half = radius * 0.5f;
+
+        shapeRenderer.setColor(HQ_STAR_COLOR);
+        shapeRenderer.triangle(cx, cy + radius, cx - tall, cy - half, cx + tall, cy - half);
+        shapeRenderer.triangle(cx, cy - radius, cx + tall, cy + half, cx - tall, cy + half);
+    }
+
+    /** "Крышечка" — залитый треугольник поверх верхней грани здания, силуэтом похожий на двускатную крышу. */
+    private void drawRoofCap(float cx, float baseY, float halfWidth) {
+        float peakHeight = halfWidth;
+        shapeRenderer.setColor(ARCHER_ROOF_COLOR);
+        shapeRenderer.triangle(cx - halfWidth, baseY, cx + halfWidth, baseY, cx, baseY + peakHeight);
     }
 
     private void drawHealthBar(PositionComponent position, HealthComponent health, float yOffset, float barWidth) {

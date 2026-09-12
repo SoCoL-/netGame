@@ -7,6 +7,7 @@ import com.badlogic.gdx.math.Vector2;
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Server;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
@@ -31,6 +32,7 @@ import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
+import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 import ru.socol.supreme.shared.systems.AggroSystem;
 import ru.socol.supreme.shared.systems.CollisionSystem;
 import ru.socol.supreme.shared.systems.CombatSystem;
@@ -59,7 +61,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class GameServer {
 
-    private final Server server = new Server();
+    private final Server server = new Server(GameConstants.NETWORK_WRITE_BUFFER_SIZE, GameConstants.NETWORK_OBJECT_BUFFER_SIZE);
     private final Engine engine = new PooledEngine();
 
     /** connectionId -> playerId (0 или 1) */
@@ -86,11 +88,21 @@ public class GameServer {
     public GameServer() {
         // Приоритет: AggroSystem (-10) до CombatSystem (0) до ProductionSystem (1)
         // до MovementSystem (10) до CollisionSystem (20) — см. их конструкторы.
-        engine.addSystem(new AggroSystem(unitsById));
+        //
+        // Обе системы ищут соседей через SpatialHashGrid вместо перебора
+        // unitsById целиком (O(n) на юнита вместо O(n²) на всех) — у каждой
+        // своя сетка со своим размером ячейки, потому что типичный радиус
+        // запроса у них совсем разный: агрессия ищет в радиусе дальности
+        // атаки (у стрелка 210), коллизии — в радиусе здания/юнита (порядка
+        // 60-80). Один общий размер ячейки одинаково плохо подошёл бы обеим.
+        SpatialHashGrid aggroGrid = new SpatialHashGrid(UnitDefinitions.maxAttackRadius());
+        SpatialHashGrid collisionGrid = new SpatialHashGrid(GameConstants.maxBuildingInteractionRadius());
+
+        engine.addSystem(new AggroSystem(unitsById, aggroGrid));
         engine.addSystem(new CombatSystem(unitsById, this::handleShotFired));
         engine.addSystem(new ProductionSystem(unitsById, this::createUnit));
         engine.addSystem(new MovementSystem());
-        engine.addSystem(new CollisionSystem(unitsById));
+        engine.addSystem(new CollisionSystem(unitsById, collisionGrid));
     }
 
     public void start() throws IOException {
@@ -275,11 +287,10 @@ public class GameServer {
         position.position.set(x, y);
 
         DirectionComponent direction = engine.createComponent(DirectionComponent.class);
-        direction.speed = GameConstants.UNIT_SPEED;
-        // Как и AttackComponent, DirectionComponent пулится и не реализует
-        // Poolable — явно гасим moving, иначе новый юнит может унаследовать
-        // "иду к точке X" от чужого юнита, погибшего на полпути.
-        direction.moving = false;
+        direction.speed = UnitDefinitions.speedFor(type);
+        // moving/direction/target уже сброшены в false/0 — DirectionComponent
+        // теперь реализует Pool.Poolable, PooledEngine вызывает reset() сама
+        // при возврате компонента в пул, вручную обнулять не нужно.
 
         int unitId = unitIdSequence.getAndIncrement();
         UnitComponent unitComponent = engine.createComponent(UnitComponent.class);
@@ -289,8 +300,8 @@ public class GameServer {
         owner.playerId = playerId;
 
         HealthComponent health = engine.createComponent(HealthComponent.class);
-        health.maxHealth = GameConstants.MAX_HEALTH;
-        health.currentHealth = GameConstants.MAX_HEALTH;
+        health.maxHealth = UnitDefinitions.healthFor(type);
+        health.currentHealth = health.maxHealth;
 
         UnitTypeComponent unitType = engine.createComponent(UnitTypeComponent.class);
         unitType.type = type;
@@ -407,14 +418,10 @@ public class GameServer {
 
         AttackComponent attack = attacker.getComponent(AttackComponent.class);
         if (attack == null) {
-            // Внимание: PooledEngine переиспользует объекты компонентов, а
-            // AttackComponent не реализует Poolable — значит cooldown нового
-            // объекта может быть "грязным", унаследованным от чужого юнита,
-            // у которого этот же экземпляр использовался раньше. Явно
-            // обнуляем, чтобы первый приказ атаковать не наследовал случайный
-            // кулдаун.
+            // cooldown уже 0 — AttackComponent реализует Pool.Poolable,
+            // PooledEngine вызывает reset() сама при возврате в пул, так что
+            // свежий объект из createComponent никогда не приходит "грязным".
             attack = engine.createComponent(AttackComponent.class);
-            attack.cooldown = 0f;
             attacker.add(attack);
         }
         // Если AttackComponent уже был (юнит переключает цель на лету) —

@@ -72,7 +72,7 @@ public class ProductionSystem extends IteratingSystem {
 
         PositionComponent position = POSITION.get(entity);
         OwnerComponent owner = OWNER.get(entity);
-        Vector2 spawnPoint = computeSpawnPoint(position.position);
+        Vector2 spawnPoint = computeSpawnPoint(position.position, production.producesUnitType);
         unitFactory.createUnit(owner.playerId, spawnPoint.x, spawnPoint.y, production.producesUnitType);
 
         production.queuedCount--;
@@ -80,10 +80,10 @@ public class ProductionSystem extends IteratingSystem {
     }
 
     /** Точка появления готового юнита — чуть в стороне от здания, по направлению к центру карты. */
-    private Vector2 computeSpawnPoint(Vector2 buildingPosition) {
+    private Vector2 computeSpawnPoint(Vector2 buildingPosition, UnitType producesType) {
         Vector2 towardCenter = new Vector2(GameConstants.MAP_WIDTH / 2f, GameConstants.MAP_HEIGHT / 2f)
                 .sub(buildingPosition)
                 .nor();
-        return new Vector2(buildingPosition).mulAdd(towardCenter, GameConstants.PRODUCTION_SPAWN_DISTANCE);
+        return new Vector2(buildingPosition).mulAdd(towardCenter, GameConstants.productionSpawnDistanceFor(producesType));
     }
 }

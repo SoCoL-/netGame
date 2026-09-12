@@ -65,7 +65,6 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float DRAG_THRESHOLD = 6f; // world units — отличает клик от протяжки рамки
     private static final float MOVE_ORDER_SPACING = 24f; // world units между юнитами в сетке при групповом приказе
     private static final float UNIT_CLICK_RADIUS = 12f;
-    private static final float BUILDING_CLICK_RADIUS = 40f; // здание крупнее юнита — и цель клика шире
     private static final float CAMERA_PAN_SPEED = 400f; // world units в секунду
     private static final Color WATER_COLOR = new Color(0.25f, 0.55f, 0.85f, 1f); // голубой
     private static final Color GRASS_COLOR = new Color(0.2f, 0.45f, 0.2f, 1f); // зелёный, трава
@@ -676,15 +675,14 @@ public class GameScreen extends InputAdapter implements Screen {
         return owner != null && owner.playerId != client.getPlayerId();
     }
 
-    /** Возвращает ближайшую сущность под точкой — у зданий клик-радиус шире, они крупнее юнитов. */
+    /** Возвращает ближайшую сущность под точкой — у зданий клик-радиус зависит от их реальной формы (дом и казарма разного размера). */
     private Entity findEntityNear(float x, float y) {
         Entity closest = null;
         float closestDistance = Float.MAX_VALUE;
 
         for (Entity entity : engine.getEntities()) {
             PositionComponent position = entity.getComponent(PositionComponent.class);
-            boolean isBuilding = entity.getComponent(BuildingComponent.class) != null;
-            float clickRadius = isBuilding ? BUILDING_CLICK_RADIUS : UNIT_CLICK_RADIUS;
+            float clickRadius = clickRadiusFor(entity);
 
             float distance = position.position.dst(x, y);
             if (distance < clickRadius && distance < closestDistance) {
@@ -693,6 +691,17 @@ public class GameScreen extends InputAdapter implements Screen {
             }
         }
         return closest;
+    }
+
+    /** Юнит — фиксированный радиус; здание — до угла его фактического прямоугольника (дом и казарма разной формы, см. GameConstants). */
+    private float clickRadiusFor(Entity entity) {
+        ProductionComponent production = entity.getComponent(ProductionComponent.class);
+        if (production == null) {
+            return UNIT_CLICK_RADIUS;
+        }
+        float halfWidth = GameConstants.buildingHalfWidthFor(production.producesUnitType);
+        float halfHeight = GameConstants.buildingHalfHeightFor(production.producesUnitType);
+        return (float) Math.sqrt(halfWidth * halfWidth + halfHeight * halfHeight);
     }
 
     @Override

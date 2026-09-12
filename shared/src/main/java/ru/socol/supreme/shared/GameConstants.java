@@ -1,8 +1,11 @@
 package ru.socol.supreme.shared;
 
 /**
- * Все "магические числа" игры собраны здесь, чтобы менять правила
- * (лимиты, скорость, тикрейт) в одном месте — и на сервере, и на клиенте.
+ * Все "магические числа" игры, общие для всех юнитов и не зависящие от их
+ * типа, собраны здесь (лимиты, тикрейт, размеры карты и зданий) — и на
+ * сервере, и на клиенте. Скорость, урон и дальность атаки — то, чем
+ * реально отличаются типы юнитов друг от друга — вынесены в units.json
+ * (см. UnitDefinitions), не сюда.
  */
 public final class GameConstants {
 
@@ -20,52 +23,36 @@ public final class GameConstants {
     /** Пока не используется: весь трафик сейчас идёт по TCP (см. GameClient.connect() / GameServer.start()). */
     public static final int UDP_PORT = 54777;
 
-    /** Скорость юнита, единиц мира в секунду. */
-    public static final float UNIT_SPEED = 80f;
+    /**
+     * Размер буферов KryoNet под сериализацию сообщений. Server()/Client()
+     * без аргументов используют крошечные буферы по умолчанию (16384 байт
+     * на запись и всего 2048 — на один объект). Этого хватало, пока
+     * WorldSnapshot был маленьким, но с ростом числа юнитов и особенно
+     * после того как в UnitSnapshot добавился pathPoints (для отладочной
+     * отрисовки маршрута — см. GameScreen) один снапшот на несколько
+     * десятков юнитов уже не помещается в 2048 байт: сериализация падает с
+     * переполнением буфера (баг: воспроизводился на ~40 юнитах). На
+     * MAX_TOTAL_UNITS с юнитами, огибающими препятствия по всей сетке,
+     * оценка худшего случая — десятки килобайт; 1 МБ даёт большой запас.
+     */
+    public static final int NETWORK_WRITE_BUFFER_SIZE = 1024 * 1024;
+    public static final int NETWORK_OBJECT_BUFFER_SIZE = 1024 * 1024;
 
     /** На каком расстоянии до цели юнит считается прибывшим и останавливается. */
     public static final float ARRIVE_THRESHOLD = 2f;
 
-    /** Максимальный (и стартовый) запас здоровья у любого юнита. */
-    public static final int MAX_HEALTH = 20;
-
-    /** Скорострельность — выстрелов в секунду, одинаковая для всех юнитов. */
-    public static final float FIRE_RATE = 4f;
-
-    /** Интервал между выстрелами, секунд. Производная от FIRE_RATE. */
-    public static final float FIRE_INTERVAL = 1f / FIRE_RATE;
-
-    /** Урон за один выстрел. При 20 HP и 4 выстрела/сек юнит гибнет примерно за 2.5 секунды под непрерывным огнём. */
-    public static final int DAMAGE_PER_SHOT = 2;
-
-    /** Дальность атаки воина (первого юнита). У стрелка — см. ARCHER_RANGE_MULTIPLIER/attackRangeFor. */
-    public static final float ATTACK_RANGE = 70f;
-
-    /** Во сколько раз дальность атаки стрелка больше, чем у воина. */
-    public static final float ARCHER_RANGE_MULTIPLIER = 3f;
-
     /**
-     * Дальность атаки конкретного типа юнита. Единственное, чем стрелок
-     * отличается от воина в бою — здоровье, скорострельность, урон,
-     * скорость движения и радиус авто-агрессии одинаковы у обоих типов.
-     */
-    public static float attackRangeFor(UnitType type) {
-        return type == UnitType.ARCHER ? ATTACK_RANGE * ARCHER_RANGE_MULTIPLIER : ATTACK_RANGE;
-    }
-
-    /**
-     * Условный радиус юнита — используется для отрисовки на клиенте, для
-     * расчёта радиуса авто-агрессии, а также как реальный радиус
-     * столкновений в CollisionSystem (два юнита ближе 2×UNIT_RADIUS друг
-     * к другу считаются перекрывающимися и расталкиваются).
+     * Условный радиус юнита — используется для отрисовки на клиенте и как
+     * реальный радиус столкновений в CollisionSystem (два юнита ближе
+     * 2×UNIT_RADIUS друг к другу считаются перекрывающимися и
+     * расталкиваются). Одинаков у всех типов — в отличие от здоровья,
+     * скорости, скорострельности, урона и дальности атаки/агрессии,
+     * которые теперь заданы по типу в units.json (см. UnitDefinitions):
+     * этот, в отличие от них, не про боевые характеристики, а про то,
+     * какого юнит физически размера, и её вынос в данные пока не давал
+     * бы ничего, кроме лишнего слоя.
      */
     public static final float UNIT_RADIUS = 10f;
-
-    /** Радиус авто-агрессии — во сколько раз больше UNIT_RADIUS (см. AggroSystem). */
-    public static final float AGGRO_RADIUS_MULTIPLIER = 3f;
-
-    /** Итоговый радиус авто-агрессии в мировых единицах. */
-    public static final float AGGRO_RADIUS = UNIT_RADIUS * AGGRO_RADIUS_MULTIPLIER;
 
     /**
      * Запас, на который Pathfinding "раздувает" препятствия (воду, здания)
@@ -99,25 +86,52 @@ public final class GameConstants {
 
     /**
      * Отступ от края карты, где спавнится дом игрока (в противоположных
-     * углах). Намеренно НЕ кратен PATH_GRID_CELL_SIZE, а смещён на
-     * половину клетки (200 -> 225) — 200 попадал бы точно на ГРАНИЦУ
-     * клетки сетки, а 225 = 4×50 + 25 попадает точно в её ЦЕНТР. Вместе с
-     * BUILDING_HALF_SIZE, теперь равным ровно половине клетки, это даёт
-     * дом, который чисто накрывает ОДНУ клетку сетки целиком, без
-     * дробного пересечения с соседними — то, что и было видно на
-     * отладочной сетке как "плавающий" квадрат не по линиям.
+     * углах). Кратен PATH_GRID_CELL_SIZE (200 = 4×50) — дом теперь 2x2
+     * клетки (чётное число), и для чистого совпадения с сеткой без
+     * дробных пересечений центр здания с ЧЁТНЫМ числом клеток должен
+     * стоять на ГРАНИЦЕ клетки, а не в её центре (это наоборот тому, что
+     * нужно нечётным по ширине зданиям — см. buildingHalfWidthFor и
+     * archerBuildingSpawnPoint, у стрелковой казармы своя логика именно
+     * из-за этой чётности/нечётности).
      */
-    public static final float BUILDING_SPAWN_MARGIN = 225f;
+    public static final float BUILDING_SPAWN_MARGIN = 200f;
 
     /**
-     * Половина стороны здания (здание — квадрат) — используется и для
-     * отрисовки на клиенте, и для блокировки клеток под зданием в
-     * Pathfinding, и для выталкивания юнитов из здания в CollisionSystem.
-     * Ровно половина PATH_GRID_CELL_SIZE — вместе с BUILDING_SPAWN_MARGIN
-     * (см. её javadoc) и ARCHER_BUILDING_OFFSET_DISTANCE (см. её javadoc)
-     * это даёт здание, целиком и без остатка занимающее клетки сетки.
+     * Половина ширины и половина высоты здания — раздельно по осям и по
+     * типу (задаётся тем, что здание ПРОИЗВОДИТ — см. ProductionComponent
+     * .producesUnitType, других "типов здания" в игре нет). Используется
+     * для отрисовки на клиенте, блокировки клеток под зданием в
+     * Pathfinding и выталкивания юнитов из здания в CollisionSystem —
+     * везде расчёт идёт через эти две функции, а не через один общий
+     * размер, потому что дом (2x2 клетки) и казарма стрелков (1x2)
+     * — разной формы, не только разного размера.
      */
-    public static final float BUILDING_HALF_SIZE = PATH_GRID_CELL_SIZE / 2f;
+    public static float buildingHalfWidthFor(UnitType producesType) {
+        return producesType == UnitType.ARCHER ? PATH_GRID_CELL_SIZE / 2f : PATH_GRID_CELL_SIZE;
+    }
+
+    /** Высота сейчас одна и та же (2 клетки) у обоих типов здания — но метод, а не константа, на случай если это изменится. */
+    public static float buildingHalfHeightFor(UnitType producesType) {
+        return PATH_GRID_CELL_SIZE;
+    }
+
+    /**
+     * Безопасный (не занижающий) радиус взаимодействия юнит-здание —
+     * диагональ до угла САМОГО крупного здания среди всех типов, плюс
+     * запас на радиус юнита. Единая формула для двух разных мест, которые
+     * обязаны совпадать по порядку величины: размер ячейки
+     * SpatialHashGrid при её создании (GameServer) и радиус запроса к ней
+     * же в CollisionSystem. Считать раздельно в двух местах было бы
+     * рискованно разъехаться при следующем изменении размера здания.
+     */
+    public static float maxBuildingInteractionRadius() {
+        float maxHalfDimension = 0f;
+        for (UnitType type : UnitType.values()) {
+            maxHalfDimension = Math.max(maxHalfDimension, buildingHalfWidthFor(type));
+            maxHalfDimension = Math.max(maxHalfDimension, buildingHalfHeightFor(type));
+        }
+        return (float) Math.sqrt(2) * maxHalfDimension + UNIT_RADIUS;
+    }
 
     /**
      * Единая формула места спавна дома игрока — чтобы GameServer (создание
@@ -136,17 +150,21 @@ public final class GameConstants {
     public static final float UNIT_BUILD_TIME = 10f;
 
     /**
-     * На каком расстоянии от центра здания появляется готовый юнит.
-     * ProductionSystem ставит эту точку по диагонали в сторону центра
-     * карты (см. её computeSpawnPoint) — а значит расстояние должно
-     * перекрывать не просто половину здания, а диагональ ДО УГЛА его
-     * раздутой (на PATH_CLEARANCE — см. её javadoc) зоны:
-     * (BUILDING_HALF_SIZE + PATH_CLEARANCE) * sqrt(2). Множитель 2 — не
-     * впритык к этой границе, а с реальным запасом (был баг: юнит рождался
-     * практически на самой границе собственной заблокированной зоны, и
-     * пасфайндер вёл себя нестабильно с рождения юнита).
+     * На каком расстоянии от центра здания появляется готовый юнит —
+     * зависит от размера конкретного здания (дом крупнее казармы). Берём
+     * диагональ ДО УГЛА раздутой (на PATH_CLEARANCE — см. её javadoc) зоны
+     * этого здания — самую длинную возможную "дистанцию выхода" из его
+     * прямоугольника в любом направлении — и умножаем на 1.5 для запаса,
+     * а не впритык к границе (был баг: юнит рождался практически на
+     * самой границе собственной заблокированной зоны, и пасфайндер вёл
+     * себя нестабильно с рождения юнита).
      */
-    public static final float PRODUCTION_SPAWN_DISTANCE = (BUILDING_HALF_SIZE + PATH_CLEARANCE) * 2f;
+    public static float productionSpawnDistanceFor(UnitType producesType) {
+        float inflatedHalfWidth = buildingHalfWidthFor(producesType) + PATH_CLEARANCE;
+        float inflatedHalfHeight = buildingHalfHeightFor(producesType) + PATH_CLEARANCE;
+        float cornerDistance = (float) Math.sqrt(inflatedHalfWidth * inflatedHalfWidth + inflatedHalfHeight * inflatedHalfHeight);
+        return cornerDistance * 1.5f;
+    }
 
     /** Запас здоровья дома (HQ) — на порядок больше, чем у обычного юнита. */
     public static final int BUILDING_MAX_HEALTH = 500;
@@ -155,35 +173,32 @@ public final class GameConstants {
     public static final int ARCHER_BUILDING_MAX_HEALTH = 70;
 
     /**
-     * На каком расстоянии от дома стоит казарма стрелков (в сторону
-     * центра карты от дома). Дом и казарма лежат на одной диагонали к
-     * центру карты — расстояние специально взято равным 3 диагональным
-     * шагам сетки (диагональный шаг между центрами соседних клеток —
-     * PATH_GRID_CELL_SIZE * sqrt(2)), чтобы казарма, как и дом, попадала
-     * ровно в центр своей клетки и целиком её занимала, а не пересекала
-     * несколько клеток дробно. Раньше (250, взятое произвольно) уже
-     * решило исходный баг с зазором ~22 (меньше половины клетки — путь
-     * у угла шёл зигзагом), но само не было кратно шагу сетки; сейчас и
-     * численно похоже (3 шага ≈ 212), и ещё и чисто по сетке.
+     * На каком расстоянии от дома стоит казарма стрелков — чисто по оси X
+     * (в сторону центра карты по горизонтали, Y совпадает с домом), а не
+     * по диагонали, как было раньше: дом теперь 2x2 клетки (центр на
+     * ГРАНИЦЕ клетки), а казарма 1x2 (центр должен быть в ЦЕНТРЕ клетки
+     * по ширине, но на ГРАНИЦЕ по высоте, раз высота тоже чётная — 2
+     * клетки) — смешивать два разных условия выравнивания по одной
+     * диагонали было бы куда сложнее, чем развести здания по одной оси,
+     * где Y совпадает с домом (уже верно выровнен) и только X даёт запас
+     * в 175 = кратно клетке (150) плюс половина клетки (25) для
+     * казарменного центра. Даёт зазор между раздутыми (на PATH_CLEARANCE)
+     * зонами домов и казармы ~76 юнитов — больше клетки сетки (50),
+     * пасфайндеру есть где пройти без зигзага.
      */
-    public static final float ARCHER_BUILDING_OFFSET_DISTANCE = 3f * PATH_GRID_CELL_SIZE * (float) Math.sqrt(2);
+    public static final float ARCHER_BUILDING_OFFSET_DISTANCE = 175f;
 
     /**
-     * Место казармы стрелков конкретного игрока — смещена от его дома в
-     * сторону центра карты на ARCHER_BUILDING_OFFSET_DISTANCE, тем же
-     * приёмом, что GameServer/ProductionSystem уже используют для точки
-     * появления произведённого юнита. Возвращает {x, y}.
+     * Место казармы стрелков конкретного игрока — смещена от его дома по
+     * оси X в сторону центра карты на ARCHER_BUILDING_OFFSET_DISTANCE, Y
+     * совпадает с домом (см. javadoc ARCHER_BUILDING_OFFSET_DISTANCE, почему
+     * не по диагонали, как было раньше). Возвращает {x, y}.
      */
     public static float[] archerBuildingSpawnPoint(int playerId) {
         float hqX = buildingSpawnX(playerId);
         float hqY = buildingSpawnY(playerId);
-        float dx = MAP_WIDTH / 2f - hqX;
-        float dy = MAP_HEIGHT / 2f - hqY;
-        float length = (float) Math.sqrt(dx * dx + dy * dy);
-        return new float[]{
-                hqX + dx / length * ARCHER_BUILDING_OFFSET_DISTANCE,
-                hqY + dy / length * ARCHER_BUILDING_OFFSET_DISTANCE
-        };
+        float direction = playerId == 0 ? 1f : -1f; // в сторону центра карты по X
+        return new float[]{hqX + direction * ARCHER_BUILDING_OFFSET_DISTANCE, hqY};
     }
 
     /** Частота обновления симуляции на сервере. */
@@ -191,13 +206,4 @@ public final class GameConstants {
 
     /** Частота рассылки снапшотов мира клиентам. Также используется клиентом как длительность интерполяции. */
     public static final float SNAPSHOT_RATE = 1f / 15f;
-
-    /**
-     * Размер ячейки spatial hash grid. Равен максимальному радиусу
-     * взаимодействия — max(AGGRO_RADIUS, BUILDING_HALF_SIZE + UNIT_RADIUS) = 35,
-     * округлён до 40 — чтобы любой запрос укладывался в 3×3 ячейки
-     * (в большинстве случаев даже 2×2), и каждая ячейка была достаточно
-     * крупной, чтобы в ней редко было больше 1–2 юнитов.
-     */
-    public static final float SPATIAL_HASH_CELL_SIZE = 40f;
 }

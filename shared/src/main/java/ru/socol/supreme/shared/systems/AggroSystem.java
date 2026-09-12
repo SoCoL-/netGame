@@ -6,23 +6,38 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.utils.Array;
-
-import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.UnitDefinitions;
+import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
+import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 
 import java.util.Map;
 
 /**
  * Автоагрессия: юнит без активного приказа атаковать (нет AttackComponent),
- * у которого в радиусе AGGRO_RADIUS оказался враг, сам получает приказ
- * атаковать ближайшего из них — дальше этим приказом, как и приказом,
- * выданным вручную через AttackUnitRequest, занимается CombatSystem
- * (погоня, стрельба, добивание).
+ * у которого в радиусе своей же дальности атаки (UnitDefinitions
+ * .attackRadiusFor — отдельного радиуса агрессии в игре больше нет, это
+ * та же величина, которой CombatSystem пользуется для самой атаки)
+ * оказался враг, сам получает приказ атаковать ближайшего из них —
+ * дальше этим приказом, как и приказом, выданным вручную через
+ * AttackUnitRequest, занимается CombatSystem (погоня, стрельба,
+ * добивание). У каждого типа юнита свой радиус — стрелок замечает
+ * (и сам вступает в бой) намного раньше воина, ровно потому что видит
+ * дальше него.
+ *
+ * Поиск ближайшего врага идёт через SpatialHashGrid, а не перебором всех
+ * unitsById (O(n) на юнита вместо O(n²) на всех): сетка перестраивается
+ * заново в начале каждого тика (позиции изменились с прошлого тика), а
+ * дальше на каждого юнита — только запрос по его же радиусу атаки вместо
+ * полного перебора. Ячейка сетки подбирается по максимальной дальности
+ * атаки среди ЗАГРУЖЕННЫХ типов (UnitDefinitions.maxAttackRadius) — так
+ * добавление нового типа юнита с ещё большей дальностью не потребует
+ * ручной перенастройки размера ячейки.
  *
  * Это "агрессивная стойка" по умолчанию и безусловно для всех юнитов:
  * приказ на движение прерывается, если по пути подвернулся враг — стоек
@@ -31,7 +46,8 @@ import java.util.Map;
  * Family намеренно ИСКЛЮЧАЕТ AttackComponent — уже атакующие юниты цель не
  * пересматривают каждый тик, этим занимается только CombatSystem. Здания
  * тоже автоматически не участвуют: у них нет DirectionComponent, а он
- * обязателен для этой Family (как и для CombatSystem-атакующего).
+ * обязателен для этой Family (как и для CombatSystem-атакующего) — что
+ * само по себе логично, здание сражаться не умеет.
  *
  * Приоритет -10 — раньше CombatSystem (0) и MovementSystem (10), чтобы
  * свежедобавленный в этот тик AttackComponent сразу подхватила CombatSystem
@@ -46,6 +62,8 @@ public class AggroSystem extends IteratingSystem {
             ComponentMapper.getFor(PositionComponent.class);
     private static final ComponentMapper<OwnerComponent> OWNER =
             ComponentMapper.getFor(OwnerComponent.class);
+    private static final ComponentMapper<UnitTypeComponent> UNIT_TYPE =
+            ComponentMapper.getFor(UnitTypeComponent.class);
 
     /** Тот же реестр unitId -> Entity, что и в GameServer — передаётся по ссылке, не копируется. */
     private final Map<Integer, Entity> unitsById;
@@ -67,21 +85,22 @@ public class AggroSystem extends IteratingSystem {
     }
 
     /**
-     * Перестраиваем spatial hash в начале каждого тика.
-     * AggroSystem работает первой (приоритет -10), до MovementSystem,
-     * но позиции могли измениться в предыдущем тике, так что
-     * перестройка необходима.
+     * Перестраиваем spatial hash в начале каждого тика — юниты подвинулись
+     * за предыдущий тик, старые позиции в сетке уже неактуальны. Все
+     * сущности вставляются как точки: для целей агрессии здание не имеет
+     * значения (Family уже отфильтровала атакующих на DirectionComponent,
+     * которого у зданий нет), а координаты враждебного юнита — это просто
+     * точка в пространстве.
      */
     @Override
     public void update(float deltaTime) {
         grid.clear();
-        for (Entity e : unitsById.values()) {
-            PositionComponent pos = POSITION.get(e);
-            if (pos == null) continue;
-            // Для aggro все сущности — точки (проверяем дистанцию центр-центр).
-            grid.insert(e, pos.position.x, pos.position.y);
+        for (Entity other : unitsById.values()) {
+            PositionComponent position = POSITION.get(other);
+            if (position != null) {
+                grid.insert(other, position.position.x, position.position.y);
+            }
         }
-
         super.update(deltaTime);
     }
 
@@ -90,10 +109,14 @@ public class AggroSystem extends IteratingSystem {
         PositionComponent position = POSITION.get(entity);
         OwnerComponent owner = OWNER.get(entity);
 
-        Array<Entity> nearby = grid.query(position.position.x, position.position.y, GameConstants.AGGRO_RADIUS);
+        UnitTypeComponent typeComponent = UNIT_TYPE.get(entity);
+        UnitType myType = typeComponent != null ? typeComponent.type : UnitType.WARRIOR;
+        float aggroRadius = UnitDefinitions.attackRadiusFor(myType);
+
+        Array<Entity> nearby = grid.query(position.position.x, position.position.y, aggroRadius);
 
         Entity nearestEnemy = null;
-        float nearestDistanceSq = GameConstants.AGGRO_RADIUS * GameConstants.AGGRO_RADIUS;
+        float nearestDistanceSq = aggroRadius * aggroRadius;
 
         for (Entity other : nearby) {
             if (other == entity) {
@@ -116,9 +139,8 @@ public class AggroSystem extends IteratingSystem {
             return;
         }
 
-        // Как и в GameServer.handleAttackUnit: PooledEngine переиспользует
-        // объекты компонентов, а AttackComponent не реализует Poolable —
-        // явно обнуляем cooldown, чтобы не унаследовать "грязное" значение.
+        // cooldown уже 0 — AttackComponent реализует Pool.Poolable,
+        // PooledEngine вызывает reset() сама при возврате в пул.
         AttackComponent attack = engine.createComponent(AttackComponent.class);
         attack.targetUnitId = nearestEnemy.getComponent(UnitComponent.class).unitId;
         entity.add(attack);

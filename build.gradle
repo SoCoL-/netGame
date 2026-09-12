@@ -75,11 +75,15 @@ eclipse.project.name = 'supreme_game' + '-parent'
 //   ./gradlew buildJars
 //   java -jar build/dist/server.jar
 //   java -jar build/dist/client.jar [хост-сервера]
+// units.json копируется той же командой — сервер ищет его в текущей
+// рабочей директории (см. UnitDefinitions), и рядом с server.jar сразу
+// его найдёт, если запускать jar из build/dist/.
 tasks.register('buildJars', Copy) {
   group = 'build'
-  description = 'Собирает client.jar и server.jar и копирует их в build/dist/.'
+  description = 'Собирает client.jar и server.jar, копирует их и units.json в build/dist/.'
   dependsOn ':server:jar', ':lwjgl3:jar'
   from(project(':server').tasks.named('jar'))
   from(project(':lwjgl3').tasks.named('jar'))
+  from(project(':server').file('units.json'))
   into(layout.buildDirectory.dir('dist'))
 }

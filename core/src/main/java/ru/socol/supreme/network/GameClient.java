@@ -53,7 +53,7 @@ public class GameClient implements Disposable {
         void onConnectFailed(String message);
     }
 
-    private final Client client = new Client();
+    private final Client client = new Client(GameConstants.NETWORK_WRITE_BUFFER_SIZE, GameConstants.NETWORK_OBJECT_BUFFER_SIZE);
     private GameClientListener listener;
     private int playerId = -1;
 

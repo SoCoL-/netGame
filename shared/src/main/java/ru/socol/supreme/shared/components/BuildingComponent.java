@@ -14,6 +14,6 @@ import com.badlogic.gdx.utils.Pool;
 public class BuildingComponent implements Component, Pool.Poolable {
     @Override
     public void reset() {
-        //Nothing
+        // Нет полей — сбрасывать нечего.
     }
 }

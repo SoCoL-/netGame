@@ -7,11 +7,12 @@ import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
-
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
+import ru.socol.supreme.shared.components.ProductionComponent;
 import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 
 import java.util.Map;
@@ -25,6 +26,17 @@ import java.util.Map;
  * физика с массой и импульсом. Этого достаточно, чтобы юниты не стояли
  * друг в друге, не проходили сквозь стены и не уезжали за пределы карты
  * толпой у края.
+ *
+ * Поиск соседей и зданий идёт через SpatialHashGrid, а не перебором всех
+ * unitsById (O(n) на юнита вместо O(n²) на всех): сетка перестраивается
+ * заново в начале каждого тика (юниты подвинулись за прошлый тик), юниты
+ * вставляются как точки, здания — как прямоугольники (могут попасть в
+ * несколько соседних ячеек сразу, поэтому одно и то же здание иногда
+ * встречается в результате запроса больше одного раза — это безопасно,
+ * pushOutOfRect идемпотентен: повторный вызов ничего не делает, если юнит
+ * уже снаружи). Радиус запроса — GameConstants.maxBuildingInteractionRadius()
+ * — с запасом покрывает и столкновение юнит-юнит (2×UNIT_RADIUS), и
+ * выталкивание из САМОГО крупного из существующих типов здания.
  *
  * Приоритет 20 — после MovementSystem (10): корректирует уже случившееся
  * за этот тик перемещение, а не решает, куда юнит хочет идти (этим
@@ -45,7 +57,7 @@ public class CollisionSystem extends IteratingSystem {
     private static final ComponentMapper<PositionComponent> POSITION =
             ComponentMapper.getFor(PositionComponent.class);
     private static final ComponentMapper<BuildingComponent> BUILDING =
-        ComponentMapper.getFor(BuildingComponent.class);
+            ComponentMapper.getFor(BuildingComponent.class);
 
     /** Тот же реестр unitId -> Entity, что и в GameServer — передаётся по ссылке, не копируется. */
     private final Map<Integer, Entity> unitsById;
@@ -55,6 +67,9 @@ public class CollisionSystem extends IteratingSystem {
 
     private final SpatialHashGrid grid;
 
+    /** Тот же радиус, что и размер ячейки grid (см. GameServer) — запрос обычно укладывается в 3×3 ячейки. */
+    private final float queryRadius = GameConstants.maxBuildingInteractionRadius();
+
     public CollisionSystem(Map<Integer, Entity> unitsById, SpatialHashGrid grid) {
         super(Family.all(PositionComponent.class, DirectionComponent.class).get(), 20);
         this.unitsById = unitsById;
@@ -62,29 +77,33 @@ public class CollisionSystem extends IteratingSystem {
     }
 
     /**
-     * Перестраиваем spatial hash в начале каждого тика.
-     * Это нужно, потому что MovementSystem (приоритет 10) уже сдвинул
-     * юнитов — позиции в сетке от прошлого тика устарели.
+     * Перестраиваем spatial hash в начале каждого тика — MovementSystem
+     * (приоритет 10) уже сдвинул юнитов, старые позиции неактуальны.
+     * Здания вставляются как прямоугольники (их реальная форма зависит от
+     * типа — см. GameConstants.buildingHalfWidthFor/HeightFor), юниты —
+     * как точки.
      */
     @Override
     public void update(float deltaTime) {
         grid.clear();
-        for (Entity e : unitsById.values()) {
-            PositionComponent pos = POSITION.get(e);
-            if (pos == null) continue;
+        for (Entity other : unitsById.values()) {
+            PositionComponent position = POSITION.get(other);
+            if (position == null) {
+                continue;
+            }
 
-            if (BUILDING.has(e)) {
-                // Здания — как прямоугольники, во все перекрываемые ячейки.
-                float half = GameConstants.BUILDING_HALF_SIZE;
-                grid.insertRect(e,
-                    pos.position.x - half, pos.position.y - half,
-                    pos.position.x + half, pos.position.y + half);
+            if (BUILDING.has(other)) {
+                ProductionComponent production = other.getComponent(ProductionComponent.class);
+                UnitType producesType = production != null ? production.producesUnitType : UnitType.WARRIOR;
+                float halfWidth = GameConstants.buildingHalfWidthFor(producesType);
+                float halfHeight = GameConstants.buildingHalfHeightFor(producesType);
+                grid.insertRect(other,
+                        position.position.x - halfWidth, position.position.y - halfHeight,
+                        position.position.x + halfWidth, position.position.y + halfHeight);
             } else {
-                // Юниты — как точки.
-                grid.insert(e, pos.position.x, pos.position.y);
+                grid.insert(other, position.position.x, position.position.y);
             }
         }
-
         super.update(deltaTime);
     }
 
@@ -92,10 +111,6 @@ public class CollisionSystem extends IteratingSystem {
     protected void processEntity(Entity entity, float deltaTime) {
         PositionComponent position = POSITION.get(entity);
 
-        // Радиус запроса: должен покрывать и столкновения юнит-юнит
-        // (UNIT_RADIUS * 2 = 20), и выталкивание из зданий
-        // (BUILDING_HALF_SIZE + UNIT_RADIUS = 35). Берём больший.
-        float queryRadius = GameConstants.BUILDING_HALF_SIZE + GameConstants.UNIT_RADIUS;
         Array<Entity> nearby = grid.query(position.position.x, position.position.y, queryRadius);
 
         for (Entity other : nearby) {
@@ -105,10 +120,13 @@ public class CollisionSystem extends IteratingSystem {
 
             if (BUILDING.has(other)) {
                 PositionComponent buildingPosition = POSITION.get(other);
-                float half = GameConstants.BUILDING_HALF_SIZE;
+                ProductionComponent buildingProduction = other.getComponent(ProductionComponent.class);
+                UnitType producesType = buildingProduction != null ? buildingProduction.producesUnitType : UnitType.WARRIOR;
+                float halfWidth = GameConstants.buildingHalfWidthFor(producesType);
+                float halfHeight = GameConstants.buildingHalfHeightFor(producesType);
                 pushOutOfRect(position,
-                        buildingPosition.position.x - half, buildingPosition.position.y - half,
-                        buildingPosition.position.x + half, buildingPosition.position.y + half);
+                        buildingPosition.position.x - halfWidth, buildingPosition.position.y - halfHeight,
+                        buildingPosition.position.x + halfWidth, buildingPosition.position.y + halfHeight);
             } else if (other.getComponent(DirectionComponent.class) != null) {
                 pushApartFromUnit(position, POSITION.get(other));
             }

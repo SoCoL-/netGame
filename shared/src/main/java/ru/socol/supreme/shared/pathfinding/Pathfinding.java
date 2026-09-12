@@ -3,6 +3,7 @@ package ru.socol.supreme.shared.pathfinding;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PathComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -91,21 +92,25 @@ public final class Pathfinding {
     }
 
     private static boolean isInsideAnyBuilding(float x, float y) {
-        float half = GameConstants.BUILDING_HALF_SIZE + GameConstants.PATH_CLEARANCE;
         for (int playerId = 0; playerId < GameConstants.MAX_PLAYERS; playerId++) {
-            if (isInsideSquare(x, y, GameConstants.buildingSpawnX(playerId), GameConstants.buildingSpawnY(playerId), half)) {
+            if (isInsideBuildingFootprint(x, y,
+                    GameConstants.buildingSpawnX(playerId), GameConstants.buildingSpawnY(playerId), UnitType.WARRIOR)) {
                 return true;
             }
             float[] archerBuildingSpawn = GameConstants.archerBuildingSpawnPoint(playerId);
-            if (isInsideSquare(x, y, archerBuildingSpawn[0], archerBuildingSpawn[1], half)) {
+            if (isInsideBuildingFootprint(x, y, archerBuildingSpawn[0], archerBuildingSpawn[1], UnitType.ARCHER)) {
                 return true;
             }
         }
         return false;
     }
 
-    private static boolean isInsideSquare(float x, float y, float centerX, float centerY, float half) {
-        return x >= centerX - half && x <= centerX + half && y >= centerY - half && y <= centerY + half;
+    /** Дом и казарма стрелков — разной формы (2x2 и 1x2 клетки), поэтому ширина/высота раздельно и по типу. */
+    private static boolean isInsideBuildingFootprint(float x, float y, float centerX, float centerY, UnitType producesType) {
+        float halfWidth = GameConstants.buildingHalfWidthFor(producesType) + GameConstants.PATH_CLEARANCE;
+        float halfHeight = GameConstants.buildingHalfHeightFor(producesType) + GameConstants.PATH_CLEARANCE;
+        return x >= centerX - halfWidth && x <= centerX + halfWidth
+                && y >= centerY - halfHeight && y <= centerY + halfHeight;
     }
 
     /**
@@ -146,6 +151,15 @@ public final class Pathfinding {
         }
 
         if (path == null) {
+            // new, а не engine.createComponent — у Pathfinding нет ссылки на
+            // Engine (статический метод, вызывается и из CombatSystem, и из
+            // GameServer). Это по-прежнему безопасно теперь, когда
+            // PathComponent реализует Pool.Poolable: PooledEngine возвращает
+            // в пул и сбрасывает (resет()) ЛЮБОЙ компонент поддерживаемого
+            // типа при его удалении с сущности, независимо от того, был он
+            // создан через createComponent или обычным new — просто не
+            // получает возможной экономии на переиспользовании из пула при
+            // СОЗДАНИИ, что для редко создаваемого PathComponent несущественно.
             path = new PathComponent();
             entity.add(path);
         }
