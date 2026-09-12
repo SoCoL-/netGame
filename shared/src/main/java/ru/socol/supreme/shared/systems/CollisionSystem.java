@@ -7,12 +7,11 @@ import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
+import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.GameConstants;
-import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
-import ru.socol.supreme.shared.components.ProductionComponent;
 import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 
 import java.util.Map;
@@ -80,8 +79,7 @@ public class CollisionSystem extends IteratingSystem {
      * Перестраиваем spatial hash в начале каждого тика — MovementSystem
      * (приоритет 10) уже сдвинул юнитов, старые позиции неактуальны.
      * Здания вставляются как прямоугольники (их реальная форма зависит от
-     * типа — см. GameConstants.buildingHalfWidthFor/HeightFor), юниты —
-     * как точки.
+     * типа — см. BuildingSizes), юниты — как точки.
      */
     @Override
     public void update(float deltaTime) {
@@ -93,10 +91,8 @@ public class CollisionSystem extends IteratingSystem {
             }
 
             if (BUILDING.has(other)) {
-                ProductionComponent production = other.getComponent(ProductionComponent.class);
-                UnitType producesType = production != null ? production.producesUnitType : UnitType.WARRIOR;
-                float halfWidth = GameConstants.buildingHalfWidthFor(producesType);
-                float halfHeight = GameConstants.buildingHalfHeightFor(producesType);
+                float halfWidth = BuildingSizes.halfWidth(other);
+                float halfHeight = BuildingSizes.halfHeight(other);
                 grid.insertRect(other,
                         position.position.x - halfWidth, position.position.y - halfHeight,
                         position.position.x + halfWidth, position.position.y + halfHeight);
@@ -120,10 +116,8 @@ public class CollisionSystem extends IteratingSystem {
 
             if (BUILDING.has(other)) {
                 PositionComponent buildingPosition = POSITION.get(other);
-                ProductionComponent buildingProduction = other.getComponent(ProductionComponent.class);
-                UnitType producesType = buildingProduction != null ? buildingProduction.producesUnitType : UnitType.WARRIOR;
-                float halfWidth = GameConstants.buildingHalfWidthFor(producesType);
-                float halfHeight = GameConstants.buildingHalfHeightFor(producesType);
+                float halfWidth = BuildingSizes.halfWidth(other);
+                float halfHeight = BuildingSizes.halfHeight(other);
                 pushOutOfRect(position,
                         buildingPosition.position.x - halfWidth, buildingPosition.position.y - halfHeight,
                         buildingPosition.position.x + halfWidth, buildingPosition.position.y + halfHeight);

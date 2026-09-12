@@ -87,14 +87,40 @@ public final class GameConstants {
      * юнитов, проверено численно). Каждая запись — {x, y}. В отличие от
      * воды/зданий, НЕ препятствие для движения — юниты спокойно проходят
      * прямо через них, это просто точка на карте, а не физический объект.
-     * Пока только обозначены (см. GameScreen.drawIronDeposits) — самой
-     * добычи в игре ещё нет, нужно здание добычи (см. ResourceType), его
-     * пока тоже нет.
+     * Здание добычи (см. IRON_MINE_* ниже) можно поставить только СЮДА,
+     * "прилипая" к одной из этих точек — см. GameScreen (превью при
+     * постройке) и GameServer.handlePlaceIronMine (серверная проверка).
      */
     public static final float[][] IRON_DEPOSITS = {
             {500f, 200f}, {200f, 500f},     // игрок 0
             {1500f, 1800f}, {1800f, 1500f}, // игрок 1
     };
+
+    /**
+     * Здание добычи железа — единственное здание в игре, которое ставит
+     * сам игрок (клавиша B), а не сервер автоматически при входе. Не
+     * производит юнитов (нет ProductionComponent) — вместо этого, после
+     * стройки, добывает железо через ResourceExtractorComponent. Квадрат
+     * 1x1 клетка — заметно меньше и дома (2x2), и казармы (1x2), это
+     * маленькая техническая постройка, а не боевое здание.
+     */
+    public static final float IRON_MINE_HALF_SIZE = PATH_GRID_CELL_SIZE / 2f;
+
+    public static final int IRON_MINE_MAX_HEALTH = 70;
+
+    /** Секунд на постройку — столько же, сколько уходит на юнита в очереди производства, но это отдельная константа, не UNIT_BUILD_TIME. */
+    public static final float IRON_MINE_BUILD_TIME = 10f;
+
+    /**
+     * На таком расстоянии от месторождения курсор "прилипает" к нему при
+     * постройке (GameScreen) — сервер использует то же число при проверке
+     * присланного индекса месторождения (GameServer.handlePlaceIronMine),
+     * чтобы не разойтись с тем, что видел игрок на превью.
+     */
+    public static final float IRON_MINE_SNAP_RADIUS = 60f;
+
+    /** Единиц железа в секунду с одного действующего здания добычи. Условное число, легко перебалансировать. */
+    public static final float IRON_EXTRACTION_RATE = 1f;
 
     /** Размер клетки сетки для поиска пути (Pathfinding) — 2000/50 = 40x40 клеток. */
     public static final float PATH_GRID_CELL_SIZE = 50f;
@@ -138,9 +164,11 @@ public final class GameConstants {
      * SpatialHashGrid при её создании (GameServer) и радиус запроса к ней
      * же в CollisionSystem. Считать раздельно в двух местах было бы
      * рискованно разъехаться при следующем изменении размера здания.
+     * Учитывает и IRON_MINE_HALF_SIZE явно, а не полагается на то, что
+     * здание добычи случайно меньше дома/казармы.
      */
     public static float maxBuildingInteractionRadius() {
-        float maxHalfDimension = 0f;
+        float maxHalfDimension = IRON_MINE_HALF_SIZE;
         for (UnitType type : UnitType.values()) {
             maxHalfDimension = Math.max(maxHalfDimension, buildingHalfWidthFor(type));
             maxHalfDimension = Math.max(maxHalfDimension, buildingHalfHeightFor(type));

@@ -8,24 +8,29 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import ru.socol.supreme.components.SelectedComponent;
+import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
+import ru.socol.supreme.shared.components.ResourceExtractorComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 
 /**
  * Рисует каждую сущность: юнит — кружком (у стрелка ещё белая точка
  * внутри, чтобы отличать от воина), здание — прямоугольником нужной
  * формы (дом 2x2 клетки с золотой звездой, казарма стрелков 1x2 с белой
- * "крышечкой" — единственный способ различить их на глаз, раз цвет у
- * обоих один и тот же — цвет игрока). У всех — полоска здоровья над ними
- * и (для выделенных юнитов) кольцо подсветки. Приоритет 10 — выполняется
- * после InterpolationSystem (приоритет 0), чтобы рисовать уже
- * посчитанную на этот кадр позицию.
+ * "крышечкой", здание добычи железа 1x1 с ржаво-коричневым маркером —
+ * единственный способ различить их на глаз, раз цвет у всех один и тот
+ * же — цвет игрока). Здание добычи, пока строится, рисуется тускло-серым
+ * с прогресс-баром вместо обычного вида — см. drawIronMineUnderConstruction.
+ * У всех — полоска здоровья над ними и (для выделенных юнитов) кольцо
+ * подсветки. Приоритет 10 — выполняется после InterpolationSystem
+ * (приоритет 0), чтобы рисовать уже посчитанную на этот кадр позицию.
  */
 public class RenderSystem extends IteratingSystem {
 
@@ -43,6 +48,10 @@ public class RenderSystem extends IteratingSystem {
             ComponentMapper.getFor(ProductionComponent.class);
     private static final ComponentMapper<UnitTypeComponent> UNIT_TYPE =
             ComponentMapper.getFor(UnitTypeComponent.class);
+    private static final ComponentMapper<ConstructionComponent> CONSTRUCTION =
+            ComponentMapper.getFor(ConstructionComponent.class);
+    private static final ComponentMapper<ResourceExtractorComponent> EXTRACTOR =
+            ComponentMapper.getFor(ResourceExtractorComponent.class);
 
     private static final Color[] PLAYER_COLORS = {Color.SKY, Color.ORANGE};
     private static final Color SELECTION_RING_COLOR = Color.WHITE;
@@ -53,6 +62,8 @@ public class RenderSystem extends IteratingSystem {
 
     private static final Color HQ_STAR_COLOR = Color.GOLD;
     private static final Color ARCHER_ROOF_COLOR = Color.WHITE;
+    private static final Color IRON_MINE_MARKER_COLOR = new Color(0.55f, 0.35f, 0.2f, 1f); // тот же ржавый цвет, что у месторождений
+    private static final Color UNDER_CONSTRUCTION_COLOR = Color.GRAY;
 
     private static final float HEALTH_BAR_HEIGHT = 4f;
     private static final float UNIT_HEALTH_BAR_WIDTH = 24f;
@@ -109,14 +120,15 @@ public class RenderSystem extends IteratingSystem {
     }
 
     private void drawBuilding(Entity entity, PositionComponent position, OwnerComponent owner, HealthComponent health) {
-        // producesUnitType решает и форму здания (см. GameConstants
-        // .buildingHalfWidthFor/HeightFor), и какой символ на нём рисовать —
-        // дом и казарма красятся в один и тот же цвет игрока, форма и
-        // значок сверху это единственное, что их отличает на глаз.
-        ProductionComponent production = PRODUCTION.get(entity);
-        UnitType producesType = production != null ? production.producesUnitType : UnitType.WARRIOR;
-        float halfWidth = GameConstants.buildingHalfWidthFor(producesType);
-        float halfHeight = GameConstants.buildingHalfHeightFor(producesType);
+        float halfWidth = BuildingSizes.halfWidth(entity);
+        float halfHeight = BuildingSizes.halfHeight(entity);
+
+        ConstructionComponent construction = CONSTRUCTION.get(entity);
+        if (construction != null) {
+            drawIronMineUnderConstruction(position, halfWidth, halfHeight, construction);
+            drawHealthBar(position, health, halfHeight + BUILDING_HEALTH_BAR_Y_MARGIN, halfWidth * 2f);
+            return;
+        }
 
         shapeRenderer.setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
         shapeRenderer.rect(
@@ -125,13 +137,50 @@ public class RenderSystem extends IteratingSystem {
                 halfWidth * 2f,
                 halfHeight * 2f);
 
-        if (producesType == UnitType.ARCHER) {
-            drawRoofCap(position.position.x, position.position.y + halfHeight, halfWidth);
+        if (EXTRACTOR.has(entity)) {
+            drawIronMineMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
         } else {
-            drawStar(position.position.x, position.position.y, Math.min(halfWidth, halfHeight) * 0.6f);
+            // producesUnitType решает, какой символ рисовать — дом и
+            // казарма красятся в один и тот же цвет игрока, форма и
+            // значок сверху это единственное, что их отличает на глаз.
+            ProductionComponent production = PRODUCTION.get(entity);
+            UnitType producesType = production != null ? production.producesUnitType : UnitType.WARRIOR;
+            if (producesType == UnitType.ARCHER) {
+                drawRoofCap(position.position.x, position.position.y + halfHeight, halfWidth);
+            } else {
+                drawStar(position.position.x, position.position.y, Math.min(halfWidth, halfHeight) * 0.6f);
+            }
         }
 
         drawHealthBar(position, health, halfHeight + BUILDING_HEALTH_BAR_Y_MARGIN, halfWidth * 2f);
+    }
+
+    /** Стройка — тускло-серый квадрат вместо цвета игрока (здание ещё не "принадлежит" никому функционально) плюс прогресс-бар. */
+    private void drawIronMineUnderConstruction(PositionComponent position, float halfWidth, float halfHeight,
+                                                ConstructionComponent construction) {
+        shapeRenderer.setColor(UNDER_CONSTRUCTION_COLOR);
+        shapeRenderer.rect(
+                position.position.x - halfWidth,
+                position.position.y - halfHeight,
+                halfWidth * 2f,
+                halfHeight * 2f);
+
+        float fraction = MathUtils.clamp(1f - construction.remaining / construction.totalTime, 0f, 1f);
+        float barWidth = halfWidth * 2f;
+        float barY = position.position.y - halfHeight - 10f; // под зданием, а не над ним — там уже полоска здоровья
+
+        shapeRenderer.setColor(Color.DARK_GRAY);
+        shapeRenderer.rect(position.position.x - halfWidth, barY, barWidth, HEALTH_BAR_HEIGHT);
+        shapeRenderer.setColor(Color.GOLD);
+        shapeRenderer.rect(position.position.x - halfWidth, barY, barWidth * fraction, HEALTH_BAR_HEIGHT);
+    }
+
+    /** Маленький ромб в цвете месторождений — единственное, что отличает действующее здание добычи от дома/казармы на глаз. */
+    private void drawIronMineMarker(float cx, float cy, float halfSize) {
+        float markerHalf = halfSize * 0.5f;
+        shapeRenderer.setColor(IRON_MINE_MARKER_COLOR);
+        shapeRenderer.triangle(cx - markerHalf, cy, cx, cy + markerHalf, cx + markerHalf, cy);
+        shapeRenderer.triangle(cx - markerHalf, cy, cx, cy - markerHalf, cx + markerHalf, cy);
     }
 
     /**

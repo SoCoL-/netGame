@@ -16,6 +16,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
+import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.components.DebugPathComponent;
@@ -72,6 +73,8 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final Color DEBUG_PATH_COLOR = Color.ORANGE;
     private static final Color IRON_DEPOSIT_COLOR = new Color(0.55f, 0.35f, 0.2f, 1f); // ржаво-коричневый
     private static final float IRON_DEPOSIT_RADIUS = 18f;
+    private static final Color IRON_MINE_GHOST_VALID_COLOR = Color.GREEN;
+    private static final Color IRON_MINE_GHOST_INVALID_COLOR = Color.RED;
 
     // Панель ресурсов — тоже экранные координаты, сверху слева, всегда видна
     // (в отличие от панели постройки — не только когда что-то выбрано).
@@ -145,6 +148,17 @@ public class GameScreen extends InputAdapter implements Screen {
     // Переключается клавишей ` (GRAVE) — см. keyDown. Заменяет заливку земли
     // сеткой клеток поиска пути и рисует маршруты движущихся юнитов.
     private boolean debugMode = false;
+
+    // Режим постройки здания добычи железа — переключается клавишей B (см.
+    // keyDown). Пока true, ЛКМ не выделяет юнитов/здания, а подтверждает
+    // постройку — см. touchDown. Превью считается каждый кадр в render()
+    // (обычный опрос текущей позиции курсора, без отдельного mouseMoved).
+    private boolean placingIronMine = false;
+    private float ironMineGhostX;
+    private float ironMineGhostY;
+    // -1, если курсор сейчас не "прилип" ни к одному месторождению —
+    // тогда превью просто следует за курсором без права подтвердить клик.
+    private int ironMineSnapDepositIndex = -1;
 
     // Свои ресурсы — обновляются из каждого снапшота (см. onWorldSnapshot).
     // Ресурсов противника здесь нет: сервер их присылает (fog of war для
@@ -314,6 +328,10 @@ public class GameScreen extends InputAdapter implements Screen {
             font.setColor(Color.LIGHT_GRAY);
             drawCenteredText(connectionStatusText);
         } else {
+            if (placingIronMine) {
+                updateIronMineGhost();
+                drawIronMineGhost();
+            }
             drawResourcePanel(); // всегда видна во время игры, не только когда выбрано здание
             if (selectedBuildingId != null) {
                 drawProductionPanel();
@@ -356,6 +374,50 @@ public class GameScreen extends InputAdapter implements Screen {
         for (float[] deposit : GameConstants.IRON_DEPOSITS) {
             shapeRenderer.circle(deposit[0], deposit[1], IRON_DEPOSIT_RADIUS);
         }
+        shapeRenderer.end();
+    }
+
+    /**
+     * Считается каждый кадр опросом текущего положения курсора
+     * (Gdx.input.getX/getY), а не отдельным обработчиком mouseMoved —
+     * превью должно двигаться, даже если мышь просто лежит неподвижно
+     * (например, сразу после входа в режим постройки клавишей B).
+     * "Прилипает" к ближайшему месторождению в радиусе
+     * IRON_MINE_SNAP_RADIUS; вне радиуса — просто следует за курсором,
+     * но подтвердить постройку в этом состоянии нельзя (см. touchDown).
+     */
+    private void updateIronMineGhost() {
+        Vector3 cursorWorld = camera.unproject(new Vector3(Gdx.input.getX(), Gdx.input.getY(), 0));
+
+        ironMineSnapDepositIndex = -1;
+        float closestDistanceSq = GameConstants.IRON_MINE_SNAP_RADIUS * GameConstants.IRON_MINE_SNAP_RADIUS;
+
+        for (int i = 0; i < GameConstants.IRON_DEPOSITS.length; i++) {
+            float[] deposit = GameConstants.IRON_DEPOSITS[i];
+            float dx = cursorWorld.x - deposit[0];
+            float dy = cursorWorld.y - deposit[1];
+            float distanceSq = dx * dx + dy * dy;
+            if (distanceSq <= closestDistanceSq) {
+                closestDistanceSq = distanceSq;
+                ironMineSnapDepositIndex = i;
+            }
+        }
+
+        if (ironMineSnapDepositIndex >= 0) {
+            ironMineGhostX = GameConstants.IRON_DEPOSITS[ironMineSnapDepositIndex][0];
+            ironMineGhostY = GameConstants.IRON_DEPOSITS[ironMineSnapDepositIndex][1];
+        } else {
+            ironMineGhostX = cursorWorld.x;
+            ironMineGhostY = cursorWorld.y;
+        }
+    }
+
+    /** Зелёный — курсор прилип к свободному по мнению клиента месторождению, можно подтвердить кликом; красный — нет. */
+    private void drawIronMineGhost() {
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(ironMineSnapDepositIndex >= 0 ? IRON_MINE_GHOST_VALID_COLOR : IRON_MINE_GHOST_INVALID_COLOR);
+        float half = GameConstants.IRON_MINE_HALF_SIZE;
+        shapeRenderer.rect(ironMineGhostX - half, ironMineGhostY - half, half * 2f, half * 2f);
         shapeRenderer.end();
     }
 
@@ -551,6 +613,16 @@ public class GameScreen extends InputAdapter implements Screen {
             return true;
         }
 
+        if (placingIronMine) {
+            if (button == Input.Buttons.LEFT && ironMineSnapDepositIndex >= 0) {
+                client.requestPlaceIronMine(ironMineSnapDepositIndex);
+                placingIronMine = false;
+            }
+            // Клик поглощён режимом постройки целиком — ни выделение, ни
+            // рамка, ни приказ на движение в этом режиме не должны сработать.
+            return true;
+        }
+
         if (button == Input.Buttons.LEFT) {
             if (selectedBuildingId != null) {
                 Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
@@ -612,6 +684,19 @@ public class GameScreen extends InputAdapter implements Screen {
             debugMode = !debugMode;
             return true;
         }
+        if (keycode == Input.Keys.B) {
+            if (gameOverText != null || connectionStatusText != null) {
+                return true; // нечего строить до/после игры
+            }
+            placingIronMine = !placingIronMine;
+            if (placingIronMine) {
+                // Режим постройки — не режим выделения: закрываем всё, что
+                // может быть открыто, как и при других переключениях контекста.
+                setSelection(Collections.emptySet());
+                selectedBuildingId = null;
+            }
+            return true;
+        }
         return false;
     }
 
@@ -632,6 +717,12 @@ public class GameScreen extends InputAdapter implements Screen {
         if (isMine && isBuilding) {
             int buildingUnitId = clicked.getComponent(UnitComponent.class).unitId;
             setSelection(Collections.emptySet());
+            if (clicked.getComponent(ProductionComponent.class) == null) {
+                // Здание без производства (сейчас — здание добычи железа):
+                // панели постройки для него нет, ей нечего показывать.
+                selectedBuildingId = null;
+                return;
+            }
             // Повторный клик по уже открытому зданию закрывает панель, иначе — открывает.
             selectedBuildingId = (selectedBuildingId != null && selectedBuildingId == buildingUnitId)
                     ? null : buildingUnitId;
@@ -758,13 +849,13 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     /** Юнит — фиксированный радиус; здание — до угла его фактического прямоугольника (дом и казарма разной формы, см. GameConstants). */
+    /** Юнит — фиксированный радиус; здание (дом/казарма/здание добычи, в любом состоянии) — до угла его фактического прямоугольника. */
     private float clickRadiusFor(Entity entity) {
-        ProductionComponent production = entity.getComponent(ProductionComponent.class);
-        if (production == null) {
+        if (entity.getComponent(BuildingComponent.class) == null) {
             return UNIT_CLICK_RADIUS;
         }
-        float halfWidth = GameConstants.buildingHalfWidthFor(production.producesUnitType);
-        float halfHeight = GameConstants.buildingHalfHeightFor(production.producesUnitType);
+        float halfWidth = BuildingSizes.halfWidth(entity);
+        float halfHeight = BuildingSizes.halfHeight(entity);
         return (float) Math.sqrt(halfWidth * halfWidth + halfHeight * halfHeight);
     }
 

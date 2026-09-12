@@ -4,14 +4,17 @@ import com.badlogic.ashley.core.Engine;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.ResourceType;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.components.DebugPathComponent;
 import ru.socol.supreme.components.InterpolationComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
+import ru.socol.supreme.shared.components.ResourceExtractorComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.network.messages.PathPoint;
@@ -66,6 +69,8 @@ public class EntityFactory {
                 // producesUnitType не меняется у здания после создания — обновлять не нужно.
             }
 
+            updateIronMineState(entity, snapshot);
+
             InterpolationComponent interpolation = entity.getComponent(InterpolationComponent.class);
             if (interpolation != null) {
                 // Точка отправления лерпа — там, где юнит нарисован ПРЯМО
@@ -114,22 +119,27 @@ public class EntityFactory {
 
         // maxHealth приходит с сервера явно (а не выводится из snapshot.building
         // локально) — теперь, когда у зданий бывает разный максимум (дом 500,
-        // казарма стрелков 70), угадывать его на клиенте было бы неверно.
+        // казарма стрелков 70, здание добычи 70), угадывать его на клиенте
+        // было бы неверно.
         HealthComponent health = new HealthComponent(snapshot.maxHealth);
         health.currentHealth = snapshot.health;
         entity.add(health);
 
-        UnitType type = UnitType.values()[snapshot.unitType];
-
         if (snapshot.building) {
             entity.add(new BuildingComponent());
 
-            ProductionComponent production = new ProductionComponent();
-            production.queuedCount = snapshot.queuedCount;
-            production.progress = snapshot.buildProgress;
-            production.producesUnitType = type;
-            entity.add(production);
+            if (snapshot.ironMine) {
+                addIronMineComponent(entity, snapshot);
+            } else {
+                UnitType type = UnitType.values()[snapshot.unitType];
+                ProductionComponent production = new ProductionComponent();
+                production.queuedCount = snapshot.queuedCount;
+                production.progress = snapshot.buildProgress;
+                production.producesUnitType = type;
+                entity.add(production);
+            }
         } else {
+            UnitType type = UnitType.values()[snapshot.unitType];
             entity.add(new UnitTypeComponent(type));
 
             InterpolationComponent interpolation = new InterpolationComponent();
@@ -146,5 +156,55 @@ public class EntityFactory {
         }
 
         return entity;
+    }
+
+    /**
+     * Здание добычи железа не имеет ProductionComponent вовсе (не
+     * производит юнитов) — вместо него на клиенте, как и на сервере,
+     * либо ConstructionComponent (ещё строится), либо
+     * ResourceExtractorComponent (уже добывает). RenderSystem по
+     * наличию одного из них решает, как рисовать (см. BuildingSizes —
+     * та же логика решает и размер).
+     */
+    private void addIronMineComponent(Entity entity, UnitSnapshot snapshot) {
+        if (snapshot.underConstruction) {
+            entity.add(constructionComponentFor(snapshot.constructionProgress));
+        } else {
+            entity.add(new ResourceExtractorComponent(ResourceType.IRON));
+        }
+    }
+
+    /** Меняет то, какой из двух компонентов стоит на здании добычи, когда стройка на сервере завершается между снапшотами. */
+    private void updateIronMineState(Entity entity, UnitSnapshot snapshot) {
+        if (!snapshot.ironMine) {
+            return;
+        }
+
+        boolean hasConstruction = entity.getComponent(ConstructionComponent.class) != null;
+        if (snapshot.underConstruction) {
+            if (hasConstruction) {
+                entity.getComponent(ConstructionComponent.class).remaining =
+                        (1f - snapshot.constructionProgress) * GameConstants.IRON_MINE_BUILD_TIME;
+            } else {
+                entity.add(constructionComponentFor(snapshot.constructionProgress));
+            }
+        } else if (hasConstruction) {
+            // Стройка завершилась между снапшотами — снимаем "стройку", ставим "добычу".
+            entity.remove(ConstructionComponent.class);
+            entity.add(new ResourceExtractorComponent(ResourceType.IRON));
+        }
+    }
+
+    /**
+     * remaining/totalTime восстановлены из готовой доли прогресса, а не
+     * настоящего отсчёта времени (у клиента его и не может быть — он не
+     * ведёт стройку сам, только показывает то, что посчитал сервер).
+     * RenderSystem считает долю той же формулой (1 - remaining/totalTime),
+     * что и сервер, поэтому этого достаточно для одинакового прогресс-бара.
+     */
+    private ConstructionComponent constructionComponentFor(float progressFraction) {
+        ConstructionComponent construction = new ConstructionComponent(GameConstants.IRON_MINE_BUILD_TIME);
+        construction.remaining = (1f - progressFraction) * GameConstants.IRON_MINE_BUILD_TIME;
+        return construction;
     }
 }

@@ -6,17 +6,21 @@ import com.badlogic.ashley.core.PooledEngine;
 import com.badlogic.gdx.math.Vector2;
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Server;
+import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.ResourceType;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PathComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
+import ru.socol.supreme.shared.components.ResourceExtractorComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.network.NetworkRegistration;
@@ -27,6 +31,7 @@ import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PathPoint;
+import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
@@ -37,8 +42,10 @@ import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 import ru.socol.supreme.shared.systems.AggroSystem;
 import ru.socol.supreme.shared.systems.CollisionSystem;
 import ru.socol.supreme.shared.systems.CombatSystem;
+import ru.socol.supreme.shared.systems.ConstructionSystem;
 import ru.socol.supreme.shared.systems.MovementSystem;
 import ru.socol.supreme.shared.systems.ProductionSystem;
+import ru.socol.supreme.shared.systems.ResourceExtractionSystem;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -95,7 +102,8 @@ public class GameServer {
 
     public GameServer() {
         // Приоритет: AggroSystem (-10) до CombatSystem (0) до ProductionSystem (1)
-        // до MovementSystem (10) до CollisionSystem (20) — см. их конструкторы.
+        // до ConstructionSystem (2) до ResourceExtractionSystem (3) до
+        // MovementSystem (10) до CollisionSystem (20) — см. их конструкторы.
         //
         // Обе системы ищут соседей через SpatialHashGrid вместо перебора
         // unitsById целиком (O(n) на юнита вместо O(n²) на всех) — у каждой
@@ -109,6 +117,8 @@ public class GameServer {
         engine.addSystem(new AggroSystem(unitsById, aggroGrid));
         engine.addSystem(new CombatSystem(unitsById, this::handleShotFired));
         engine.addSystem(new ProductionSystem(unitsById, this::createUnit));
+        engine.addSystem(new ConstructionSystem());
+        engine.addSystem(new ResourceExtractionSystem(resourcesByPlayer));
         engine.addSystem(new MovementSystem());
         engine.addSystem(new CollisionSystem(unitsById, collisionGrid));
     }
@@ -357,6 +367,85 @@ public class GameServer {
         production.queuedCount++;
     }
 
+    /**
+     * Здание добычи железа — единственное здание, которое ставит сам
+     * игрок, а не сервер автоматически при входе. Клиент уже проверил,
+     * что курсор был "прилипшим" к месторождению (см. GameScreen), но
+     * решение всегда за сервером: индекс в границах и место ещё не занято.
+     */
+    synchronized void handlePlaceIronMine(Connection connection, PlaceIronMineRequest request) {
+        if (gameOver) {
+            return;
+        }
+
+        Integer playerId = connectionToPlayer.get(connection.getID());
+        if (playerId == null) {
+            return;
+        }
+
+        if (request.depositIndex < 0 || request.depositIndex >= GameConstants.IRON_DEPOSITS.length) {
+            return; // некорректный индекс — либо баг клиента, либо модифицированный клиент
+        }
+
+        if (isDepositOccupied(request.depositIndex)) {
+            server.sendToTCP(connection.getID(), new ErrorResponse("This iron deposit is already occupied"));
+            return;
+        }
+
+        float[] deposit = GameConstants.IRON_DEPOSITS[request.depositIndex];
+        spawnIronMine(playerId, deposit[0], deposit[1]);
+    }
+
+    /** Занято ли месторождение — ищем среди unitsById здание добычи (строящееся или уже готовое) точно в этой точке. */
+    private boolean isDepositOccupied(int depositIndex) {
+        float[] deposit = GameConstants.IRON_DEPOSITS[depositIndex];
+        for (Entity entity : unitsById.values()) {
+            if (!BuildingSizes.isResourceBuilding(entity)) {
+                continue;
+            }
+            PositionComponent position = entity.getComponent(PositionComponent.class);
+            // Здание добычи всегда ставится ТОЧНО в координаты месторождения
+            // (клиент прилипает курсор к нему) — небольшой эпсилон только на
+            // случай погрешности float, не для "рядом, но не совсем".
+            if (position.position.dst2(deposit[0], deposit[1]) < 1f) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Создаёт здание добычи железа в процессе стройки — ConstructionSystem доведёт его до рабочего состояния сама. */
+    private void spawnIronMine(int playerId, float x, float y) {
+        Entity building = engine.createEntity();
+
+        PositionComponent position = engine.createComponent(PositionComponent.class);
+        position.position.set(x, y);
+
+        int unitId = unitIdSequence.getAndIncrement();
+        UnitComponent unitComponent = engine.createComponent(UnitComponent.class);
+        unitComponent.unitId = unitId;
+
+        OwnerComponent owner = engine.createComponent(OwnerComponent.class);
+        owner.playerId = playerId;
+
+        HealthComponent health = engine.createComponent(HealthComponent.class);
+        health.maxHealth = GameConstants.IRON_MINE_MAX_HEALTH;
+        health.currentHealth = GameConstants.IRON_MINE_MAX_HEALTH;
+
+        BuildingComponent buildingMarker = engine.createComponent(BuildingComponent.class);
+
+        ConstructionComponent construction = engine.createComponent(ConstructionComponent.class);
+        construction.totalTime = GameConstants.IRON_MINE_BUILD_TIME;
+        construction.remaining = GameConstants.IRON_MINE_BUILD_TIME;
+
+        // Намеренно без ProductionComponent — это здание не производит
+        // юнитов; без DirectionComponent — не двигается, как и все здания.
+        building.add(position).add(unitComponent).add(owner).add(health).add(buildingMarker).add(construction);
+        engine.addEntity(building);
+
+        unitsById.put(unitId, building);
+    }
+
     synchronized void handleMoveUnit(Connection connection, MoveUnitRequest request) {
         if (gameOver) {
             return;
@@ -525,6 +614,17 @@ public class GameServer {
             if (production != null) {
                 unitSnapshot.queuedCount = production.queuedCount;
                 unitSnapshot.buildProgress = production.progress;
+            }
+
+            ConstructionComponent construction = unit.getComponent(ConstructionComponent.class);
+            ResourceExtractorComponent extractor = unit.getComponent(ResourceExtractorComponent.class);
+            if (construction != null) {
+                unitSnapshot.ironMine = true;
+                unitSnapshot.underConstruction = true;
+                unitSnapshot.constructionProgress = 1f - construction.remaining / construction.totalTime;
+            } else if (extractor != null) {
+                unitSnapshot.ironMine = true;
+                unitSnapshot.underConstruction = false;
             }
 
             // Только для отладочной отрисовки маршрута на клиенте (клавиша `
