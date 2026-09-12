@@ -31,6 +31,7 @@ import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
+import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
@@ -69,6 +70,15 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final Color WATER_COLOR = new Color(0.25f, 0.55f, 0.85f, 1f); // голубой
     private static final Color GRASS_COLOR = new Color(0.2f, 0.45f, 0.2f, 1f); // зелёный, трава
     private static final Color DEBUG_PATH_COLOR = Color.ORANGE;
+    private static final Color IRON_DEPOSIT_COLOR = new Color(0.55f, 0.35f, 0.2f, 1f); // ржаво-коричневый
+    private static final float IRON_DEPOSIT_RADIUS = 18f;
+
+    // Панель ресурсов — тоже экранные координаты, сверху слева, всегда видна
+    // (в отличие от панели постройки — не только когда что-то выбрано).
+    private static final float RESOURCE_PANEL_X = 20f;
+    private static final float RESOURCE_PANEL_Y = 550f;
+    private static final float RESOURCE_PANEL_WIDTH = 220f;
+    private static final float RESOURCE_PANEL_HEIGHT = 40f;
 
     // Панель постройки — экранные (HUD) координаты, не мировые, см. hudCamera.
     private static final float PANEL_X = 20f;
@@ -135,6 +145,13 @@ public class GameScreen extends InputAdapter implements Screen {
     // Переключается клавишей ` (GRAVE) — см. keyDown. Заменяет заливку земли
     // сеткой клеток поиска пути и рисует маршруты движущихся юнитов.
     private boolean debugMode = false;
+
+    // Свои ресурсы — обновляются из каждого снапшота (см. onWorldSnapshot).
+    // Ресурсов противника здесь нет: сервер их присылает (fog of war для
+    // ресурсов отдельно от остального не планируется), но панель — только
+    // про свои же.
+    private int myIron = 0;
+    private int myElectricity = 0;
     private String gameOverText = null;
     // Пока не null — показываем этот текст вместо игры (окно уже открыто и
     // отрисовывается, само подключение идёт в фоне — см. GameClient.connect()).
@@ -170,6 +187,13 @@ public class GameScreen extends InputAdapter implements Screen {
                     selectedUnitIds.removeIf(unitId -> entityFactory.getEntity(unitId) == null);
                     if (selectedBuildingId != null && entityFactory.getEntity(selectedBuildingId) == null) {
                         selectedBuildingId = null; // здание пропало — закрываем панель
+                    }
+                    for (PlayerResources resources : snapshot.playerResources) {
+                        if (resources.playerId == client.getPlayerId()) {
+                            myIron = resources.iron;
+                            myElectricity = resources.electricity;
+                            break;
+                        }
                     }
                     centerCameraOnOwnBuildingIfNeeded();
                 });
@@ -273,6 +297,7 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.setProjectionMatrix(camera.combined);
 
         drawGround(); // до engine.update() — юниты должны рисоваться поверх земли/воды, а не под ними
+        drawIronDeposits(); // тоже до engine.update() — поверх земли, но под юнитами/зданиями
 
         engine.update(delta);
 
@@ -288,8 +313,11 @@ public class GameScreen extends InputAdapter implements Screen {
         } else if (connectionStatusText != null) {
             font.setColor(Color.LIGHT_GRAY);
             drawCenteredText(connectionStatusText);
-        } else if (selectedBuildingId != null) {
-            drawProductionPanel();
+        } else {
+            drawResourcePanel(); // всегда видна во время игры, не только когда выбрано здание
+            if (selectedBuildingId != null) {
+                drawProductionPanel();
+            }
         }
     }
 
@@ -312,6 +340,22 @@ public class GameScreen extends InputAdapter implements Screen {
                 GameConstants.WATER_MIN_Y,
                 GameConstants.WATER_MAX_X - GameConstants.WATER_MIN_X,
                 GameConstants.WATER_MAX_Y - GameConstants.WATER_MIN_Y);
+        shapeRenderer.end();
+    }
+
+    /**
+     * Месторождения железа — просто точки на карте (GameConstants
+     * .IRON_DEPOSITS), не препятствие и не игровой объект: юниты через них
+     * свободно ходят, кликом не выделяются. Рисуются в обоих режимах
+     * (обычном и отладочном) одинаково — в отличие от земли/воды, это не
+     * часть "слоя земли", а отдельный, всегда видимый маркер.
+     */
+    private void drawIronDeposits() {
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(IRON_DEPOSIT_COLOR);
+        for (float[] deposit : GameConstants.IRON_DEPOSITS) {
+            shapeRenderer.circle(deposit[0], deposit[1], IRON_DEPOSIT_RADIUS);
+        }
         shapeRenderer.end();
     }
 
@@ -431,6 +475,26 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     /** Панель постройки открытого здания: кнопка "+" (поставить в очередь) и прогресс текущего юнита. */
+    /** Ресурсы своего игрока — всегда на экране во время игры, не только при выбранном здании (в отличие от панели постройки). */
+    private void drawResourcePanel() {
+        shapeRenderer.setProjectionMatrix(hudCamera.combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(Color.valueOf("222222"));
+        shapeRenderer.rect(RESOURCE_PANEL_X, RESOURCE_PANEL_Y, RESOURCE_PANEL_WIDTH, RESOURCE_PANEL_HEIGHT);
+        shapeRenderer.end();
+
+        spriteBatch.setProjectionMatrix(hudCamera.combined);
+        spriteBatch.begin();
+        uiFont.setColor(Color.WHITE);
+        uiFont.draw(spriteBatch, "Iron: " + myIron, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 8f);
+        uiFont.draw(spriteBatch, "Electricity: " + myElectricity, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 26f);
+        spriteBatch.end();
+
+        // Возвращаем world-камеру шейп-рендереру и спрайт-батчу для следующего кадра.
+        shapeRenderer.setProjectionMatrix(camera.combined);
+        spriteBatch.setProjectionMatrix(camera.combined);
+    }
+
     private void drawProductionPanel() {
         Entity building = entityFactory.getEntity(selectedBuildingId);
         if (building == null) {

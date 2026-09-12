@@ -27,6 +27,7 @@ import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PathPoint;
+import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
@@ -77,6 +78,13 @@ public class GameServer {
 
     /** playerId -> unitId их ДОМА (не казармы стрелков!). Нужно, чтобы проверять условие победы. */
     private final Map<Integer, Integer> buildingIdByPlayer = new HashMap<>();
+
+    /**
+     * playerId -> его ресурсы. Авторитетное состояние — пока ничего его не
+     * меняет (нет зданий добычи, см. ResourceType), но хранение и рассылка
+     * клиенту (WorldSnapshot.playerResources) уже готовы для них.
+     */
+    private final Map<Integer, PlayerResources> resourcesByPlayer = new HashMap<>();
 
     private final boolean[] playerSlotUsed = new boolean[GameConstants.MAX_PLAYERS];
 
@@ -181,6 +189,7 @@ public class GameServer {
 
         playerSlotUsed[playerId] = true;
         connectionToPlayer.put(connection.getID(), playerId);
+        resourcesByPlayer.put(playerId, new PlayerResources(playerId));
         spawnBuilding(playerId);
         spawnArcherBuilding(playerId);
 
@@ -207,6 +216,7 @@ public class GameServer {
         });
 
         buildingIdByPlayer.remove(playerId);
+        resourcesByPlayer.remove(playerId);
         playerSlotUsed[playerId] = false;
     }
 
@@ -531,6 +541,7 @@ public class GameServer {
 
             snapshot.units.add(unitSnapshot);
         }
+        snapshot.playerResources.addAll(resourcesByPlayer.values());
         server.sendToAllTCP(snapshot);
     }
 }
