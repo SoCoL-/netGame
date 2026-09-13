@@ -10,6 +10,7 @@ import com.badlogic.gdx.math.MathUtils;
 import ru.socol.supreme.components.SelectedComponent;
 import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.ResourceType;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
@@ -63,6 +64,7 @@ public class RenderSystem extends IteratingSystem {
     private static final Color HQ_STAR_COLOR = Color.GOLD;
     private static final Color ARCHER_ROOF_COLOR = Color.WHITE;
     private static final Color IRON_MINE_MARKER_COLOR = new Color(0.55f, 0.35f, 0.2f, 1f); // тот же ржавый цвет, что у месторождений
+    private static final Color POWER_PLANT_MARKER_COLOR = Color.YELLOW;
     private static final Color UNDER_CONSTRUCTION_COLOR = Color.GRAY;
 
     private static final float HEALTH_BAR_HEIGHT = 4f;
@@ -138,7 +140,12 @@ public class RenderSystem extends IteratingSystem {
                 halfHeight * 2f);
 
         if (EXTRACTOR.has(entity)) {
-            drawIronMineMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
+            ResourceType resourceType = EXTRACTOR.get(entity).resourceType;
+            if (resourceType == ResourceType.ELECTRICITY) {
+                drawPowerPlantMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
+            } else {
+                drawIronMineMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
+            }
         } else {
             // producesUnitType решает, какой символ рисовать — дом и
             // казарма красятся в один и тот же цвет игрока, форма и
@@ -181,6 +188,12 @@ public class RenderSystem extends IteratingSystem {
         shapeRenderer.setColor(IRON_MINE_MARKER_COLOR);
         shapeRenderer.triangle(cx - markerHalf, cy, cx, cy + markerHalf, cx + markerHalf, cy);
         shapeRenderer.triangle(cx - markerHalf, cy, cx, cy - markerHalf, cx + markerHalf, cy);
+    }
+
+    /** Жёлтый кружок — единственное, что отличает электростанцию от дома/казармы (та же форма 2x2, но с этим значком) на глаз. */
+    private void drawPowerPlantMarker(float cx, float cy, float halfSize) {
+        shapeRenderer.setColor(POWER_PLANT_MARKER_COLOR);
+        shapeRenderer.circle(cx, cy, halfSize * 0.5f);
     }
 
     /**

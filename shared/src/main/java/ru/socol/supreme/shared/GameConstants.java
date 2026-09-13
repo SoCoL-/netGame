@@ -100,30 +100,47 @@ public final class GameConstants {
     public static final float PATH_GRID_CELL_SIZE = 50f;
 
     /**
-     * Здание добычи железа — единственное здание в игре, которое ставит
-     * сам игрок (клавиша B), а не сервер автоматически при входе. Не
-     * производит юнитов (нет ProductionComponent) — вместо этого, после
-     * стройки, добывает железо через ResourceExtractorComponent. Квадрат
-     * 1x1 клетка — заметно меньше и дома (2x2), и казармы (1x2), это
-     * маленькая техническая постройка, а не боевое здание.
+     * Здания добычи ресурсов — игрок ставит их сам (клавиша B открывает
+     * меню выбора), а не сервер автоматически при входе. Не производят
+     * юнитов (нет ProductionComponent) — вместо этого, после стройки,
+     * добывают ресурс через ResourceExtractorComponent. Какое именно
+     * здание строится, определяет ResourceType, который несёт с собой
+     * ConstructionComponent всю стройку и ResourceExtractorComponent
+     * после неё — единой Java-константы "тип здания" в игре нет, различие
+     * идёт по этому же enum.
      */
-    public static final float IRON_MINE_HALF_SIZE = PATH_GRID_CELL_SIZE / 2f;
+    public static final float IRON_MINE_HALF_SIZE = PATH_GRID_CELL_SIZE / 2f; // 1x1 клетка — маленькая техническая постройка
 
     public static final int IRON_MINE_MAX_HEALTH = 70;
 
-    /** Секунд на постройку — столько же, сколько уходит на юнита в очереди производства, но это отдельная константа, не UNIT_BUILD_TIME. */
-    public static final float IRON_MINE_BUILD_TIME = 10f;
+    /** Электростанция — 2x2 клетки, как дом, но не производит юнитов, а вырабатывает электричество. */
+    public static final float POWER_PLANT_HALF_SIZE = PATH_GRID_CELL_SIZE;
+
+    public static final int POWER_PLANT_MAX_HEALTH = 90;
+
+    /** Секунд на постройку любого здания добычи — общее время для шахты и электростанции, отдельное от UNIT_BUILD_TIME. */
+    public static final float RESOURCE_BUILDING_BUILD_TIME = 10f;
 
     /**
      * На таком расстоянии от месторождения курсор "прилипает" к нему при
-     * постройке (GameScreen) — сервер использует то же число при проверке
-     * присланного индекса месторождения (GameServer.handlePlaceIronMine),
-     * чтобы не разойтись с тем, что видел игрок на превью.
+     * постройке шахты железа (GameScreen) — сервер использует то же число
+     * при проверке присланного индекса месторождения
+     * (GameServer.handlePlaceIronMine), чтобы не разойтись с тем, что
+     * видел игрок на превью. Электростанция месторождений не имеет и к
+     * ним не привязана — см. BuildingPlacement.canPlacePowerPlant.
      */
     public static final float IRON_MINE_SNAP_RADIUS = 60f;
 
-    /** Единиц железа в секунду с одного действующего здания добычи. Условное число, легко перебалансировать. */
+    /** Единиц железа в секунду с одной действующей шахты. Условное число, легко перебалансировать. */
     public static final float IRON_EXTRACTION_RATE = 1f;
+
+    /** Единиц электричества в секунду с одной действующей электростанции. Тоже условное число. */
+    public static final float ELECTRICITY_GENERATION_RATE = 1f;
+
+    /** Скорость добычи/выработки по типу ресурса — используется ResourceExtractionSystem вместо жёстко зашитой ставки. */
+    public static float extractionRateFor(ResourceType type) {
+        return type == ResourceType.ELECTRICITY ? ELECTRICITY_GENERATION_RATE : IRON_EXTRACTION_RATE;
+    }
 
 
 
@@ -166,11 +183,11 @@ public final class GameConstants {
      * SpatialHashGrid при её создании (GameServer) и радиус запроса к ней
      * же в CollisionSystem. Считать раздельно в двух местах было бы
      * рискованно разъехаться при следующем изменении размера здания.
-     * Учитывает и IRON_MINE_HALF_SIZE явно, а не полагается на то, что
-     * здание добычи случайно меньше дома/казармы.
+     * Учитывает IRON_MINE_HALF_SIZE и POWER_PLANT_HALF_SIZE явно, а не
+     * полагается на то, что здания добычи случайно не крупнее дома/казармы.
      */
     public static float maxBuildingInteractionRadius() {
-        float maxHalfDimension = IRON_MINE_HALF_SIZE;
+        float maxHalfDimension = Math.max(IRON_MINE_HALF_SIZE, POWER_PLANT_HALF_SIZE);
         for (UnitType type : UnitType.values()) {
             maxHalfDimension = Math.max(maxHalfDimension, buildingHalfWidthFor(type));
             maxHalfDimension = Math.max(maxHalfDimension, buildingHalfHeightFor(type));

@@ -6,6 +6,7 @@ import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
+import ru.socol.supreme.shared.network.messages.PlacePowerPlantRequest;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
 
 /** Разбирает входящие сетевые сообщения и передаёт их нужному обработчику GameServer. */
@@ -29,6 +30,8 @@ public class ServerNetworkListener extends Listener {
             gameServer.handleAttackUnit(connection, (AttackUnitRequest) object);
         } else if (object instanceof PlaceIronMineRequest) {
             gameServer.handlePlaceIronMine(connection, (PlaceIronMineRequest) object);
+        } else if (object instanceof PlacePowerPlantRequest) {
+            gameServer.handlePlacePowerPlant(connection, (PlacePowerPlantRequest) object);
         }
     }
 

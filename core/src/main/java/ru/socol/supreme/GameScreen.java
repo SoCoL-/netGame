@@ -16,8 +16,10 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
+import ru.socol.supreme.shared.BuildingPlacement;
 import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.ResourceType;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.components.DebugPathComponent;
 import ru.socol.supreme.components.SelectedComponent;
@@ -82,6 +84,17 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float RESOURCE_PANEL_Y = 550f;
     private static final float RESOURCE_PANEL_WIDTH = 220f;
     private static final float RESOURCE_PANEL_HEIGHT = 40f;
+
+    // Меню "что строить" по клавише B — фиксированная позиция ближе к
+    // центру экрана, чтобы не пересекаться ни с панелью ресурсов (сверху
+    // слева), ни с панелью постройки (снизу слева).
+    private static final float BUILD_MENU_X = 300f;
+    private static final float BUILD_MENU_Y = 250f;
+    private static final float BUILD_MENU_WIDTH = 200f;
+    private static final float BUILD_MENU_HEIGHT = 100f;
+    private static final float BUILD_MENU_BUTTON_HEIGHT = 32f;
+    private static final float BUILD_MENU_IRON_BUTTON_Y = BUILD_MENU_Y + 58f;
+    private static final float BUILD_MENU_POWER_BUTTON_Y = BUILD_MENU_Y + 10f;
 
     // Панель постройки — экранные (HUD) координаты, не мировые, см. hudCamera.
     private static final float PANEL_X = 20f;
@@ -149,16 +162,21 @@ public class GameScreen extends InputAdapter implements Screen {
     // сеткой клеток поиска пути и рисует маршруты движущихся юнитов.
     private boolean debugMode = false;
 
-    // Режим постройки здания добычи железа — переключается клавишей B (см.
-    // keyDown). Пока true, ЛКМ не выделяет юнитов/здания, а подтверждает
-    // постройку — см. touchDown. Превью считается каждый кадр в render()
-    // (обычный опрос текущей позиции курсора, без отдельного mouseMoved).
-    private boolean placingIronMine = false;
-    private float ironMineGhostX;
-    private float ironMineGhostY;
-    // -1, если курсор сейчас не "прилип" ни к одному месторождению —
-    // тогда превью просто следует за курсором без права подтвердить клик.
+    // Клавиша B (см. keyDown) открывает меню "что строить" — showBuildMenu.
+    // Выбор в меню переводит в режим постройки конкретного здания —
+    // placingBuildingType (null = не строим ничего). Пока идёт постройка,
+    // ЛКМ не выделяет юнитов/здания, а подтверждает — см. touchDown.
+    // Превью считается каждый кадр в render() (обычный опрос текущей
+    // позиции курсора, без отдельного mouseMoved).
+    private boolean showBuildMenu = false;
+    private ResourceType placingBuildingType = null;
+    private float buildGhostX;
+    private float buildGhostY;
+    // Актуально только пока placingBuildingType == IRON — индекс месторождения,
+    // к которому "прилип" курсор, или -1, если ни к одному. У электростанции
+    // своей привязки к точке нет — там валидность решает buildGhostValid.
     private int ironMineSnapDepositIndex = -1;
+    private boolean buildGhostValid = false;
 
     // Свои ресурсы — обновляются из каждого снапшота (см. onWorldSnapshot).
     // Ресурсов противника здесь нет: сервер их присылает (fog of war для
@@ -328,9 +346,11 @@ public class GameScreen extends InputAdapter implements Screen {
             font.setColor(Color.LIGHT_GRAY);
             drawCenteredText(connectionStatusText);
         } else {
-            if (placingIronMine) {
-                updateIronMineGhost();
-                drawIronMineGhost();
+            if (placingBuildingType != null) {
+                updateBuildGhost();
+                drawBuildGhost();
+            } else if (showBuildMenu) {
+                drawBuildMenu();
             }
             drawResourcePanel(); // всегда видна во время игры, не только когда выбрано здание
             if (selectedBuildingId != null) {
@@ -381,44 +401,88 @@ public class GameScreen extends InputAdapter implements Screen {
      * Считается каждый кадр опросом текущего положения курсора
      * (Gdx.input.getX/getY), а не отдельным обработчиком mouseMoved —
      * превью должно двигаться, даже если мышь просто лежит неподвижно
-     * (например, сразу после входа в режим постройки клавишей B).
-     * "Прилипает" к ближайшему месторождению в радиусе
-     * IRON_MINE_SNAP_RADIUS; вне радиуса — просто следует за курсором,
-     * но подтвердить постройку в этом состоянии нельзя (см. touchDown).
+     * (например, сразу после выбора здания в меню). Логика зависит от
+     * того, что строим: шахта "прилипает" к ближайшему месторождению в
+     * радиусе IRON_MINE_SNAP_RADIUS, электростанция свободно следует за
+     * курсором, но валидна только там, где реально можно строить (см.
+     * BuildingPlacement — та же проверка, что и на сервере).
      */
-    private void updateIronMineGhost() {
+    private void updateBuildGhost() {
         Vector3 cursorWorld = camera.unproject(new Vector3(Gdx.input.getX(), Gdx.input.getY(), 0));
 
-        ironMineSnapDepositIndex = -1;
-        float closestDistanceSq = GameConstants.IRON_MINE_SNAP_RADIUS * GameConstants.IRON_MINE_SNAP_RADIUS;
+        if (placingBuildingType == ResourceType.IRON) {
+            ironMineSnapDepositIndex = -1;
+            float closestDistanceSq = GameConstants.IRON_MINE_SNAP_RADIUS * GameConstants.IRON_MINE_SNAP_RADIUS;
 
-        for (int i = 0; i < GameConstants.IRON_DEPOSITS.length; i++) {
-            float[] deposit = GameConstants.IRON_DEPOSITS[i];
-            float dx = cursorWorld.x - deposit[0];
-            float dy = cursorWorld.y - deposit[1];
-            float distanceSq = dx * dx + dy * dy;
-            if (distanceSq <= closestDistanceSq) {
-                closestDistanceSq = distanceSq;
-                ironMineSnapDepositIndex = i;
+            for (int i = 0; i < GameConstants.IRON_DEPOSITS.length; i++) {
+                float[] deposit = GameConstants.IRON_DEPOSITS[i];
+                float dx = cursorWorld.x - deposit[0];
+                float dy = cursorWorld.y - deposit[1];
+                float distanceSq = dx * dx + dy * dy;
+                if (distanceSq <= closestDistanceSq) {
+                    closestDistanceSq = distanceSq;
+                    ironMineSnapDepositIndex = i;
+                }
             }
-        }
 
-        if (ironMineSnapDepositIndex >= 0) {
-            ironMineGhostX = GameConstants.IRON_DEPOSITS[ironMineSnapDepositIndex][0];
-            ironMineGhostY = GameConstants.IRON_DEPOSITS[ironMineSnapDepositIndex][1];
+            if (ironMineSnapDepositIndex >= 0) {
+                buildGhostX = GameConstants.IRON_DEPOSITS[ironMineSnapDepositIndex][0];
+                buildGhostY = GameConstants.IRON_DEPOSITS[ironMineSnapDepositIndex][1];
+            } else {
+                buildGhostX = cursorWorld.x;
+                buildGhostY = cursorWorld.y;
+            }
+            buildGhostValid = ironMineSnapDepositIndex >= 0;
         } else {
-            ironMineGhostX = cursorWorld.x;
-            ironMineGhostY = cursorWorld.y;
+            // Электростанция — свободное размещение, не привязана к точке.
+            buildGhostX = cursorWorld.x;
+            buildGhostY = cursorWorld.y;
+            buildGhostValid = BuildingPlacement.canPlacePowerPlant(engine.getEntities(), buildGhostX, buildGhostY);
         }
     }
 
-    /** Зелёный — курсор прилип к свободному по мнению клиента месторождению, можно подтвердить кликом; красный — нет. */
-    private void drawIronMineGhost() {
+    /** Зелёный — можно подтвердить кликом; красный — сейчас нельзя (см. updateBuildGhost, разная логика по типу здания). */
+    private void drawBuildGhost() {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(ironMineSnapDepositIndex >= 0 ? IRON_MINE_GHOST_VALID_COLOR : IRON_MINE_GHOST_INVALID_COLOR);
-        float half = GameConstants.IRON_MINE_HALF_SIZE;
-        shapeRenderer.rect(ironMineGhostX - half, ironMineGhostY - half, half * 2f, half * 2f);
+        shapeRenderer.setColor(buildGhostValid ? IRON_MINE_GHOST_VALID_COLOR : IRON_MINE_GHOST_INVALID_COLOR);
+        float half = placingBuildingType == ResourceType.IRON ? GameConstants.IRON_MINE_HALF_SIZE : GameConstants.POWER_PLANT_HALF_SIZE;
+        shapeRenderer.rect(buildGhostX - half, buildGhostY - half, half * 2f, half * 2f);
         shapeRenderer.end();
+    }
+
+    /** Меню "что строить" — открыто клавишей B, пока не выбран конкретный тип здания (см. keyDown/touchDown). */
+    private void drawBuildMenu() {
+        shapeRenderer.setProjectionMatrix(hudCamera.combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+
+        shapeRenderer.setColor(Color.valueOf("222222"));
+        shapeRenderer.rect(BUILD_MENU_X, BUILD_MENU_Y, BUILD_MENU_WIDTH, BUILD_MENU_HEIGHT);
+
+        shapeRenderer.setColor(Color.LIGHT_GRAY);
+        shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_IRON_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
+        shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_POWER_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
+
+        shapeRenderer.end();
+
+        spriteBatch.setProjectionMatrix(hudCamera.combined);
+        spriteBatch.begin();
+        uiFont.setColor(Color.BLACK);
+        uiFont.draw(spriteBatch, "Iron mine", BUILD_MENU_X + 25f, BUILD_MENU_IRON_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
+        uiFont.draw(spriteBatch, "Power plant", BUILD_MENU_X + 25f, BUILD_MENU_POWER_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
+        spriteBatch.end();
+
+        shapeRenderer.setProjectionMatrix(camera.combined);
+        spriteBatch.setProjectionMatrix(camera.combined);
+    }
+
+    private boolean isInsideIronMineButton(float hudX, float hudY) {
+        return hudX >= BUILD_MENU_X + 10f && hudX <= BUILD_MENU_X + BUILD_MENU_WIDTH - 10f
+                && hudY >= BUILD_MENU_IRON_BUTTON_Y && hudY <= BUILD_MENU_IRON_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT;
+    }
+
+    private boolean isInsidePowerPlantButton(float hudX, float hudY) {
+        return hudX >= BUILD_MENU_X + 10f && hudX <= BUILD_MENU_X + BUILD_MENU_WIDTH - 10f
+                && hudY >= BUILD_MENU_POWER_BUTTON_Y && hudY <= BUILD_MENU_POWER_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT;
     }
 
     /**
@@ -613,13 +677,30 @@ public class GameScreen extends InputAdapter implements Screen {
             return true;
         }
 
-        if (placingIronMine) {
-            if (button == Input.Buttons.LEFT && ironMineSnapDepositIndex >= 0) {
-                client.requestPlaceIronMine(ironMineSnapDepositIndex);
-                placingIronMine = false;
+        if (placingBuildingType != null) {
+            if (button == Input.Buttons.LEFT && buildGhostValid) {
+                if (placingBuildingType == ResourceType.IRON) {
+                    client.requestPlaceIronMine(ironMineSnapDepositIndex);
+                } else {
+                    client.requestPlacePowerPlant(buildGhostX, buildGhostY);
+                }
+                placingBuildingType = null;
             }
-            // Клик поглощён режимом постройки целиком — ни выделение, ни
+            // Клик поглощён размещением здания целиком — ни выделение, ни
             // рамка, ни приказ на движение в этом режиме не должны сработать.
+            return true;
+        }
+
+        if (showBuildMenu) {
+            if (button == Input.Buttons.LEFT) {
+                Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
+                if (isInsideIronMineButton(hudPoint.x, hudPoint.y)) {
+                    placingBuildingType = ResourceType.IRON;
+                } else if (isInsidePowerPlantButton(hudPoint.x, hudPoint.y)) {
+                    placingBuildingType = ResourceType.ELECTRICITY;
+                }
+            }
+            showBuildMenu = false; // клик куда угодно — по кнопке или мимо — закрывает меню
             return true;
         }
 
@@ -688,9 +769,13 @@ public class GameScreen extends InputAdapter implements Screen {
             if (gameOverText != null || connectionStatusText != null) {
                 return true; // нечего строить до/после игры
             }
-            placingIronMine = !placingIronMine;
-            if (placingIronMine) {
-                // Режим постройки — не режим выделения: закрываем всё, что
+            if (placingBuildingType != null) {
+                placingBuildingType = null; // уже строим что-то конкретное — B отменяет
+                return true;
+            }
+            showBuildMenu = !showBuildMenu;
+            if (showBuildMenu) {
+                // Меню постройки — не режим выделения: закрываем всё, что
                 // может быть открыто, как и при других переключениях контекста.
                 setSelection(Collections.emptySet());
                 selectedBuildingId = null;

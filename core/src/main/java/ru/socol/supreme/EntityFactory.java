@@ -69,7 +69,7 @@ public class EntityFactory {
                 // producesUnitType не меняется у здания после создания — обновлять не нужно.
             }
 
-            updateIronMineState(entity, snapshot);
+            updateResourceBuildingState(entity, snapshot);
 
             InterpolationComponent interpolation = entity.getComponent(InterpolationComponent.class);
             if (interpolation != null) {
@@ -128,8 +128,8 @@ public class EntityFactory {
         if (snapshot.building) {
             entity.add(new BuildingComponent());
 
-            if (snapshot.ironMine) {
-                addIronMineComponent(entity, snapshot);
+            if (snapshot.resourceBuilding) {
+                addResourceBuildingComponent(entity, snapshot);
             } else {
                 UnitType type = UnitType.values()[snapshot.unitType];
                 ProductionComponent production = new ProductionComponent();
@@ -159,39 +159,41 @@ public class EntityFactory {
     }
 
     /**
-     * Здание добычи железа не имеет ProductionComponent вовсе (не
-     * производит юнитов) — вместо него на клиенте, как и на сервере,
-     * либо ConstructionComponent (ещё строится), либо
-     * ResourceExtractorComponent (уже добывает). RenderSystem по
-     * наличию одного из них решает, как рисовать (см. BuildingSizes —
-     * та же логика решает и размер).
+     * Здание добычи ресурса (шахта железа или электростанция) не имеет
+     * ProductionComponent вовсе (не производит юнитов) — вместо него на
+     * клиенте, как и на сервере, либо ConstructionComponent (ещё
+     * строится), либо ResourceExtractorComponent (уже добывает). Какое
+     * именно это здание — решает snapshot.resourceType, а не отдельный
+     * флаг. RenderSystem по наличию одного из компонентов решает, как
+     * рисовать (см. BuildingSizes — та же логика решает и размер).
      */
-    private void addIronMineComponent(Entity entity, UnitSnapshot snapshot) {
+    private void addResourceBuildingComponent(Entity entity, UnitSnapshot snapshot) {
+        ResourceType resourceType = ResourceType.values()[snapshot.resourceType];
         if (snapshot.underConstruction) {
-            entity.add(constructionComponentFor(snapshot.constructionProgress));
+            entity.add(constructionComponentFor(snapshot.constructionProgress, resourceType));
         } else {
-            entity.add(new ResourceExtractorComponent(ResourceType.IRON));
+            entity.add(new ResourceExtractorComponent(resourceType));
         }
     }
 
     /** Меняет то, какой из двух компонентов стоит на здании добычи, когда стройка на сервере завершается между снапшотами. */
-    private void updateIronMineState(Entity entity, UnitSnapshot snapshot) {
-        if (!snapshot.ironMine) {
+    private void updateResourceBuildingState(Entity entity, UnitSnapshot snapshot) {
+        if (!snapshot.resourceBuilding) {
             return;
         }
 
-        boolean hasConstruction = entity.getComponent(ConstructionComponent.class) != null;
+        ResourceType resourceType = ResourceType.values()[snapshot.resourceType];
+        ConstructionComponent construction = entity.getComponent(ConstructionComponent.class);
         if (snapshot.underConstruction) {
-            if (hasConstruction) {
-                entity.getComponent(ConstructionComponent.class).remaining =
-                        (1f - snapshot.constructionProgress) * GameConstants.IRON_MINE_BUILD_TIME;
+            if (construction != null) {
+                construction.remaining = (1f - snapshot.constructionProgress) * GameConstants.RESOURCE_BUILDING_BUILD_TIME;
             } else {
-                entity.add(constructionComponentFor(snapshot.constructionProgress));
+                entity.add(constructionComponentFor(snapshot.constructionProgress, resourceType));
             }
-        } else if (hasConstruction) {
+        } else if (construction != null) {
             // Стройка завершилась между снапшотами — снимаем "стройку", ставим "добычу".
             entity.remove(ConstructionComponent.class);
-            entity.add(new ResourceExtractorComponent(ResourceType.IRON));
+            entity.add(new ResourceExtractorComponent(resourceType));
         }
     }
 
@@ -202,9 +204,9 @@ public class EntityFactory {
      * RenderSystem считает долю той же формулой (1 - remaining/totalTime),
      * что и сервер, поэтому этого достаточно для одинакового прогресс-бара.
      */
-    private ConstructionComponent constructionComponentFor(float progressFraction) {
-        ConstructionComponent construction = new ConstructionComponent(GameConstants.IRON_MINE_BUILD_TIME);
-        construction.remaining = (1f - progressFraction) * GameConstants.IRON_MINE_BUILD_TIME;
+    private ConstructionComponent constructionComponentFor(float progressFraction, ResourceType resourceType) {
+        ConstructionComponent construction = new ConstructionComponent(GameConstants.RESOURCE_BUILDING_BUILD_TIME, resourceType);
+        construction.remaining = (1f - progressFraction) * GameConstants.RESOURCE_BUILDING_BUILD_TIME;
         return construction;
     }
 }

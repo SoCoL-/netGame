@@ -6,6 +6,7 @@ import com.badlogic.ashley.core.PooledEngine;
 import com.badlogic.gdx.math.Vector2;
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Server;
+import ru.socol.supreme.shared.BuildingPlacement;
 import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.ResourceType;
@@ -32,6 +33,7 @@ import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PathPoint;
 import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
+import ru.socol.supreme.shared.network.messages.PlacePowerPlantRequest;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
@@ -368,10 +370,10 @@ public class GameServer {
     }
 
     /**
-     * Здание добычи железа — единственное здание, которое ставит сам
-     * игрок, а не сервер автоматически при входе. Клиент уже проверил,
-     * что курсор был "прилипшим" к месторождению (см. GameScreen), но
-     * решение всегда за сервером: индекс в границах и место ещё не занято.
+     * Шахта железа — встаёт только на месторождение (индекс в
+     * GameConstants.IRON_DEPOSITS). Клиент уже проверил, что курсор был
+     * "прилипшим" к месторождению (см. GameScreen), но решение всегда за
+     * сервером: индекс в границах и место ещё не занято.
      */
     synchronized void handlePlaceIronMine(Connection connection, PlaceIronMineRequest request) {
         if (gameOver) {
@@ -393,7 +395,31 @@ public class GameServer {
         }
 
         float[] deposit = GameConstants.IRON_DEPOSITS[request.depositIndex];
-        spawnIronMine(playerId, deposit[0], deposit[1]);
+        spawnResourceBuilding(playerId, deposit[0], deposit[1], ResourceType.IRON, GameConstants.IRON_MINE_MAX_HEALTH);
+    }
+
+    /**
+     * Электростанция — в отличие от шахты, не привязана к фиксированной
+     * точке: игрок сам выбирает, где строить, поэтому шлёт координаты, а
+     * не индекс. Проверка размещения (границы карты, вода, юниты, другие
+     * здания) — общая с клиентским превью, см. BuildingPlacement.
+     */
+    synchronized void handlePlacePowerPlant(Connection connection, PlacePowerPlantRequest request) {
+        if (gameOver) {
+            return;
+        }
+
+        Integer playerId = connectionToPlayer.get(connection.getID());
+        if (playerId == null) {
+            return;
+        }
+
+        if (!BuildingPlacement.canPlacePowerPlant(unitsById.values(), request.x, request.y)) {
+            server.sendToTCP(connection.getID(), new ErrorResponse("Cannot place power plant there"));
+            return;
+        }
+
+        spawnResourceBuilding(playerId, request.x, request.y, ResourceType.ELECTRICITY, GameConstants.POWER_PLANT_MAX_HEALTH);
     }
 
     /** Занято ли месторождение — ищем среди unitsById здание добычи (строящееся или уже готовое) точно в этой точке. */
@@ -414,8 +440,8 @@ public class GameServer {
         return false;
     }
 
-    /** Создаёт здание добычи железа в процессе стройки — ConstructionSystem доведёт его до рабочего состояния сама. */
-    private void spawnIronMine(int playerId, float x, float y) {
+    /** Создаёт здание добычи (шахту или электростанцию) в процессе стройки — ConstructionSystem доведёт его до рабочего состояния сама. */
+    private void spawnResourceBuilding(int playerId, float x, float y, ResourceType resourceType, int maxHealth) {
         Entity building = engine.createEntity();
 
         PositionComponent position = engine.createComponent(PositionComponent.class);
@@ -429,14 +455,15 @@ public class GameServer {
         owner.playerId = playerId;
 
         HealthComponent health = engine.createComponent(HealthComponent.class);
-        health.maxHealth = GameConstants.IRON_MINE_MAX_HEALTH;
-        health.currentHealth = GameConstants.IRON_MINE_MAX_HEALTH;
+        health.maxHealth = maxHealth;
+        health.currentHealth = maxHealth;
 
         BuildingComponent buildingMarker = engine.createComponent(BuildingComponent.class);
 
         ConstructionComponent construction = engine.createComponent(ConstructionComponent.class);
-        construction.totalTime = GameConstants.IRON_MINE_BUILD_TIME;
-        construction.remaining = GameConstants.IRON_MINE_BUILD_TIME;
+        construction.totalTime = GameConstants.RESOURCE_BUILDING_BUILD_TIME;
+        construction.remaining = GameConstants.RESOURCE_BUILDING_BUILD_TIME;
+        construction.resourceType = resourceType;
 
         // Намеренно без ProductionComponent — это здание не производит
         // юнитов; без DirectionComponent — не двигается, как и все здания.
@@ -619,11 +646,13 @@ public class GameServer {
             ConstructionComponent construction = unit.getComponent(ConstructionComponent.class);
             ResourceExtractorComponent extractor = unit.getComponent(ResourceExtractorComponent.class);
             if (construction != null) {
-                unitSnapshot.ironMine = true;
+                unitSnapshot.resourceBuilding = true;
+                unitSnapshot.resourceType = construction.resourceType.ordinal();
                 unitSnapshot.underConstruction = true;
                 unitSnapshot.constructionProgress = 1f - construction.remaining / construction.totalTime;
             } else if (extractor != null) {
-                unitSnapshot.ironMine = true;
+                unitSnapshot.resourceBuilding = true;
+                unitSnapshot.resourceType = extractor.resourceType.ordinal();
                 unitSnapshot.underConstruction = false;
             }
 

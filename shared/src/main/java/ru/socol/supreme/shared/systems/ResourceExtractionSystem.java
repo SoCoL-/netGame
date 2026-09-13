@@ -14,11 +14,10 @@ import java.util.Map;
 /**
  * Для каждого достроенного здания добычи (ResourceExtractorComponent —
  * добавляет ConstructionSystem по завершении постройки) копит дробный
- * прогресс на GameConstants.IRON_EXTRACTION_RATE в секунду и, набрав
- * целую единицу, зачисляет её владельцу здания в PlayerResources. Пока в
- * игре только железо (ResourceType.IRON) — при добавлении второго
- * добываемого ресурса (электричество, электростанция) переключение по
- * resourceType здесь нужно будет обобщить, сейчас обобщать нечего.
+ * прогресс на скорости, зависящей от resourceType здания
+ * (GameConstants.extractionRateFor), и, набрав целую единицу, зачисляет
+ * её владельцу здания в PlayerResources — того же типа ресурса, что и у
+ * самого здания.
  *
  * Приоритет 3 — после ConstructionSystem (2), до MovementSystem (10).
  *
@@ -50,7 +49,7 @@ public class ResourceExtractionSystem extends IteratingSystem {
             return; // игрок уже отключился — просто ничего не зачисляем, здание скоро уберут вместе с его сущностями
         }
 
-        extractor.progress += deltaTime * GameConstants.IRON_EXTRACTION_RATE;
+        extractor.progress += deltaTime * GameConstants.extractionRateFor(extractor.resourceType);
         while (extractor.progress >= 1f) {
             extractor.progress -= 1f;
             switch (extractor.resourceType) {

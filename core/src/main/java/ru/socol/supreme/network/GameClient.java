@@ -14,6 +14,7 @@ import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
+import ru.socol.supreme.shared.network.messages.PlacePowerPlantRequest;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
@@ -123,6 +124,13 @@ public class GameClient implements Disposable {
     public void requestPlaceIronMine(int depositIndex) {
         PlaceIronMineRequest request = new PlaceIronMineRequest();
         request.depositIndex = depositIndex;
+        client.sendTCP(request);
+    }
+
+    public void requestPlacePowerPlant(float x, float y) {
+        PlacePowerPlantRequest request = new PlacePowerPlantRequest();
+        request.x = x;
+        request.y = y;
         client.sendTCP(request);
     }
 

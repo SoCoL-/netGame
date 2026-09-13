@@ -10,18 +10,15 @@ import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.ResourceExtractorComponent;
 
 /**
- * Продвигает постройку зданий, поставленных игроком (сейчас — только
- * здание добычи железа, см. GameServer.handlePlaceIronMine): пока у
- * здания есть ConstructionComponent, оно просто существует и ничего не
- * делает — RenderSystem на клиенте рисует его как стройку. По достижении
- * remaining <= 0 компонент снимается и добавляется тот, что делает
- * здание функциональным.
- *
- * Единственный вид постройки сейчас — здание добычи, поэтому что именно
- * добавлять по завершении, решено простым присваиванием, а не фабрикой
- * (как ProductionSystem.UnitFactory для юнитов). Если появится второй
- * constructible-тип здания (например, электростанция), этот switch стоит
- * обобщить — сейчас обобщать было бы преждевременно, обобщать нечего.
+ * Продвигает постройку зданий, поставленных игроком (сейчас — шахта
+ * железа и электростанция, см. GameServer.handlePlaceIronMine /
+ * handlePlacePowerPlant): пока у здания есть ConstructionComponent, оно
+ * просто существует и ничего не делает — RenderSystem на клиенте рисует
+ * его как стройку. По достижении remaining <= 0 компонент снимается и
+ * добавляется ResourceExtractorComponent с тем же resourceType, что нёс
+ * ConstructionComponent — какое именно здание строилось, решает не эта
+ * система, а то, что записали в ConstructionComponent при постройке;
+ * здесь достаточно просто перенести значение.
  *
  * Приоритет 2 — после ProductionSystem (1), до MovementSystem (10); не
  * взаимодействует с движением напрямую, точный порядок не критичен.
@@ -55,10 +52,11 @@ public class ConstructionSystem extends IteratingSystem {
             return;
         }
 
+        ResourceType resourceType = construction.resourceType;
         entity.remove(ConstructionComponent.class);
 
         ResourceExtractorComponent extractor = engine.createComponent(ResourceExtractorComponent.class);
-        extractor.resourceType = ResourceType.IRON;
+        extractor.resourceType = resourceType;
         extractor.progress = 0f;
         entity.add(extractor);
     }
