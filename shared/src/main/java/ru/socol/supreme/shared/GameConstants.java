@@ -96,6 +96,9 @@ public final class GameConstants {
             {1500f, 1800f}, {1800f, 1500f}, // игрок 1
     };
 
+    /** Размер клетки сетки для поиска пути (Pathfinding) — 2000/50 = 40x40 клеток. */
+    public static final float PATH_GRID_CELL_SIZE = 50f;
+
     /**
      * Здание добычи железа — единственное здание в игре, которое ставит
      * сам игрок (клавиша B), а не сервер автоматически при входе. Не
@@ -122,8 +125,7 @@ public final class GameConstants {
     /** Единиц железа в секунду с одного действующего здания добычи. Условное число, легко перебалансировать. */
     public static final float IRON_EXTRACTION_RATE = 1f;
 
-    /** Размер клетки сетки для поиска пути (Pathfinding) — 2000/50 = 40x40 клеток. */
-    public static final float PATH_GRID_CELL_SIZE = 50f;
+
 
     /**
      * Отступ от края карты, где спавнится дом игрока (в противоположных
