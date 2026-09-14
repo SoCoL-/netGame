@@ -4,7 +4,8 @@ import com.badlogic.ashley.core.ComponentMapper;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
-import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.BuildingDefinitions;
+import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.ResourceExtractorComponent;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
@@ -14,10 +15,11 @@ import java.util.Map;
 /**
  * Для каждого достроенного здания добычи (ResourceExtractorComponent —
  * добавляет ConstructionSystem по завершении постройки) копит дробный
- * прогресс на скорости, зависящей от resourceType здания
- * (GameConstants.extractionRateFor), и, набрав целую единицу, зачисляет
- * её владельцу здания в PlayerResources — того же типа ресурса, что и у
- * самого здания.
+ * прогресс на скорости конкретно ЭТОГО здания
+ * (BuildingDefinitions.extractionRateFor(BuildingComponent.type) — не по
+ * абстрактному типу ресурса, а по типу самого здания, buildings.json) и,
+ * набрав целую единицу, зачисляет её владельцу здания в PlayerResources —
+ * того же типа ресурса, что и у самого здания.
  *
  * Приоритет 3 — после ConstructionSystem (2), до MovementSystem (10).
  *
@@ -30,12 +32,14 @@ public class ResourceExtractionSystem extends IteratingSystem {
             ComponentMapper.getFor(OwnerComponent.class);
     private static final ComponentMapper<ResourceExtractorComponent> EXTRACTOR =
             ComponentMapper.getFor(ResourceExtractorComponent.class);
+    private static final ComponentMapper<BuildingComponent> BUILDING =
+            ComponentMapper.getFor(BuildingComponent.class);
 
     /** Тот же реестр playerId -> PlayerResources, что и в GameServer — передаётся по ссылке, не копируется. */
     private final Map<Integer, PlayerResources> resourcesByPlayer;
 
     public ResourceExtractionSystem(Map<Integer, PlayerResources> resourcesByPlayer) {
-        super(Family.all(ResourceExtractorComponent.class, OwnerComponent.class).get(), 3);
+        super(Family.all(ResourceExtractorComponent.class, OwnerComponent.class, BuildingComponent.class).get(), 3);
         this.resourcesByPlayer = resourcesByPlayer;
     }
 
@@ -49,7 +53,8 @@ public class ResourceExtractionSystem extends IteratingSystem {
             return; // игрок уже отключился — просто ничего не зачисляем, здание скоро уберут вместе с его сущностями
         }
 
-        extractor.progress += deltaTime * GameConstants.extractionRateFor(extractor.resourceType);
+        float rate = BuildingDefinitions.extractionRateFor(BUILDING.get(entity).type);
+        extractor.progress += deltaTime * rate;
         while (extractor.progress >= 1f) {
             extractor.progress -= 1f;
             switch (extractor.resourceType) {

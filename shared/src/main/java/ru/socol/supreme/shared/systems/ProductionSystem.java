@@ -5,6 +5,8 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.math.Vector2;
+import ru.socol.supreme.shared.BuildingDefinitions;
+import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.BuildingComponent;
@@ -43,6 +45,8 @@ public class ProductionSystem extends IteratingSystem {
             ComponentMapper.getFor(OwnerComponent.class);
     private static final ComponentMapper<ProductionComponent> PRODUCTION =
             ComponentMapper.getFor(ProductionComponent.class);
+    private static final ComponentMapper<BuildingComponent> BUILDING =
+            ComponentMapper.getFor(BuildingComponent.class);
 
     private final Map<Integer, Entity> unitsById;
     private final UnitFactory unitFactory;
@@ -72,7 +76,7 @@ public class ProductionSystem extends IteratingSystem {
 
         PositionComponent position = POSITION.get(entity);
         OwnerComponent owner = OWNER.get(entity);
-        Vector2 spawnPoint = computeSpawnPoint(position.position, production.producesUnitType);
+        Vector2 spawnPoint = computeSpawnPoint(position.position, BUILDING.get(entity).type);
         unitFactory.createUnit(owner.playerId, spawnPoint.x, spawnPoint.y, production.producesUnitType);
 
         production.queuedCount--;
@@ -80,10 +84,10 @@ public class ProductionSystem extends IteratingSystem {
     }
 
     /** Точка появления готового юнита — чуть в стороне от здания, по направлению к центру карты. */
-    private Vector2 computeSpawnPoint(Vector2 buildingPosition, UnitType producesType) {
+    private Vector2 computeSpawnPoint(Vector2 buildingPosition, BuildingType buildingType) {
         Vector2 towardCenter = new Vector2(GameConstants.MAP_WIDTH / 2f, GameConstants.MAP_HEIGHT / 2f)
                 .sub(buildingPosition)
                 .nor();
-        return new Vector2(buildingPosition).mulAdd(towardCenter, GameConstants.productionSpawnDistanceFor(producesType));
+        return new Vector2(buildingPosition).mulAdd(towardCenter, BuildingDefinitions.productionSpawnDistanceFor(buildingType));
     }
 }

@@ -1,0 +1,39 @@
+[
+  {
+    "type": "HOME",
+    "halfWidth": 50,
+    "halfHeight": 50,
+    "maxHealth": 500,
+    "buildTime": 0,
+    "producesUnitType": "WARRIOR",
+    "spawnMargin": 200
+  },
+  {
+    "type": "ARCHER_BARRACKS",
+    "halfWidth": 25,
+    "halfHeight": 50,
+    "maxHealth": 70,
+    "buildTime": 0,
+    "producesUnitType": "ARCHER",
+    "offsetFromHome": 175
+  },
+  {
+    "type": "IRON_MINE",
+    "halfWidth": 25,
+    "halfHeight": 25,
+    "maxHealth": 70,
+    "buildTime": 10,
+    "resourceType": "IRON",
+    "extractionRate": 1,
+    "snapRadius": 60
+  },
+  {
+    "type": "POWER_PLANT",
+    "halfWidth": 50,
+    "halfHeight": 50,
+    "maxHealth": 90,
+    "buildTime": 10,
+    "resourceType": "ELECTRICITY",
+    "extractionRate": 1
+  }
+]

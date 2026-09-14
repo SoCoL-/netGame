@@ -3,6 +3,8 @@ package ru.socol.supreme;
 import com.badlogic.ashley.core.Engine;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.gdx.math.Vector2;
+import ru.socol.supreme.shared.BuildingDefinitions;
+import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.ResourceType;
 import ru.socol.supreme.shared.UnitType;
@@ -36,6 +38,11 @@ import java.util.Set;
  * Фактическое движение к этой цели каждый кадр делает InterpolationSystem.
  * Здания неподвижны, поэтому InterpolationComponent им вообще не выдаётся —
  * их позиция один раз выставляется при создании и больше не трогается.
+ *
+ * Какие компоненты повесить на здание, решает не сам снапшот напрямую, а
+ * BuildingDefinitions по snapshot.buildingType — те же данные из
+ * buildings.json, что использует и сервер (см. её javadoc про то, почему
+ * это теперь важно и клиенту, не только серверу).
  */
 public class EntityFactory {
 
@@ -69,7 +76,9 @@ public class EntityFactory {
                 // producesUnitType не меняется у здания после создания — обновлять не нужно.
             }
 
-            updateResourceBuildingState(entity, snapshot);
+            if (snapshot.building) {
+                updateBuildingConstructionState(entity, snapshot);
+            }
 
             InterpolationComponent interpolation = entity.getComponent(InterpolationComponent.class);
             if (interpolation != null) {
@@ -118,26 +127,16 @@ public class EntityFactory {
         entity.add(new OwnerComponent(snapshot.ownerId));
 
         // maxHealth приходит с сервера явно (а не выводится из snapshot.building
-        // локально) — теперь, когда у зданий бывает разный максимум (дом 500,
-        // казарма стрелков 70, здание добычи 70), угадывать его на клиенте
-        // было бы неверно.
+        // локально) — у зданий разный максимум по типу (BuildingDefinitions
+        // .maxHealthFor), угадывать его на клиенте было бы неверно.
         HealthComponent health = new HealthComponent(snapshot.maxHealth);
         health.currentHealth = snapshot.health;
         entity.add(health);
 
         if (snapshot.building) {
-            entity.add(new BuildingComponent());
-
-            if (snapshot.resourceBuilding) {
-                addResourceBuildingComponent(entity, snapshot);
-            } else {
-                UnitType type = UnitType.values()[snapshot.unitType];
-                ProductionComponent production = new ProductionComponent();
-                production.queuedCount = snapshot.queuedCount;
-                production.progress = snapshot.buildProgress;
-                production.producesUnitType = type;
-                entity.add(production);
-            }
+            BuildingType type = BuildingType.values()[snapshot.buildingType];
+            entity.add(new BuildingComponent(type));
+            addBuildingBehaviorComponent(entity, type, snapshot);
         } else {
             UnitType type = UnitType.values()[snapshot.unitType];
             entity.add(new UnitTypeComponent(type));
@@ -159,41 +158,54 @@ public class EntityFactory {
     }
 
     /**
-     * Здание добычи ресурса (шахта железа или электростанция) не имеет
-     * ProductionComponent вовсе (не производит юнитов) — вместо него на
-     * клиенте, как и на сервере, либо ConstructionComponent (ещё
-     * строится), либо ResourceExtractorComponent (уже добывает). Какое
-     * именно это здание — решает snapshot.resourceType, а не отдельный
-     * флаг. RenderSystem по наличию одного из компонентов решает, как
-     * рисовать (см. BuildingSizes — та же логика решает и размер).
+     * Какой компонент повесить на свежесозданное здание — решает не
+     * snapshot напрямую, а BuildingDefinitions по типу: под стройкой
+     * (underConstruction) — ConstructionComponent; иначе — ProductionComponent,
+     * если это здание производит юнитов, или ResourceExtractorComponent,
+     * если добывает ресурс (BuildingDefinitions.producesUnitTypeFor/
+     * resourceTypeFor — одно из двух не null, второе всегда null, у
+     * каждого типа здания ровно одна роль).
      */
-    private void addResourceBuildingComponent(Entity entity, UnitSnapshot snapshot) {
-        ResourceType resourceType = ResourceType.values()[snapshot.resourceType];
+    private void addBuildingBehaviorComponent(Entity entity, BuildingType type, UnitSnapshot snapshot) {
         if (snapshot.underConstruction) {
-            entity.add(constructionComponentFor(snapshot.constructionProgress, resourceType));
-        } else {
+            entity.add(constructionComponentFor(type, snapshot.constructionProgress));
+            return;
+        }
+
+        UnitType producesUnitType = BuildingDefinitions.producesUnitTypeFor(type);
+        if (producesUnitType != null) {
+            ProductionComponent production = new ProductionComponent();
+            production.queuedCount = snapshot.queuedCount;
+            production.progress = snapshot.buildProgress;
+            production.producesUnitType = producesUnitType;
+            entity.add(production);
+            return;
+        }
+
+        ResourceType resourceType = BuildingDefinitions.resourceTypeFor(type);
+        if (resourceType != null) {
             entity.add(new ResourceExtractorComponent(resourceType));
         }
     }
 
-    /** Меняет то, какой из двух компонентов стоит на здании добычи, когда стройка на сервере завершается между снапшотами. */
-    private void updateResourceBuildingState(Entity entity, UnitSnapshot snapshot) {
-        if (!snapshot.resourceBuilding) {
+    /** Меняет то, какой компонент поведения стоит на здании, когда стройка на сервере завершается между снапшотами. */
+    private void updateBuildingConstructionState(Entity entity, UnitSnapshot snapshot) {
+        BuildingType type = entity.getComponent(BuildingComponent.class).type;
+        ConstructionComponent construction = entity.getComponent(ConstructionComponent.class);
+
+        if (snapshot.underConstruction) {
+            if (construction != null) {
+                construction.remaining = (1f - snapshot.constructionProgress) * BuildingDefinitions.buildTimeFor(type);
+            } else {
+                entity.add(constructionComponentFor(type, snapshot.constructionProgress));
+            }
             return;
         }
 
-        ResourceType resourceType = ResourceType.values()[snapshot.resourceType];
-        ConstructionComponent construction = entity.getComponent(ConstructionComponent.class);
-        if (snapshot.underConstruction) {
-            if (construction != null) {
-                construction.remaining = (1f - snapshot.constructionProgress) * GameConstants.RESOURCE_BUILDING_BUILD_TIME;
-            } else {
-                entity.add(constructionComponentFor(snapshot.constructionProgress, resourceType));
-            }
-        } else if (construction != null) {
-            // Стройка завершилась между снапшотами — снимаем "стройку", ставим "добычу".
+        if (construction != null) {
+            // Стройка завершилась между снапшотами — снимаем "стройку", ставим рабочий компонент.
             entity.remove(ConstructionComponent.class);
-            entity.add(new ResourceExtractorComponent(resourceType));
+            addBuildingBehaviorComponent(entity, type, snapshot);
         }
     }
 
@@ -204,9 +216,10 @@ public class EntityFactory {
      * RenderSystem считает долю той же формулой (1 - remaining/totalTime),
      * что и сервер, поэтому этого достаточно для одинакового прогресс-бара.
      */
-    private ConstructionComponent constructionComponentFor(float progressFraction, ResourceType resourceType) {
-        ConstructionComponent construction = new ConstructionComponent(GameConstants.RESOURCE_BUILDING_BUILD_TIME, resourceType);
-        construction.remaining = (1f - progressFraction) * GameConstants.RESOURCE_BUILDING_BUILD_TIME;
+    private ConstructionComponent constructionComponentFor(BuildingType type, float progressFraction) {
+        float totalTime = BuildingDefinitions.buildTimeFor(type);
+        ConstructionComponent construction = new ConstructionComponent(totalTime);
+        construction.remaining = (1f - progressFraction) * totalTime;
         return construction;
     }
 }

@@ -7,6 +7,7 @@ import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
+import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.components.BuildingComponent;
@@ -33,7 +34,7 @@ import java.util.Map;
  * несколько соседних ячеек сразу, поэтому одно и то же здание иногда
  * встречается в результате запроса больше одного раза — это безопасно,
  * pushOutOfRect идемпотентен: повторный вызов ничего не делает, если юнит
- * уже снаружи). Радиус запроса — GameConstants.maxBuildingInteractionRadius()
+ * уже снаружи). Радиус запроса — BuildingDefinitions.maxInteractionRadius()
  * — с запасом покрывает и столкновение юнит-юнит (2×UNIT_RADIUS), и
  * выталкивание из САМОГО крупного из существующих типов здания.
  *
@@ -67,7 +68,7 @@ public class CollisionSystem extends IteratingSystem {
     private final SpatialHashGrid grid;
 
     /** Тот же радиус, что и размер ячейки grid (см. GameServer) — запрос обычно укладывается в 3×3 ячейки. */
-    private final float queryRadius = GameConstants.maxBuildingInteractionRadius();
+    private final float queryRadius = BuildingDefinitions.maxInteractionRadius();
 
     public CollisionSystem(Map<Integer, Entity> unitsById, SpatialHashGrid grid) {
         super(Family.all(PositionComponent.class, DirectionComponent.class).get(), 20);

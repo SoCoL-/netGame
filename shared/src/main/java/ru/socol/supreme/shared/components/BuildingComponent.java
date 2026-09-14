@@ -2,18 +2,34 @@ package ru.socol.supreme.shared.components;
 
 import com.badlogic.ashley.core.Component;
 import com.badlogic.gdx.utils.Pool;
+import ru.socol.supreme.shared.BuildingType;
 
 /**
- * Маркер без полей: сущность — здание, а не юнит. У зданий никогда нет
- * DirectionComponent (не двигаются) и AttackComponent (не атакуют) —
- * MovementSystem и CombatSystem автоматически пропускают их за счёт
- * Family-фильтров, даже не заглядывая в этот компонент. Он нужен там, где
- * важно явно отличить "это здание": спавн на сервере, снапшот, отрисовка и
- * фильтрация выделения на клиенте.
+ * Маркер "это здание, не юнит" — и единственный источник истины, КАКОЕ
+ * именно это здание. Задаётся один раз при создании и не меняется.
+ * Раньше различие между домом/казармой/зданиями добычи решалось косвенно
+ * (по наличию ProductionComponent/ConstructionComponent/
+ * ResourceExtractorComponent) — теперь все они читают этот же type и
+ * смотрят его свойства (размер, здоровье, что производит/добывает) в
+ * BuildingDefinitions (buildings.json), а не гадают по компонентам.
+ *
+ * У зданий никогда нет DirectionComponent (не двигаются) — MovementSystem
+ * автоматически их пропускает за счёт Family-фильтра, даже не заглядывая
+ * в этот компонент.
  */
 public class BuildingComponent implements Component, Pool.Poolable {
+
+    public BuildingType type = BuildingType.HOME;
+
+    public BuildingComponent() {
+    }
+
+    public BuildingComponent(BuildingType type) {
+        this.type = type;
+    }
+
     @Override
     public void reset() {
-        // Нет полей — сбрасывать нечего.
+        type = BuildingType.HOME;
     }
 }

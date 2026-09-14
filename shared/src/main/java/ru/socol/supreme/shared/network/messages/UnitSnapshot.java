@@ -21,30 +21,21 @@ public class UnitSnapshot {
     public int queuedCount;
     public float buildProgress;
 
-    /**
-     * ordinal() значения UnitType для юнита (его собственный тип —
-     * воин/стрелок) или производимого юнита для дома/казармы (то же
-     * самое поле переиспользуется, а не заводится отдельное). Для здания
-     * добычи ресурса (resourceBuilding=true) это поле не используется —
-     * у него вместо этого resourceType.
-     */
+    /** Актуально только для юнита (building=false) — его собственный тип (воин/стрелок), ordinal() значения UnitType. */
     public int unitType;
 
     /**
-     * Здание добычи ресурса (шахта железа или электростанция) — игрок
-     * ставит их сам (клавиша B открывает меню выбора), а не сервер
-     * автоматически. true и пока строится, и когда уже работает —
-     * underConstruction отличает эти две стадии.
+     * Актуально только для здания (building=true) — какое именно, ordinal()
+     * значения BuildingType (дом/казарма/шахта/электростанция). Что оно
+     * производит/добывает, клиент сам смотрит в BuildingDefinitions по
+     * этому полю — отдельно это не шлётся.
      */
-    public boolean resourceBuilding;
+    public int buildingType;
 
-    /** Актуально только при resourceBuilding=true. ordinal() значения ResourceType — какое именно это здание (шахта или станция). */
-    public int resourceType;
-
-    /** Актуально только при resourceBuilding=true. Пока true — здание ещё не добывает, просто строится. */
+    /** Актуально только для здания (building=true). Пока true — здание ещё не работает (не производит юнитов/не добывает ресурс), просто строится. */
     public boolean underConstruction;
 
-    /** Актуально только при resourceBuilding=true и underConstruction=true. Доля постройки, 0..1, для прогресс-бара на клиенте. */
+    /** Актуально только для здания (building=true) при underConstruction=true. Доля постройки, 0..1, для прогресс-бара на клиенте. */
     public float constructionProgress;
 
     /**

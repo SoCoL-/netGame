@@ -6,10 +6,11 @@ import com.badlogic.ashley.core.PooledEngine;
 import com.badlogic.gdx.math.Vector2;
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Server;
+import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingPlacement;
 import ru.socol.supreme.shared.BuildingSizes;
+import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
-import ru.socol.supreme.shared.ResourceType;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AttackComponent;
@@ -21,7 +22,6 @@ import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PathComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
-import ru.socol.supreme.shared.components.ResourceExtractorComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.network.NetworkRegistration;
@@ -61,7 +61,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * бой, применяет правила игры (максимум 2 игрока, максимум 300 юнитов на
  * всю игру суммарно, карта 2000x2000) и с фиксированной частотой рассылает
  * снапшоты мира всем клиентам. Как только у одного из игроков уничтожен дом
- * (не казарма стрелков — см. spawnArcherBuilding) — объявляет победителя и
+ * (не казарма стрелков — см. spawnHomeAndBarracks) — объявляет победителя и
  * замораживает симуляцию.
  *
  * Это "каркас" — минимальный, но рабочий скелет. Он не занимается
@@ -89,9 +89,10 @@ public class GameServer {
     private final Map<Integer, Integer> buildingIdByPlayer = new HashMap<>();
 
     /**
-     * playerId -> его ресурсы. Авторитетное состояние — пока ничего его не
-     * меняет (нет зданий добычи, см. ResourceType), но хранение и рассылка
-     * клиенту (WorldSnapshot.playerResources) уже готовы для них.
+     * playerId -> его ресурсы. Авторитетное состояние — меняет
+     * ResourceExtractionSystem по мере работы зданий добычи (шахта
+     * железа, электростанция), рассылается клиенту через
+     * WorldSnapshot.playerResources.
      */
     private final Map<Integer, PlayerResources> resourcesByPlayer = new HashMap<>();
 
@@ -114,7 +115,7 @@ public class GameServer {
         // атаки (у стрелка 210), коллизии — в радиусе здания/юнита (порядка
         // 60-80). Один общий размер ячейки одинаково плохо подошёл бы обеим.
         SpatialHashGrid aggroGrid = new SpatialHashGrid(UnitDefinitions.maxAttackRadius());
-        SpatialHashGrid collisionGrid = new SpatialHashGrid(GameConstants.maxBuildingInteractionRadius());
+        SpatialHashGrid collisionGrid = new SpatialHashGrid(BuildingDefinitions.maxInteractionRadius());
 
         engine.addSystem(new AggroSystem(unitsById, aggroGrid));
         engine.addSystem(new CombatSystem(unitsById, this::handleShotFired));
@@ -202,8 +203,7 @@ public class GameServer {
         playerSlotUsed[playerId] = true;
         connectionToPlayer.put(connection.getID(), playerId);
         resourcesByPlayer.put(playerId, new PlayerResources(playerId));
-        spawnBuilding(playerId);
-        spawnArcherBuilding(playerId);
+        spawnHomeAndBarracks(playerId);
 
         response.accepted = true;
         response.playerId = playerId;
@@ -240,27 +240,30 @@ public class GameServer {
      * "начало" у каждого игрока. Единственное здание, которое регистрируется
      * в buildingIdByPlayer — его разрушение заканчивает игру, см. checkGameOver.
      */
-    private void spawnBuilding(int playerId) {
-        float x = GameConstants.buildingSpawnX(playerId);
-        float y = GameConstants.buildingSpawnY(playerId);
-        int unitId = spawnBuildingEntity(playerId, x, y, GameConstants.BUILDING_MAX_HEALTH, UnitType.WARRIOR);
-        buildingIdByPlayer.put(playerId, unitId);
+    private void spawnHomeAndBarracks(int playerId) {
+        float[] home = BuildingDefinitions.homeSpawnPoint(playerId);
+        int homeUnitId = spawnBuilding(playerId, BuildingType.HOME, home[0], home[1]);
+        buildingIdByPlayer.put(playerId, homeUnitId);
+
+        // Казарма стрелков — гораздо более хрупкая, чем дом, и НЕ
+        // регистрируется в buildingIdByPlayer: её разрушение не
+        // заканчивает игру, просто лишает игрока возможности производить
+        // стрелков.
+        float[] archerBarracks = BuildingDefinitions.archerBarracksSpawnPoint(playerId);
+        spawnBuilding(playerId, BuildingType.ARCHER_BARRACKS, archerBarracks[0], archerBarracks[1]);
     }
 
     /**
-     * Казарма стрелков — стоит чуть в стороне от дома того же игрока (см.
-     * GameConstants.archerBuildingSpawnPoint), гораздо более хрупкая (70 HP
-     * против 500 у дома) и НЕ регистрируется в buildingIdByPlayer: её
-     * разрушение не заканчивает игру, просто лишает игрока возможности
-     * производить стрелков.
+     * Единая точка создания ЛЮБОГО здания — все свойства (размер, здоровье,
+     * время постройки, что производит/добывает) решает BuildingDefinitions
+     * по type, а не параметры этой функции. Если buildTimeFor(type) > 0
+     * (сейчас — только шахта и электростанция) здание появляется ещё
+     * строящимся, с ConstructionComponent — ConstructionSystem сама
+     * доведёт его до рабочего состояния. Иначе (дом, казарма) — сразу
+     * готовым, с ProductionComponent, если это здание производит юнитов.
+     * Возвращает unitId созданного здания.
      */
-    private void spawnArcherBuilding(int playerId) {
-        float[] point = GameConstants.archerBuildingSpawnPoint(playerId);
-        spawnBuildingEntity(playerId, point[0], point[1], GameConstants.ARCHER_BUILDING_MAX_HEALTH, UnitType.ARCHER);
-    }
-
-    /** Общая часть создания любого здания — единственное, чем отличаются дом и казарма, это позиция/HP/что производят. */
-    private int spawnBuildingEntity(int playerId, float x, float y, int maxHealth, UnitType producesType) {
+    private int spawnBuilding(int playerId, BuildingType type, float x, float y) {
         Entity building = engine.createEntity();
 
         PositionComponent position = engine.createComponent(PositionComponent.class);
@@ -273,23 +276,37 @@ public class GameServer {
         OwnerComponent owner = engine.createComponent(OwnerComponent.class);
         owner.playerId = playerId;
 
+        int maxHealth = BuildingDefinitions.maxHealthFor(type);
         HealthComponent health = engine.createComponent(HealthComponent.class);
         health.maxHealth = maxHealth;
         health.currentHealth = maxHealth;
 
         BuildingComponent buildingMarker = engine.createComponent(BuildingComponent.class);
-
-        ProductionComponent production = engine.createComponent(ProductionComponent.class);
-        production.queuedCount = 0;
-        production.progress = 0f;
-        production.producesUnitType = producesType;
+        buildingMarker.type = type;
 
         // Намеренно без DirectionComponent — здание неподвижно, и этого
         // достаточно, чтобы MovementSystem и (как атакующего) CombatSystem
         // автоматически его игнорировали за счёт своих Family-фильтров.
-        building.add(position).add(unitComponent).add(owner).add(health).add(buildingMarker).add(production);
-        engine.addEntity(building);
+        building.add(position).add(unitComponent).add(owner).add(health).add(buildingMarker);
 
+        float buildTime = BuildingDefinitions.buildTimeFor(type);
+        if (buildTime > 0f) {
+            ConstructionComponent construction = engine.createComponent(ConstructionComponent.class);
+            construction.totalTime = buildTime;
+            construction.remaining = buildTime;
+            building.add(construction);
+        } else {
+            UnitType producesUnitType = BuildingDefinitions.producesUnitTypeFor(type);
+            if (producesUnitType != null) {
+                ProductionComponent production = engine.createComponent(ProductionComponent.class);
+                production.queuedCount = 0;
+                production.progress = 0f;
+                production.producesUnitType = producesUnitType;
+                building.add(production);
+            }
+        }
+
+        engine.addEntity(building);
         unitsById.put(unitId, building);
         return unitId;
     }
@@ -395,7 +412,7 @@ public class GameServer {
         }
 
         float[] deposit = GameConstants.IRON_DEPOSITS[request.depositIndex];
-        spawnResourceBuilding(playerId, deposit[0], deposit[1], ResourceType.IRON, GameConstants.IRON_MINE_MAX_HEALTH);
+        spawnBuilding(playerId, BuildingType.IRON_MINE, deposit[0], deposit[1]);
     }
 
     /**
@@ -419,7 +436,7 @@ public class GameServer {
             return;
         }
 
-        spawnResourceBuilding(playerId, request.x, request.y, ResourceType.ELECTRICITY, GameConstants.POWER_PLANT_MAX_HEALTH);
+        spawnBuilding(playerId, BuildingType.POWER_PLANT, request.x, request.y);
     }
 
     /** Занято ли месторождение — ищем среди unitsById здание добычи (строящееся или уже готовое) точно в этой точке. */
@@ -438,39 +455,6 @@ public class GameServer {
             }
         }
         return false;
-    }
-
-    /** Создаёт здание добычи (шахту или электростанцию) в процессе стройки — ConstructionSystem доведёт его до рабочего состояния сама. */
-    private void spawnResourceBuilding(int playerId, float x, float y, ResourceType resourceType, int maxHealth) {
-        Entity building = engine.createEntity();
-
-        PositionComponent position = engine.createComponent(PositionComponent.class);
-        position.position.set(x, y);
-
-        int unitId = unitIdSequence.getAndIncrement();
-        UnitComponent unitComponent = engine.createComponent(UnitComponent.class);
-        unitComponent.unitId = unitId;
-
-        OwnerComponent owner = engine.createComponent(OwnerComponent.class);
-        owner.playerId = playerId;
-
-        HealthComponent health = engine.createComponent(HealthComponent.class);
-        health.maxHealth = maxHealth;
-        health.currentHealth = maxHealth;
-
-        BuildingComponent buildingMarker = engine.createComponent(BuildingComponent.class);
-
-        ConstructionComponent construction = engine.createComponent(ConstructionComponent.class);
-        construction.totalTime = GameConstants.RESOURCE_BUILDING_BUILD_TIME;
-        construction.remaining = GameConstants.RESOURCE_BUILDING_BUILD_TIME;
-        construction.resourceType = resourceType;
-
-        // Намеренно без ProductionComponent — это здание не производит
-        // юнитов; без DirectionComponent — не двигается, как и все здания.
-        building.add(position).add(unitComponent).add(owner).add(health).add(buildingMarker).add(construction);
-        engine.addEntity(building);
-
-        unitsById.put(unitId, building);
     }
 
     synchronized void handleMoveUnit(Connection connection, MoveUnitRequest request) {
@@ -626,34 +610,28 @@ public class GameServer {
             }
             unitSnapshot.health = health.currentHealth;
             unitSnapshot.maxHealth = health.maxHealth;
-            unitSnapshot.building = unit.getComponent(BuildingComponent.class) != null;
+            BuildingComponent buildingMarker = unit.getComponent(BuildingComponent.class);
+            unitSnapshot.building = buildingMarker != null;
 
-            // unitType: для юнита — собственный тип, для здания — что оно производит
-            // (см. javadoc UnitSnapshot.unitType).
-            UnitTypeComponent unitTypeComponent = unit.getComponent(UnitTypeComponent.class);
-            ProductionComponent production = unit.getComponent(ProductionComponent.class);
-            if (unitTypeComponent != null) {
-                unitSnapshot.unitType = unitTypeComponent.type.ordinal();
-            } else if (production != null) {
-                unitSnapshot.unitType = production.producesUnitType.ordinal();
+            if (buildingMarker != null) {
+                unitSnapshot.buildingType = buildingMarker.type.ordinal();
+            } else {
+                UnitTypeComponent unitTypeComponent = unit.getComponent(UnitTypeComponent.class);
+                if (unitTypeComponent != null) {
+                    unitSnapshot.unitType = unitTypeComponent.type.ordinal();
+                }
             }
 
+            ProductionComponent production = unit.getComponent(ProductionComponent.class);
             if (production != null) {
                 unitSnapshot.queuedCount = production.queuedCount;
                 unitSnapshot.buildProgress = production.progress;
             }
 
             ConstructionComponent construction = unit.getComponent(ConstructionComponent.class);
-            ResourceExtractorComponent extractor = unit.getComponent(ResourceExtractorComponent.class);
             if (construction != null) {
-                unitSnapshot.resourceBuilding = true;
-                unitSnapshot.resourceType = construction.resourceType.ordinal();
                 unitSnapshot.underConstruction = true;
                 unitSnapshot.constructionProgress = 1f - construction.remaining / construction.totalTime;
-            } else if (extractor != null) {
-                unitSnapshot.resourceBuilding = true;
-                unitSnapshot.resourceType = extractor.resourceType.ordinal();
-                unitSnapshot.underConstruction = false;
             }
 
             // Только для отладочной отрисовки маршрута на клиенте (клавиша `

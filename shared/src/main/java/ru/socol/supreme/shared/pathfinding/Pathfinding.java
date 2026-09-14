@@ -2,8 +2,9 @@ package ru.socol.supreme.shared.pathfinding;
 
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.gdx.math.Vector2;
+import ru.socol.supreme.shared.BuildingDefinitions;
+import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
-import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PathComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -20,8 +21,8 @@ import java.util.Set;
  * Поиск пути по сетке в обход препятствий: прямоугольник воды посередине
  * карты (GameConstants.WATER_*) и все здания игроков — дом и казарма
  * стрелков у каждого (их клетки блокируются по тем же координатам, что
- * GameServer берёт из GameConstants.buildingSpawnX/Y и
- * archerBuildingSpawnPoint — единые формулы, см. их javadoc).
+ * GameServer берёт из BuildingDefinitions.homeSpawnPoint и
+ * archerBarracksSpawnPoint — единые формулы, см. их javadoc).
  *
  * Работает только на сервере — как и MovementSystem/CombatSystem, живёт в
  * shared, но реально используется только GameServer.handleMoveUnit и
@@ -36,12 +37,13 @@ import java.util.Set;
  * оптимизаций тут более чем достаточно быстрый.
  *
  * Сетка препятствий строится один раз статически при загрузке класса —
- * упрощение, оправданное тем, что все здания стоят на фиксированных,
- * заранее известных местах (см. GameConstants.buildingSpawnX/Y и
- * archerBuildingSpawnPoint). Если
- * здания станут перемещаемыми/строящимися в произвольных точках, сетку
- * придётся пересчитывать динамически при их появлении/разрушении, а не
- * один раз здесь.
+ * упрощение, оправданное тем, что дом и казарма стоят на фиксированных,
+ * заранее известных местах (см. BuildingDefinitions.homeSpawnPoint и
+ * archerBarracksSpawnPoint). Здания добычи (шахта, электростанция) сюда
+ * СОЗНАТЕЛЬНО не входят — они появляются в рантайме по воле игрока, в
+ * произвольной точке; пересчитывать статическую сетку при их появлении
+ * не стали (см. README, "Известное ограничение" у зданий добычи) —
+ * CollisionSystem всё равно не даёт сквозь них пройти, просто не по A*.
  */
 public final class Pathfinding {
 
@@ -93,12 +95,12 @@ public final class Pathfinding {
 
     private static boolean isInsideAnyBuilding(float x, float y) {
         for (int playerId = 0; playerId < GameConstants.MAX_PLAYERS; playerId++) {
-            if (isInsideBuildingFootprint(x, y,
-                    GameConstants.buildingSpawnX(playerId), GameConstants.buildingSpawnY(playerId), UnitType.WARRIOR)) {
+            float[] home = BuildingDefinitions.homeSpawnPoint(playerId);
+            if (isInsideBuildingFootprint(x, y, home[0], home[1], BuildingType.HOME)) {
                 return true;
             }
-            float[] archerBuildingSpawn = GameConstants.archerBuildingSpawnPoint(playerId);
-            if (isInsideBuildingFootprint(x, y, archerBuildingSpawn[0], archerBuildingSpawn[1], UnitType.ARCHER)) {
+            float[] archerBarracks = BuildingDefinitions.archerBarracksSpawnPoint(playerId);
+            if (isInsideBuildingFootprint(x, y, archerBarracks[0], archerBarracks[1], BuildingType.ARCHER_BARRACKS)) {
                 return true;
             }
         }
@@ -106,9 +108,9 @@ public final class Pathfinding {
     }
 
     /** Дом и казарма стрелков — разной формы (2x2 и 1x2 клетки), поэтому ширина/высота раздельно и по типу. */
-    private static boolean isInsideBuildingFootprint(float x, float y, float centerX, float centerY, UnitType producesType) {
-        float halfWidth = GameConstants.buildingHalfWidthFor(producesType) + GameConstants.PATH_CLEARANCE;
-        float halfHeight = GameConstants.buildingHalfHeightFor(producesType) + GameConstants.PATH_CLEARANCE;
+    private static boolean isInsideBuildingFootprint(float x, float y, float centerX, float centerY, BuildingType type) {
+        float halfWidth = BuildingDefinitions.halfWidthFor(type) + GameConstants.PATH_CLEARANCE;
+        float halfHeight = BuildingDefinitions.halfHeightFor(type) + GameConstants.PATH_CLEARANCE;
         return x >= centerX - halfWidth && x <= centerX + halfWidth
                 && y >= centerY - halfHeight && y <= centerY + halfHeight;
     }

@@ -25,9 +25,9 @@ public final class BuildingPlacement {
     private BuildingPlacement() {
     }
 
-    /** Помещается ли электростанция (POWER_PLANT_HALF_SIZE) центром в (x, y) — в границах карты, не на воде, не пересекая юнитов/здания. */
+    /** Помещается ли электростанция (POWER_PLANT) центром в (x, y) — в границах карты, не на воде, не пересекая юнитов/здания. */
     public static boolean canPlacePowerPlant(Iterable<Entity> entities, float x, float y) {
-        float half = GameConstants.POWER_PLANT_HALF_SIZE;
+        float half = BuildingDefinitions.halfWidthFor(BuildingType.POWER_PLANT); // электростанция квадратная — halfWidth==halfHeight
         float minX = x - half;
         float minY = y - half;
         float maxX = x + half;

@@ -16,8 +16,10 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
+import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingPlacement;
 import ru.socol.supreme.shared.BuildingSizes;
+import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.ResourceType;
 import ru.socol.supreme.shared.UnitType;
@@ -412,7 +414,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
         if (placingBuildingType == ResourceType.IRON) {
             ironMineSnapDepositIndex = -1;
-            float closestDistanceSq = GameConstants.IRON_MINE_SNAP_RADIUS * GameConstants.IRON_MINE_SNAP_RADIUS;
+            float closestDistanceSq = BuildingDefinitions.snapRadiusFor(BuildingType.IRON_MINE) * BuildingDefinitions.snapRadiusFor(BuildingType.IRON_MINE);
 
             for (int i = 0; i < GameConstants.IRON_DEPOSITS.length; i++) {
                 float[] deposit = GameConstants.IRON_DEPOSITS[i];
@@ -445,7 +447,9 @@ public class GameScreen extends InputAdapter implements Screen {
     private void drawBuildGhost() {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         shapeRenderer.setColor(buildGhostValid ? IRON_MINE_GHOST_VALID_COLOR : IRON_MINE_GHOST_INVALID_COLOR);
-        float half = placingBuildingType == ResourceType.IRON ? GameConstants.IRON_MINE_HALF_SIZE : GameConstants.POWER_PLANT_HALF_SIZE;
+        float half = placingBuildingType == ResourceType.IRON
+                ? BuildingDefinitions.halfWidthFor(BuildingType.IRON_MINE)
+                : BuildingDefinitions.halfWidthFor(BuildingType.POWER_PLANT);
         shapeRenderer.rect(buildGhostX - half, buildGhostY - half, half * 2f, half * 2f);
         shapeRenderer.end();
     }
