@@ -14,12 +14,12 @@ import java.util.Map;
 
 /**
  * Для каждого достроенного здания добычи (ResourceExtractorComponent —
- * добавляет ConstructionSystem по завершении постройки) копит дробный
- * прогресс на скорости конкретно ЭТОГО здания
- * (BuildingDefinitions.extractionRateFor(BuildingComponent.type) — не по
- * абстрактному типу ресурса, а по типу самого здания, buildings.json) и,
- * набрав целую единицу, зачисляет её владельцу здания в PlayerResources —
- * того же типа ресурса, что и у самого здания.
+ * добавляет ConstructionSystem по завершении постройки) прибавляет
+ * владельцу здания в PlayerResources rate * deltaTime за тик, где rate —
+ * BuildingDefinitions.extractionRateFor(BuildingComponent.type) той же
+ * сущности (не абстрактному типу ресурса, а конкретному типу здания,
+ * buildings.json). PlayerResources — float, поэтому зачисление идёт
+ * сразу дробно, без промежуточного накопителя.
  *
  * Приоритет 3 — после ConstructionSystem (2), до MovementSystem (10).
  *
@@ -53,18 +53,14 @@ public class ResourceExtractionSystem extends IteratingSystem {
             return; // игрок уже отключился — просто ничего не зачисляем, здание скоро уберут вместе с его сущностями
         }
 
-        float rate = BuildingDefinitions.extractionRateFor(BUILDING.get(entity).type);
-        extractor.progress += deltaTime * rate;
-        while (extractor.progress >= 1f) {
-            extractor.progress -= 1f;
-            switch (extractor.resourceType) {
-                case IRON:
-                    resources.iron++;
-                    break;
-                case ELECTRICITY:
-                    resources.electricity++;
-                    break;
-            }
+        float amount = BuildingDefinitions.extractionRateFor(BUILDING.get(entity).type) * deltaTime;
+        switch (extractor.resourceType) {
+            case IRON:
+                resources.iron += amount;
+                break;
+            case ELECTRICITY:
+                resources.electricity += amount;
+                break;
         }
     }
 }

@@ -31,20 +31,29 @@ public class UnitDefinition {
      */
     public float attackRadius;
 
-    /** Пока нигде не читается (см. GameServer.handleQueueUnit) — задел на будущее, когда появятся ресурсы игрока. */
-    public int cost;
+    /**
+     * Сколько железа/электричества стоит один такой юнит — списывается не
+     * разом, а равномерно за время постройки (UNIT_BUILD_TIME), см.
+     * ProductionSystem: если на очередной тик не хватает ресурсов, прогресс
+     * просто не растёт, как и при нехватке места под юнита (MAX_TOTAL_UNITS).
+     * 0 — юнит ничего не стоит (сейчас так у воина).
+     */
+    public int ironCost;
+    public int electricityCost;
 
     public UnitDefinition() {
         // требуется Json для десериализации
     }
 
-    public UnitDefinition(UnitType type, float speed, int health, float fireRate, int damage, float attackRadius, int cost) {
+    public UnitDefinition(UnitType type, float speed, int health, float fireRate, int damage, float attackRadius,
+                           int ironCost, int electricityCost) {
         this.type = type;
         this.speed = speed;
         this.health = health;
         this.fireRate = fireRate;
         this.damage = damage;
         this.attackRadius = attackRadius;
-        this.cost = cost;
+        this.ironCost = ironCost;
+        this.electricityCost = electricityCost;
     }
 }

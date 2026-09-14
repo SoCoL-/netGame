@@ -6,7 +6,8 @@
     "fireRate": 4,
     "damage": 2,
     "attackRadius": 70,
-    "cost": 10
+    "ironCost": 0,
+    "electricityCost": 0
   },
   {
     "type": "ARCHER",
@@ -15,6 +16,7 @@
     "fireRate": 4,
     "damage": 2,
     "attackRadius": 210,
-    "cost": 15
+    "ironCost": 300,
+    "electricityCost": 300
   }
 ]

@@ -11,27 +11,29 @@ import ru.socol.supreme.shared.components.PositionComponent;
  * привязаны к фиксированной точке на карте (в отличие от шахты железа,
  * которая может встать только на месторождение — см.
  * GameServer.isDepositOccupied, у неё своя, гораздо более простая
- * проверка). Пока единственное такое здание — электростанция.
+ * проверка). Сейчас это казарма стрелков и электростанция — обе строит
+ * сам игрок в произвольном месте из меню постройки.
  *
  * Общий метод, а не два разных (клиент/сервер): оба принимают один и тот
  * же Iterable&lt;Entity&gt; — на клиенте это engine.getEntities(), на
  * сервере unitsById.values() — и одинаково перебирают его, так что
  * результат гарантированно совпадает по обе стороны сети. Клиент вызывает
  * это каждый кадр для цвета превью (GameScreen), сервер — один раз при
- * обработке PlacePowerPlantRequest, авторитетно.
+ * обработке PlaceBuildingRequest, авторитетно.
  */
 public final class BuildingPlacement {
 
     private BuildingPlacement() {
     }
 
-    /** Помещается ли электростанция (POWER_PLANT) центром в (x, y) — в границах карты, не на воде, не пересекая юнитов/здания. */
-    public static boolean canPlacePowerPlant(Iterable<Entity> entities, float x, float y) {
-        float half = BuildingDefinitions.halfWidthFor(BuildingType.POWER_PLANT); // электростанция квадратная — halfWidth==halfHeight
-        float minX = x - half;
-        float minY = y - half;
-        float maxX = x + half;
-        float maxY = y + half;
+    /** Помещается ли здание данного типа центром в (x, y) — в границах карты, не на воде, не пересекая юнитов/другие здания. */
+    public static boolean canPlaceBuilding(BuildingType type, Iterable<Entity> entities, float x, float y) {
+        float halfWidth = BuildingDefinitions.halfWidthFor(type);
+        float halfHeight = BuildingDefinitions.halfHeightFor(type);
+        float minX = x - halfWidth;
+        float minY = y - halfHeight;
+        float maxX = x + halfWidth;
+        float maxY = y + halfHeight;
 
         if (minX < 0f || minY < 0f || maxX > GameConstants.MAP_WIDTH || maxY > GameConstants.MAP_HEIGHT) {
             return false; // вылезает за границы карты

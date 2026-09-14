@@ -7,19 +7,18 @@ import ru.socol.supreme.shared.ResourceType;
 /**
  * Здание достроено и добывает ресурс — добавляется ConstructionSystem
  * (сервер) взамен снятого ConstructionComponent, когда постройка
- * завершена. ResourceExtractionSystem (сервер) копит progress и, набрав
- * целую единицу, зачисляет её владельцу здания в PlayerResources. На
- * клиенте компонент не используется для расчётов — только чтобы
- * RenderSystem знал, что это функционирующее здание добычи, а не дом/
- * казарма (у них вместо этого ProductionComponent) и не стройка (у неё —
- * ConstructionComponent).
+ * завершена. ResourceExtractionSystem (сервер) прибавляет владельцу
+ * здания в PlayerResources ровно rate * deltaTime за тик — раньше тут
+ * копился дробный progress до целой единицы, но с тех пор как
+ * PlayerResources стала float, копить нечего, можно зачислять сразу
+ * дробно. На клиенте компонент не используется для расчётов — только
+ * чтобы RenderSystem знал, что это функционирующее здание добычи, а не
+ * дом/казарма (у них вместо этого ProductionComponent) и не стройка (у
+ * неё — ConstructionComponent).
  */
 public class ResourceExtractorComponent implements Component, Pool.Poolable {
 
     public ResourceType resourceType = ResourceType.IRON;
-
-    /** Дробная часть добычи, накопленная с последнего целого зачисления игроку. */
-    public float progress;
 
     public ResourceExtractorComponent() {
     }
@@ -31,6 +30,5 @@ public class ResourceExtractorComponent implements Component, Pool.Poolable {
     @Override
     public void reset() {
         resourceType = ResourceType.IRON;
-        progress = 0f;
     }
 }

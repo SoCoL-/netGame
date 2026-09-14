@@ -21,7 +21,6 @@ import ru.socol.supreme.shared.BuildingPlacement;
 import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
-import ru.socol.supreme.shared.ResourceType;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.components.DebugPathComponent;
 import ru.socol.supreme.components.SelectedComponent;
@@ -89,13 +88,15 @@ public class GameScreen extends InputAdapter implements Screen {
 
     // Меню "что строить" по клавише B — фиксированная позиция ближе к
     // центру экрана, чтобы не пересекаться ни с панелью ресурсов (сверху
-    // слева), ни с панелью постройки (снизу слева).
+    // слева), ни с панелью постройки (снизу слева). Три кнопки снизу вверх:
+    // электростанция, казарма стрелков, шахта железа.
     private static final float BUILD_MENU_X = 300f;
-    private static final float BUILD_MENU_Y = 250f;
+    private static final float BUILD_MENU_Y = 220f;
     private static final float BUILD_MENU_WIDTH = 200f;
-    private static final float BUILD_MENU_HEIGHT = 100f;
+    private static final float BUILD_MENU_HEIGHT = 140f;
     private static final float BUILD_MENU_BUTTON_HEIGHT = 32f;
-    private static final float BUILD_MENU_IRON_BUTTON_Y = BUILD_MENU_Y + 58f;
+    private static final float BUILD_MENU_IRON_BUTTON_Y = BUILD_MENU_Y + 96f;
+    private static final float BUILD_MENU_BARRACKS_BUTTON_Y = BUILD_MENU_Y + 53f;
     private static final float BUILD_MENU_POWER_BUTTON_Y = BUILD_MENU_Y + 10f;
 
     // Панель постройки — экранные (HUD) координаты, не мировые, см. hudCamera.
@@ -171,21 +172,25 @@ public class GameScreen extends InputAdapter implements Screen {
     // Превью считается каждый кадр в render() (обычный опрос текущей
     // позиции курсора, без отдельного mouseMoved).
     private boolean showBuildMenu = false;
-    private ResourceType placingBuildingType = null;
+    private BuildingType placingBuildingType = null;
     private float buildGhostX;
     private float buildGhostY;
-    // Актуально только пока placingBuildingType == IRON — индекс месторождения,
-    // к которому "прилип" курсор, или -1, если ни к одному. У электростанции
-    // своей привязки к точке нет — там валидность решает buildGhostValid.
+    // Актуально только пока placingBuildingType == IRON_MINE — индекс
+    // месторождения, к которому "прилип" курсор, или -1, если ни к одному.
+    // У казармы и электростанции своей привязки к точке нет — там
+    // валидность решает buildGhostValid.
     private int ironMineSnapDepositIndex = -1;
     private boolean buildGhostValid = false;
 
     // Свои ресурсы — обновляются из каждого снапшота (см. onWorldSnapshot).
+    // float, не int — потребление/добыча считаются дробно (например,
+    // 0.5 электричества/сек простоя казармы), см. PlayerResources. На
+    // панели показываем округлённым до целого (drawResourcePanel).
     // Ресурсов противника здесь нет: сервер их присылает (fog of war для
     // ресурсов отдельно от остального не планируется), но панель — только
     // про свои же.
-    private int myIron = 0;
-    private int myElectricity = 0;
+    private float myIron = 0f;
+    private float myElectricity = 0f;
     private String gameOverText = null;
     // Пока не null — показываем этот текст вместо игры (окно уже открыто и
     // отрисовывается, само подключение идёт в фоне — см. GameClient.connect()).
@@ -405,16 +410,17 @@ public class GameScreen extends InputAdapter implements Screen {
      * превью должно двигаться, даже если мышь просто лежит неподвижно
      * (например, сразу после выбора здания в меню). Логика зависит от
      * того, что строим: шахта "прилипает" к ближайшему месторождению в
-     * радиусе IRON_MINE_SNAP_RADIUS, электростанция свободно следует за
-     * курсором, но валидна только там, где реально можно строить (см.
-     * BuildingPlacement — та же проверка, что и на сервере).
+     * радиусе её snapRadius, остальные (казарма, электростанция) свободно
+     * следуют за курсором, но валидны только там, где реально можно
+     * строить (см. BuildingPlacement — та же проверка, что и на сервере).
      */
     private void updateBuildGhost() {
         Vector3 cursorWorld = camera.unproject(new Vector3(Gdx.input.getX(), Gdx.input.getY(), 0));
 
-        if (placingBuildingType == ResourceType.IRON) {
+        if (placingBuildingType == BuildingType.IRON_MINE) {
             ironMineSnapDepositIndex = -1;
-            float closestDistanceSq = BuildingDefinitions.snapRadiusFor(BuildingType.IRON_MINE) * BuildingDefinitions.snapRadiusFor(BuildingType.IRON_MINE);
+            float snapRadius = BuildingDefinitions.snapRadiusFor(BuildingType.IRON_MINE);
+            float closestDistanceSq = snapRadius * snapRadius;
 
             for (int i = 0; i < GameConstants.IRON_DEPOSITS.length; i++) {
                 float[] deposit = GameConstants.IRON_DEPOSITS[i];
@@ -436,10 +442,10 @@ public class GameScreen extends InputAdapter implements Screen {
             }
             buildGhostValid = ironMineSnapDepositIndex >= 0;
         } else {
-            // Электростанция — свободное размещение, не привязана к точке.
+            // Казарма стрелков / электростанция — свободное размещение, не привязано к точке.
             buildGhostX = cursorWorld.x;
             buildGhostY = cursorWorld.y;
-            buildGhostValid = BuildingPlacement.canPlacePowerPlant(engine.getEntities(), buildGhostX, buildGhostY);
+            buildGhostValid = BuildingPlacement.canPlaceBuilding(placingBuildingType, engine.getEntities(), buildGhostX, buildGhostY);
         }
     }
 
@@ -447,10 +453,9 @@ public class GameScreen extends InputAdapter implements Screen {
     private void drawBuildGhost() {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         shapeRenderer.setColor(buildGhostValid ? IRON_MINE_GHOST_VALID_COLOR : IRON_MINE_GHOST_INVALID_COLOR);
-        float half = placingBuildingType == ResourceType.IRON
-                ? BuildingDefinitions.halfWidthFor(BuildingType.IRON_MINE)
-                : BuildingDefinitions.halfWidthFor(BuildingType.POWER_PLANT);
-        shapeRenderer.rect(buildGhostX - half, buildGhostY - half, half * 2f, half * 2f);
+        float halfWidth = BuildingDefinitions.halfWidthFor(placingBuildingType);
+        float halfHeight = BuildingDefinitions.halfHeightFor(placingBuildingType);
+        shapeRenderer.rect(buildGhostX - halfWidth, buildGhostY - halfHeight, halfWidth * 2f, halfHeight * 2f);
         shapeRenderer.end();
     }
 
@@ -464,6 +469,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
         shapeRenderer.setColor(Color.LIGHT_GRAY);
         shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_IRON_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
+        shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_BARRACKS_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
         shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_POWER_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
 
         shapeRenderer.end();
@@ -472,6 +478,7 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.begin();
         uiFont.setColor(Color.BLACK);
         uiFont.draw(spriteBatch, "Iron mine", BUILD_MENU_X + 25f, BUILD_MENU_IRON_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
+        uiFont.draw(spriteBatch, "Archer barracks", BUILD_MENU_X + 25f, BUILD_MENU_BARRACKS_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
         uiFont.draw(spriteBatch, "Power plant", BUILD_MENU_X + 25f, BUILD_MENU_POWER_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
         spriteBatch.end();
 
@@ -482,6 +489,11 @@ public class GameScreen extends InputAdapter implements Screen {
     private boolean isInsideIronMineButton(float hudX, float hudY) {
         return hudX >= BUILD_MENU_X + 10f && hudX <= BUILD_MENU_X + BUILD_MENU_WIDTH - 10f
                 && hudY >= BUILD_MENU_IRON_BUTTON_Y && hudY <= BUILD_MENU_IRON_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT;
+    }
+
+    private boolean isInsideArcherBarracksButton(float hudX, float hudY) {
+        return hudX >= BUILD_MENU_X + 10f && hudX <= BUILD_MENU_X + BUILD_MENU_WIDTH - 10f
+                && hudY >= BUILD_MENU_BARRACKS_BUTTON_Y && hudY <= BUILD_MENU_BARRACKS_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT;
     }
 
     private boolean isInsidePowerPlantButton(float hudX, float hudY) {
@@ -616,8 +628,9 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
         uiFont.setColor(Color.WHITE);
-        uiFont.draw(spriteBatch, "Iron: " + myIron, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 8f);
-        uiFont.draw(spriteBatch, "Electricity: " + myElectricity, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 26f);
+        // (int) — округление вниз для отображения; внутренний счёт остаётся дробным (float), см. myIron/myElectricity.
+        uiFont.draw(spriteBatch, "Iron: " + (int) myIron, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 8f);
+        uiFont.draw(spriteBatch, "Electricity: " + (int) myElectricity, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 26f);
         spriteBatch.end();
 
         // Возвращаем world-камеру шейп-рендереру и спрайт-батчу для следующего кадра.
@@ -683,10 +696,10 @@ public class GameScreen extends InputAdapter implements Screen {
 
         if (placingBuildingType != null) {
             if (button == Input.Buttons.LEFT && buildGhostValid) {
-                if (placingBuildingType == ResourceType.IRON) {
+                if (placingBuildingType == BuildingType.IRON_MINE) {
                     client.requestPlaceIronMine(ironMineSnapDepositIndex);
                 } else {
-                    client.requestPlacePowerPlant(buildGhostX, buildGhostY);
+                    client.requestPlaceBuilding(placingBuildingType, buildGhostX, buildGhostY);
                 }
                 placingBuildingType = null;
             }
@@ -699,9 +712,11 @@ public class GameScreen extends InputAdapter implements Screen {
             if (button == Input.Buttons.LEFT) {
                 Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
                 if (isInsideIronMineButton(hudPoint.x, hudPoint.y)) {
-                    placingBuildingType = ResourceType.IRON;
+                    placingBuildingType = BuildingType.IRON_MINE;
+                } else if (isInsideArcherBarracksButton(hudPoint.x, hudPoint.y)) {
+                    placingBuildingType = BuildingType.ARCHER_BARRACKS;
                 } else if (isInsidePowerPlantButton(hudPoint.x, hudPoint.y)) {
-                    placingBuildingType = ResourceType.ELECTRICITY;
+                    placingBuildingType = BuildingType.POWER_PLANT;
                 }
             }
             showBuildMenu = false; // клик куда угодно — по кнопке или мимо — закрывает меню

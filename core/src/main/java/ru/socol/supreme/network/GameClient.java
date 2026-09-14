@@ -5,6 +5,7 @@ import com.badlogic.gdx.utils.Disposable;
 import com.esotericsoftware.kryonet.Client;
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
+import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.network.NetworkRegistration;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
@@ -13,8 +14,8 @@ import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
+import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
 import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
-import ru.socol.supreme.shared.network.messages.PlacePowerPlantRequest;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
@@ -127,8 +128,10 @@ public class GameClient implements Disposable {
         client.sendTCP(request);
     }
 
-    public void requestPlacePowerPlant(float x, float y) {
-        PlacePowerPlantRequest request = new PlacePowerPlantRequest();
+    /** Для любого свободно размещаемого здания — сейчас казарма стрелков и электростанция (не дом, не шахта — у неё отдельный requestPlaceIronMine). */
+    public void requestPlaceBuilding(BuildingType type, float x, float y) {
+        PlaceBuildingRequest request = new PlaceBuildingRequest();
+        request.buildingType = type.ordinal();
         request.x = x;
         request.y = y;
         client.sendTCP(request);

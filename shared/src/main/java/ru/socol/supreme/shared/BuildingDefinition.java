@@ -8,10 +8,12 @@ package ru.socol.supreme.shared;
  *
  * Не у каждого здания используются все поля — producesUnitType актуален
  * только для HOME/ARCHER_BARRACKS, resourceType/extractionRate только для
- * IRON_MINE/POWER_PLANT, spawnMargin только для HOME, offsetFromHome
- * только для ARCHER_BARRACKS, snapRadius только для IRON_MINE. Здание
- * само не использует свои "чужие" поля — какие именно читать, решает
- * BuildingType.
+ * IRON_MINE/POWER_PLANT, consumesResourceType/idleConsumptionRate/
+ * activeConsumptionRate только для ARCHER_BARRACKS (пока — но поле
+ * общее, не специфичное для неё одной, если в будущем появится ещё одно
+ * потребляющее здание), spawnMargin только для HOME, snapRadius только
+ * для IRON_MINE. Здание само не использует свои "чужие" поля — какие
+ * именно читать, решает BuildingType.
  */
 public class BuildingDefinition {
 
@@ -21,7 +23,7 @@ public class BuildingDefinition {
     public float halfHeight;
     public int maxHealth;
 
-    /** Секунд на постройку. 0 — здание появляется сразу готовым (дом, казарма), не через ConstructionComponent. */
+    /** Секунд на постройку. 0 — здание появляется сразу готовым (сейчас только дом), не через ConstructionComponent. */
     public float buildTime;
 
     /** Актуально только для HOME/ARCHER_BARRACKS — какой юнит производится. Иначе null. */
@@ -33,11 +35,22 @@ public class BuildingDefinition {
     /** Актуально только если resourceType != null — единиц ресурса в секунду. */
     public float extractionRate;
 
+    /**
+     * Какой ресурс это здание тратит непрерывно, пока существует — null,
+     * если не тратит вообще (дом, шахта, электростанция сейчас). Ставка
+     * зависит от того, простаивает здание или работает — см.
+     * idleConsumptionRate/activeConsumptionRate.
+     */
+    public ResourceType consumesResourceType;
+
+    /** Актуально только если consumesResourceType != null. Единиц в секунду, когда очередь производства пуста. */
+    public float idleConsumptionRate;
+
+    /** Актуально только если consumesResourceType != null. Единиц в секунду, когда здание что-то производит. */
+    public float activeConsumptionRate;
+
     /** Актуально только для HOME — отступ от края карты при автоспавне в углу. */
     public float spawnMargin;
-
-    /** Актуально только для ARCHER_BARRACKS — расстояние от дома того же игрока по оси X при автоспавне. */
-    public float offsetFromHome;
 
     /** Актуально только для IRON_MINE — радиус "прилипания" превью к месторождению при постройке. */
     public float snapRadius;

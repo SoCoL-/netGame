@@ -33,7 +33,7 @@ import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PathPoint;
 import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
-import ru.socol.supreme.shared.network.messages.PlacePowerPlantRequest;
+import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
@@ -61,7 +61,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * бой, применяет правила игры (максимум 2 игрока, максимум 300 юнитов на
  * всю игру суммарно, карта 2000x2000) и с фиксированной частотой рассылает
  * снапшоты мира всем клиентам. Как только у одного из игроков уничтожен дом
- * (не казарма стрелков — см. spawnHomeAndBarracks) — объявляет победителя и
+ * (не казарма стрелков — см. spawnHome) — объявляет победителя и
  * замораживает симуляцию.
  *
  * Это "каркас" — минимальный, но рабочий скелет. Он не занимается
@@ -119,7 +119,7 @@ public class GameServer {
 
         engine.addSystem(new AggroSystem(unitsById, aggroGrid));
         engine.addSystem(new CombatSystem(unitsById, this::handleShotFired));
-        engine.addSystem(new ProductionSystem(unitsById, this::createUnit));
+        engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit));
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(resourcesByPlayer));
         engine.addSystem(new MovementSystem());
@@ -203,7 +203,7 @@ public class GameServer {
         playerSlotUsed[playerId] = true;
         connectionToPlayer.put(connection.getID(), playerId);
         resourcesByPlayer.put(playerId, new PlayerResources(playerId));
-        spawnHomeAndBarracks(playerId);
+        spawnHome(playerId);
 
         response.accepted = true;
         response.playerId = playerId;
@@ -239,18 +239,15 @@ public class GameServer {
      * причина, почему у GameServer вообще есть представление о том, где
      * "начало" у каждого игрока. Единственное здание, которое регистрируется
      * в buildingIdByPlayer — его разрушение заканчивает игру, см. checkGameOver.
+     * Единственное здание, которое сервер ставит сам при входе игрока —
+     * казарма стрелков, шахта железа и электростанция теперь строятся
+     * самим игроком из меню постройки (клавиша B), см. handlePlaceBuilding
+     * /handlePlaceIronMine.
      */
-    private void spawnHomeAndBarracks(int playerId) {
+    private void spawnHome(int playerId) {
         float[] home = BuildingDefinitions.homeSpawnPoint(playerId);
         int homeUnitId = spawnBuilding(playerId, BuildingType.HOME, home[0], home[1]);
         buildingIdByPlayer.put(playerId, homeUnitId);
-
-        // Казарма стрелков — гораздо более хрупкая, чем дом, и НЕ
-        // регистрируется в buildingIdByPlayer: её разрушение не
-        // заканчивает игру, просто лишает игрока возможности производить
-        // стрелков.
-        float[] archerBarracks = BuildingDefinitions.archerBarracksSpawnPoint(playerId);
-        spawnBuilding(playerId, BuildingType.ARCHER_BARRACKS, archerBarracks[0], archerBarracks[1]);
     }
 
     /**
@@ -416,12 +413,16 @@ public class GameServer {
     }
 
     /**
-     * Электростанция — в отличие от шахты, не привязана к фиксированной
-     * точке: игрок сам выбирает, где строить, поэтому шлёт координаты, а
-     * не индекс. Проверка размещения (границы карты, вода, юниты, другие
-     * здания) — общая с клиентским превью, см. BuildingPlacement.
+     * Казарма стрелков или электростанция — в отличие от шахты, не
+     * привязаны к фиксированной точке: игрок сам выбирает, где строить,
+     * поэтому шлёт координаты и тип, а не индекс месторождения. Проверка
+     * размещения (границы карты, вода, юниты, другие здания) — общая с
+     * клиентским превью, см. BuildingPlacement.canPlaceBuilding. Дом сюда
+     * не попадает вообще (строит только сервер при входе игрока), шахта —
+     * своим отдельным handlePlaceIronMine (индекс месторождения, не
+     * координаты).
      */
-    synchronized void handlePlacePowerPlant(Connection connection, PlacePowerPlantRequest request) {
+    synchronized void handlePlaceBuilding(Connection connection, PlaceBuildingRequest request) {
         if (gameOver) {
             return;
         }
@@ -431,12 +432,20 @@ public class GameServer {
             return;
         }
 
-        if (!BuildingPlacement.canPlacePowerPlant(unitsById.values(), request.x, request.y)) {
-            server.sendToTCP(connection.getID(), new ErrorResponse("Cannot place power plant there"));
+        if (request.buildingType < 0 || request.buildingType >= BuildingType.values().length) {
+            return; // некорректный индекс — либо баг клиента, либо модифицированный клиент
+        }
+        BuildingType type = BuildingType.values()[request.buildingType];
+        if (type == BuildingType.HOME || type == BuildingType.IRON_MINE) {
+            return; // дом строит только сервер, шахта — только через handlePlaceIronMine
+        }
+
+        if (!BuildingPlacement.canPlaceBuilding(type, unitsById.values(), request.x, request.y)) {
+            server.sendToTCP(connection.getID(), new ErrorResponse("Cannot place building there"));
             return;
         }
 
-        spawnBuilding(playerId, BuildingType.POWER_PLANT, request.x, request.y);
+        spawnBuilding(playerId, type, request.x, request.y);
     }
 
     /** Занято ли месторождение — ищем среди unitsById здание добычи (строящееся или уже готовое) точно в этой точке. */

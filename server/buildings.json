@@ -13,9 +13,11 @@
     "halfWidth": 25,
     "halfHeight": 50,
     "maxHealth": 70,
-    "buildTime": 0,
+    "buildTime": 10,
     "producesUnitType": "ARCHER",
-    "offsetFromHome": 175
+    "consumesResourceType": "ELECTRICITY",
+    "idleConsumptionRate": 0.5,
+    "activeConsumptionRate": 2
   },
   {
     "type": "IRON_MINE",
@@ -34,6 +36,6 @@
     "maxHealth": 90,
     "buildTime": 10,
     "resourceType": "ELECTRICITY",
-    "extractionRate": 1
+    "extractionRate": 150
   }
 ]

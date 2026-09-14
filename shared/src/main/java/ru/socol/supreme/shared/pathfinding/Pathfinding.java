@@ -19,10 +19,9 @@ import java.util.Set;
 
 /**
  * Поиск пути по сетке в обход препятствий: прямоугольник воды посередине
- * карты (GameConstants.WATER_*) и все здания игроков — дом и казарма
- * стрелков у каждого (их клетки блокируются по тем же координатам, что
- * GameServer берёт из BuildingDefinitions.homeSpawnPoint и
- * archerBarracksSpawnPoint — единые формулы, см. их javadoc).
+ * карты (GameConstants.WATER_*) и дом каждого игрока — единственное
+ * здание с фиксированной, известной заранее позицией (сервер спавнит
+ * его сам при входе игрока — см. BuildingDefinitions.homeSpawnPoint).
  *
  * Работает только на сервере — как и MovementSystem/CombatSystem, живёт в
  * shared, но реально используется только GameServer.handleMoveUnit и
@@ -37,12 +36,12 @@ import java.util.Set;
  * оптимизаций тут более чем достаточно быстрый.
  *
  * Сетка препятствий строится один раз статически при загрузке класса —
- * упрощение, оправданное тем, что дом и казарма стоят на фиксированных,
- * заранее известных местах (см. BuildingDefinitions.homeSpawnPoint и
- * archerBarracksSpawnPoint). Здания добычи (шахта, электростанция) сюда
- * СОЗНАТЕЛЬНО не входят — они появляются в рантайме по воле игрока, в
- * произвольной точке; пересчитывать статическую сетку при их появлении
- * не стали (см. README, "Известное ограничение" у зданий добычи) —
+ * упрощение, оправданное тем, что дом стоит на фиксированном, заранее
+ * известном месте (см. BuildingDefinitions.homeSpawnPoint). ВСЕ остальные
+ * здания (казарма стрелков, шахта железа, электростанция) сюда
+ * СОЗНАТЕЛЬНО не входят — их строит сам игрок в рантайме, в произвольной
+ * точке; пересчитывать статическую сетку при их появлении не стали (см.
+ * README, "Известное ограничение" у зданий добычи) —
  * CollisionSystem всё равно не даёт сквозь них пройти, просто не по A*.
  */
 public final class Pathfinding {
@@ -93,14 +92,18 @@ public final class Pathfinding {
                 && y >= GameConstants.WATER_MIN_Y - margin && y <= GameConstants.WATER_MAX_Y + margin;
     }
 
+    /**
+     * Дом — единственное здание с фиксированной, известной заранее
+     * позицией (сервер спавнит его сам при входе игрока). Казарма
+     * стрелков, шахта железа и электростанция теперь тоже строит сам
+     * игрок в произвольной точке — как и шахта/станция, казарма
+     * СОЗНАТЕЛЬНО не входит в эту статическую сетку (см. javadoc класса
+     * выше); было бы неверно закладывать для неё какую-то одну позицию.
+     */
     private static boolean isInsideAnyBuilding(float x, float y) {
         for (int playerId = 0; playerId < GameConstants.MAX_PLAYERS; playerId++) {
             float[] home = BuildingDefinitions.homeSpawnPoint(playerId);
             if (isInsideBuildingFootprint(x, y, home[0], home[1], BuildingType.HOME)) {
-                return true;
-            }
-            float[] archerBarracks = BuildingDefinitions.archerBarracksSpawnPoint(playerId);
-            if (isInsideBuildingFootprint(x, y, archerBarracks[0], archerBarracks[1], BuildingType.ARCHER_BARRACKS)) {
                 return true;
             }
         }

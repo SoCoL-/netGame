@@ -10,9 +10,9 @@ import java.util.Map;
 
 /**
  * Загружает все данные зданий (размер, здоровье, время постройки, что
- * производят/добывают, формулы позиционирования) из buildings.json один
- * раз при первом обращении — как и units.json/UnitDefinitions, баланс за
- * партию не меняется, "посчитать один раз при старте" достаточно.
+ * производят/добывают/тратят) из buildings.json один раз при первом
+ * обращении — как и units.json/UnitDefinitions, баланс за партию не
+ * меняется, "посчитать один раз при старте" достаточно.
  *
  * Файл ищется в текущей рабочей директории процесса — как и units.json,
  * см. её javadoc про buildJars и про то, что при запуске не через
@@ -49,7 +49,7 @@ public final class BuildingDefinitions {
         return DEFINITIONS.get(type).maxHealth;
     }
 
-    /** 0 — здание появляется сразу готовым (дом, казарма), не через ConstructionComponent. */
+    /** 0 — здание появляется сразу готовым (сейчас только дом), не через ConstructionComponent. */
     public static float buildTimeFor(BuildingType type) {
         return DEFINITIONS.get(type).buildTime;
     }
@@ -68,30 +68,31 @@ public final class BuildingDefinitions {
         return DEFINITIONS.get(type).extractionRate;
     }
 
+    /** null, если это здание не тратит ресурс непрерывно (сейчас — все, кроме казармы стрелков). */
+    public static ResourceType consumesResourceTypeFor(BuildingType type) {
+        return DEFINITIONS.get(type).consumesResourceType;
+    }
+
+    /** Единиц в секунду, когда очередь производства пуста. Актуально только если consumesResourceTypeFor != null. */
+    public static float idleConsumptionRateFor(BuildingType type) {
+        return DEFINITIONS.get(type).idleConsumptionRate;
+    }
+
+    /** Единиц в секунду, когда здание что-то производит. Актуально только если consumesResourceTypeFor != null. */
+    public static float activeConsumptionRateFor(BuildingType type) {
+        return DEFINITIONS.get(type).activeConsumptionRate;
+    }
+
     public static float snapRadiusFor(BuildingType type) {
         return DEFINITIONS.get(type).snapRadius;
     }
 
-    /** Место автоспавна дома игрока — в противоположных углах карты. Возвращает {x, y}. */
+    /** Место автоспавна дома игрока — в противоположных углах карты. Возвращает {x, y}. Единственное здание, которое сервер ставит сам при входе игрока — остальные строит сам игрок из меню (клавиша B). */
     public static float[] homeSpawnPoint(int playerId) {
         float margin = DEFINITIONS.get(BuildingType.HOME).spawnMargin;
         float x = playerId == 0 ? margin : GameConstants.MAP_WIDTH - margin;
         float y = playerId == 0 ? margin : GameConstants.MAP_HEIGHT - margin;
         return new float[]{x, y};
-    }
-
-    /**
-     * Место автоспавна казармы стрелков — чисто по оси X от дома того же
-     * игрока (в сторону центра карты), Y совпадает с домом. Не по
-     * диагонали — дом и казарма разной чётности размера (2x2 и 1x2)
-     * требуют разных условий выравнивания по сетке, совмещать оба на
-     * одной диагонали сложнее, чем развести по одной оси. Возвращает {x, y}.
-     */
-    public static float[] archerBarracksSpawnPoint(int playerId) {
-        float[] home = homeSpawnPoint(playerId);
-        float offset = DEFINITIONS.get(BuildingType.ARCHER_BARRACKS).offsetFromHome;
-        float direction = playerId == 0 ? 1f : -1f; // в сторону центра карты по X
-        return new float[]{home[0] + direction * offset, home[1]};
     }
 
     /**
@@ -164,9 +165,11 @@ public final class BuildingDefinitions {
         archerBarracks.halfWidth = 25f;
         archerBarracks.halfHeight = 50f;
         archerBarracks.maxHealth = 70;
-        archerBarracks.buildTime = 0f;
+        archerBarracks.buildTime = 10f; // теперь строит сам игрок, не автоспавн — та же длительность, что у шахты/станции
         archerBarracks.producesUnitType = UnitType.ARCHER;
-        archerBarracks.offsetFromHome = 175f;
+        archerBarracks.consumesResourceType = ResourceType.ELECTRICITY;
+        archerBarracks.idleConsumptionRate = 0.5f;
+        archerBarracks.activeConsumptionRate = 2f;
         definitions.put(BuildingType.ARCHER_BARRACKS, archerBarracks);
 
         BuildingDefinition ironMine = new BuildingDefinition();
@@ -187,7 +190,7 @@ public final class BuildingDefinitions {
         powerPlant.maxHealth = 90;
         powerPlant.buildTime = 10f;
         powerPlant.resourceType = ResourceType.ELECTRICITY;
-        powerPlant.extractionRate = 1f;
+        powerPlant.extractionRate = 150f;
         definitions.put(BuildingType.POWER_PLANT, powerPlant);
 
         return definitions;

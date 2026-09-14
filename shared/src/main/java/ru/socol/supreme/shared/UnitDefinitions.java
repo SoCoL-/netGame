@@ -84,9 +84,14 @@ public final class UnitDefinitions {
         return max;
     }
 
-    /** Пока нигде не читается (см. UnitDefinition.cost) — задел на будущее. */
-    public static int costFor(UnitType type) {
-        return DEFINITIONS.get(type).cost;
+    /** Сколько железа стоит один такой юнит — списывается равномерно за время постройки, см. ProductionSystem. */
+    public static int ironCostFor(UnitType type) {
+        return DEFINITIONS.get(type).ironCost;
+    }
+
+    /** Сколько электричества стоит один такой юнит — см. ironCostFor. */
+    public static int electricityCostFor(UnitType type) {
+        return DEFINITIONS.get(type).electricityCost;
     }
 
     private static Map<UnitType, UnitDefinition> load() {
@@ -112,8 +117,8 @@ public final class UnitDefinitions {
     /** Встроенные значения — то, чем баланс был до вынесения в JSON. Подстраховка на случай отсутствия/поломки файла. */
     private static Map<UnitType, UnitDefinition> defaultDefinitions() {
         Map<UnitType, UnitDefinition> definitions = new EnumMap<>(UnitType.class);
-        definitions.put(UnitType.WARRIOR, new UnitDefinition(UnitType.WARRIOR, 80f, 20, 4f, 2, 70f, 10));
-        definitions.put(UnitType.ARCHER, new UnitDefinition(UnitType.ARCHER, 80f, 20, 4f, 2, 210f, 15));
+        definitions.put(UnitType.WARRIOR, new UnitDefinition(UnitType.WARRIOR, 80f, 20, 4f, 2, 70f, 0, 0));
+        definitions.put(UnitType.ARCHER, new UnitDefinition(UnitType.ARCHER, 80f, 20, 4f, 2, 210f, 300, 300));
         return definitions;
     }
 }
