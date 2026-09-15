@@ -110,6 +110,23 @@ public class GameServer {
     private final AtomicInteger unitIdSequence = new AtomicInteger(1);
 
     private float snapshotAccumulator = 0f;
+
+    /**
+     * Сколько РЕАЛЬНОГО времени прошло с прошлого расчёта ставки ресурсов
+     * — не то же самое, что snapshotAccumulator: тот сбрасывается в 0 по
+     * достижении порога (излишек "перелёта" через SNAPSHOT_RATE просто
+     * выбрасывается), а этот нужен ТОЧНО для той величины, на которую
+     * реально успели измениться resources.iron/electricity — Thread.sleep
+     * не гарантирует точность (особенно на Windows, где таймер обычно
+     * грубее запрошенных ~33мс), так что настоящий интервал между
+     * рассылками снапшота гуляет вокруг номинального SNAPSHOT_RATE — то 2
+     * тика, то 3. Делить на номинальную константу вместо этого давало
+     * скачущую, неверную ставку (баг, воспроизводился как "у одной
+     * электростанции доход скачет между +151 и +225 вместо стабильных
+     * +150").
+     */
+    private float timeSinceLastResourceRateUpdate = 0f;
+
     private volatile boolean gameOver = false;
 
     public GameServer() {
@@ -168,6 +185,7 @@ public class GameServer {
                     checkGameOver();
 
                     snapshotAccumulator += deltaTime;
+                    timeSinceLastResourceRateUpdate += deltaTime;
                     if (snapshotAccumulator >= GameConstants.SNAPSHOT_RATE) {
                         snapshotAccumulator = 0f;
                         broadcastSnapshot();
@@ -669,15 +687,19 @@ public class GameServer {
         }
         // Ставка изменения ресурса — реально измеренная разница с прошлой
         // рассылки снапшота (см. javadoc PlayerResources.ironRate), а не
-        // отдельно вычисленная "теоретическая" формула.
+        // отдельно вычисленная "теоретическая" формула. Делим на РЕАЛЬНО
+        // прошедшее время (timeSinceLastResourceRateUpdate), а не на
+        // номинальный GameConstants.SNAPSHOT_RATE — см. её javadoc, почему
+        // это раньше давало скачущую ставку вместо стабильного числа.
         for (PlayerResources resources : resourcesByPlayer.values()) {
             float[] previous = previousResourceValues.get(resources.playerId);
-            if (previous != null) {
-                resources.ironRate = (resources.iron - previous[0]) / GameConstants.SNAPSHOT_RATE;
-                resources.electricityRate = (resources.electricity - previous[1]) / GameConstants.SNAPSHOT_RATE;
+            if (previous != null && timeSinceLastResourceRateUpdate > 0f) {
+                resources.ironRate = (resources.iron - previous[0]) / timeSinceLastResourceRateUpdate;
+                resources.electricityRate = (resources.electricity - previous[1]) / timeSinceLastResourceRateUpdate;
             }
             previousResourceValues.put(resources.playerId, new float[]{resources.iron, resources.electricity});
         }
+        timeSinceLastResourceRateUpdate = 0f;
         snapshot.playerResources.addAll(resourcesByPlayer.values());
         server.sendToAllTCP(snapshot);
     }
