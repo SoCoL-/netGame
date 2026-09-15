@@ -26,7 +26,7 @@
     "maxHealth": 70,
     "buildTime": 10,
     "resourceType": "IRON",
-    "extractionRate": 1,
+    "extractionRate": 20,
     "snapRadius": 60
   },
   {
@@ -46,5 +46,14 @@
     "buildTime": 10,
     "storesResourceType": "IRON",
     "storageCapacity": 500
+  },
+  {
+    "type": "ELECTRICITY_STORAGE",
+    "halfWidth": 25,
+    "halfHeight": 25,
+    "maxHealth": 80,
+    "buildTime": 10,
+    "storesResourceType": "ELECTRICITY",
+    "storageCapacity": 3000
   }
 ]

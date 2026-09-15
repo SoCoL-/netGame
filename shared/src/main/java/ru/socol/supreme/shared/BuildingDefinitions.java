@@ -189,7 +189,7 @@ public final class BuildingDefinitions {
         ironMine.maxHealth = 70;
         ironMine.buildTime = 10f;
         ironMine.resourceType = ResourceType.IRON;
-        ironMine.extractionRate = 1f;
+        ironMine.extractionRate = 20f;
         ironMine.snapRadius = 60f;
         definitions.put(BuildingType.IRON_MINE, ironMine);
 
@@ -212,6 +212,16 @@ public final class BuildingDefinitions {
         ironStorage.storesResourceType = ResourceType.IRON;
         ironStorage.storageCapacity = 500f;
         definitions.put(BuildingType.IRON_STORAGE, ironStorage);
+
+        BuildingDefinition electricityStorage = new BuildingDefinition();
+        electricityStorage.type = BuildingType.ELECTRICITY_STORAGE;
+        electricityStorage.halfWidth = 25f;
+        electricityStorage.halfHeight = 25f;
+        electricityStorage.maxHealth = 80;
+        electricityStorage.buildTime = 10f;
+        electricityStorage.storesResourceType = ResourceType.ELECTRICITY;
+        electricityStorage.storageCapacity = 3000f; // крупнее, чем у IRON_STORAGE — электричество течёт куда быстрее (150/сек против 20/сек у железа)
+        definitions.put(BuildingType.ELECTRICITY_STORAGE, electricityStorage);
 
         return definitions;
     }

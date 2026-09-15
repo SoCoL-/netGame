@@ -97,17 +97,24 @@ public final class GameConstants {
     };
 
     /**
-     * Базовая вместимость хранилища железа — доступна игроку всегда, даже
-     * без единого здания IRON_STORAGE (иначе шахта железа была бы
-     * бесполезна до постройки первого хранилища — слишком жёстко для
-     * старта). Здания IRON_STORAGE добавляют к ней
-     * BuildingDefinitions.storageCapacityFor(IRON_STORAGE) за каждое —
-     * см. ResourceExtractionSystem, она же считает итоговую вместимость
-     * каждый тик. 300 — ровно стоимость одного стрелка (UnitDefinitions
-     * .ironCostFor(ARCHER)), чтобы на первого стрелка хватало запасать
-     * железо и без хранилища.
+     * Базовая вместимость хранилища ресурса — доступна игроку всегда,
+     * даже без единого здания IRON_STORAGE/ELECTRICITY_STORAGE (иначе
+     * добывающее здание было бы бесполезно до постройки первого
+     * хранилища — слишком жёстко для старта). Здания-хранилища
+     * добавляют к ней BuildingDefinitions.storageCapacityFor(type) за
+     * каждое — см. ResourceExtractionSystem, она же считает итоговую
+     * вместимость заново каждый тик. Раздельные константы, а не одна
+     * общая: у ресурсов сильно разный масштаб потока (электростанция —
+     * 150/сек, шахта железа — 20/сек), одно и то же число было бы или
+     * тесным для электричества, или бессмысленно огромным для железа.
      */
-    public static final float IRON_BASE_CAPACITY = 300f;
+    public static final float IRON_BASE_CAPACITY = 300f; // ровно стоимость одного стрелка по железу
+    public static final float ELECTRICITY_BASE_CAPACITY = 2000f; // ~13 сек добычи на полной ставке электростанции
+
+    /** Базовая вместимость по типу ресурса — используется ResourceExtractionSystem вместо отдельных if/else на каждый тип. */
+    public static float baseCapacityFor(ResourceType type) {
+        return type == ResourceType.ELECTRICITY ? ELECTRICITY_BASE_CAPACITY : IRON_BASE_CAPACITY;
+    }
 
     /** Размер клетки сетки для поиска пути (Pathfinding) — 2000/50 = 40x40 клеток. */
     public static final float PATH_GRID_CELL_SIZE = 50f;

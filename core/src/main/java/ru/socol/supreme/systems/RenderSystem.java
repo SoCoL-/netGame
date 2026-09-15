@@ -149,7 +149,10 @@ public class RenderSystem extends IteratingSystem {
                 drawPowerPlantMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
                 break;
             case IRON_STORAGE:
-                drawIronStorageMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
+                drawStorageMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight), IRON_MINE_MARKER_COLOR);
+                break;
+            case ELECTRICITY_STORAGE:
+                drawStorageMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight), POWER_PLANT_MARKER_COLOR);
                 break;
             case HOME:
             default:
@@ -195,9 +198,10 @@ public class RenderSystem extends IteratingSystem {
     }
 
     /** Маленький квадрат в том же ржавом цвете, что у шахты/месторождений (оба про железо) — но квадрат, не ромб, чтобы не путать с шахтой. */
-    private void drawIronStorageMarker(float cx, float cy, float halfSize) {
+    /** Маленький квадрат в цвете добываемого ресурса — единственное, что отличает хранилище (железа или электричества) от здания добычи того же ресурса (там ромб/кружок) на глаз. */
+    private void drawStorageMarker(float cx, float cy, float halfSize, Color color) {
         float markerHalf = halfSize * 0.4f;
-        shapeRenderer.setColor(IRON_MINE_MARKER_COLOR);
+        shapeRenderer.setColor(color);
         shapeRenderer.rect(cx - markerHalf, cy - markerHalf, markerHalf * 2f, markerHalf * 2f);
     }
 

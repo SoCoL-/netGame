@@ -12,5 +12,6 @@ public enum BuildingType {
     ARCHER_BARRACKS,
     IRON_MINE,
     POWER_PLANT,
-    IRON_STORAGE
+    IRON_STORAGE,
+    ELECTRICITY_STORAGE
 }
