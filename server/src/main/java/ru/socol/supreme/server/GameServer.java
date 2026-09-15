@@ -96,6 +96,15 @@ public class GameServer {
      */
     private final Map<Integer, PlayerResources> resourcesByPlayer = new HashMap<>();
 
+    /**
+     * playerId -> {iron, electricity} на момент ПРЕДЫДУЩЕЙ рассылки
+     * снапшота — только для того, чтобы посчитать PlayerResources
+     * .ironRate/electricityRate (см. её javadoc) как реально измеренную
+     * разницу, а не отдельную "теоретическую" формулу из состояния
+     * зданий, рискующую разойтись с ProductionSystem/ResourceExtractionSystem.
+     */
+    private final Map<Integer, float[]> previousResourceValues = new HashMap<>();
+
     private final boolean[] playerSlotUsed = new boolean[GameConstants.MAX_PLAYERS];
 
     private final AtomicInteger unitIdSequence = new AtomicInteger(1);
@@ -229,6 +238,7 @@ public class GameServer {
 
         buildingIdByPlayer.remove(playerId);
         resourcesByPlayer.remove(playerId);
+        previousResourceValues.remove(playerId);
         playerSlotUsed[playerId] = false;
     }
 
@@ -656,6 +666,17 @@ public class GameServer {
             }
 
             snapshot.units.add(unitSnapshot);
+        }
+        // Ставка изменения ресурса — реально измеренная разница с прошлой
+        // рассылки снапшота (см. javadoc PlayerResources.ironRate), а не
+        // отдельно вычисленная "теоретическая" формула.
+        for (PlayerResources resources : resourcesByPlayer.values()) {
+            float[] previous = previousResourceValues.get(resources.playerId);
+            if (previous != null) {
+                resources.ironRate = (resources.iron - previous[0]) / GameConstants.SNAPSHOT_RATE;
+                resources.electricityRate = (resources.electricity - previous[1]) / GameConstants.SNAPSHOT_RATE;
+            }
+            previousResourceValues.put(resources.playerId, new float[]{resources.iron, resources.electricity});
         }
         snapshot.playerResources.addAll(resourcesByPlayer.values());
         server.sendToAllTCP(snapshot);

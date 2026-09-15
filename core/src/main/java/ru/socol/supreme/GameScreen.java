@@ -83,8 +83,12 @@ public class GameScreen extends InputAdapter implements Screen {
     // (в отличие от панели постройки — не только когда что-то выбрано).
     private static final float RESOURCE_PANEL_X = 20f;
     private static final float RESOURCE_PANEL_Y = 550f;
-    private static final float RESOURCE_PANEL_WIDTH = 220f;
+    private static final float RESOURCE_PANEL_WIDTH = 280f; // расширено под ставку изменения справа от количества
     private static final float RESOURCE_PANEL_HEIGHT = 40f;
+    // Где начинается текст ставки — фиксированный отступ от правого края
+    // панели, не "после текста количества": разная ширина цифр количества
+    // (1 против 4 разрядов) иначе сдвигала бы ставку то туда, то сюда.
+    private static final float RESOURCE_PANEL_RATE_X = RESOURCE_PANEL_X + RESOURCE_PANEL_WIDTH - 60f;
 
     // Меню "что строить" по клавише B — фиксированная позиция ближе к
     // центру экрана, чтобы не пересекаться ни с панелью ресурсов (сверху
@@ -191,6 +195,11 @@ public class GameScreen extends InputAdapter implements Screen {
     // про свои же.
     private float myIron = 0f;
     private float myElectricity = 0f;
+    // Чистое изменение в секунду — уже посчитано сервером как реально
+    // измеренная разница между снапшотами (см. javadoc
+    // PlayerResources.ironRate), клиент тут ничего сам не вычисляет.
+    private float myIronRate = 0f;
+    private float myElectricityRate = 0f;
     private String gameOverText = null;
     // Пока не null — показываем этот текст вместо игры (окно уже открыто и
     // отрисовывается, само подключение идёт в фоне — см. GameClient.connect()).
@@ -231,6 +240,8 @@ public class GameScreen extends InputAdapter implements Screen {
                         if (resources.playerId == client.getPlayerId()) {
                             myIron = resources.iron;
                             myElectricity = resources.electricity;
+                            myIronRate = resources.ironRate;
+                            myElectricityRate = resources.electricityRate;
                             break;
                         }
                     }
@@ -631,11 +642,28 @@ public class GameScreen extends InputAdapter implements Screen {
         // (int) — округление вниз для отображения; внутренний счёт остаётся дробным (float), см. myIron/myElectricity.
         uiFont.draw(spriteBatch, "Iron: " + (int) myIron, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 8f);
         uiFont.draw(spriteBatch, "Electricity: " + (int) myElectricity, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 26f);
+        drawResourceRate(myIronRate, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 8f);
+        drawResourceRate(myElectricityRate, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 26f);
         spriteBatch.end();
 
         // Возвращаем world-камеру шейп-рендереру и спрайт-батчу для следующего кадра.
         shapeRenderer.setProjectionMatrix(camera.combined);
         spriteBatch.setProjectionMatrix(camera.combined);
+    }
+
+    /**
+     * Чистое изменение ресурса в секунду, напротив его количества —
+     * зелёным при приросте, красным при расходе, белым, если после
+     * округления ровно 0. Цвет и знак берутся от УЖЕ округлённого числа
+     * (не от сырого float), чтобы не показывать, например, зелёный "0" —
+     * если на экране 0, он должен быть белым, а не намекать на скрытый
+     * дробный прирост, который всё равно не виден.
+     */
+    private void drawResourceRate(float rate, float y) {
+        int rounded = Math.round(rate);
+        uiFont.setColor(rounded > 0 ? Color.GREEN : rounded < 0 ? Color.RED : Color.WHITE);
+        String text = rounded > 0 ? "+" + rounded : String.valueOf(rounded);
+        uiFont.draw(spriteBatch, text, RESOURCE_PANEL_RATE_X, y);
     }
 
     private void drawProductionPanel() {
