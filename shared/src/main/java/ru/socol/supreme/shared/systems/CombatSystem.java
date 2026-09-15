@@ -9,11 +9,12 @@ import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AttackComponent;
+import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
-import ru.socol.supreme.shared.pathfinding.Pathfinding;
+import ru.socol.supreme.shared.pathfinding.DynamicPathfinding;
 
 import java.util.Map;
 
@@ -33,6 +34,10 @@ import java.util.Map;
  * Живёт в shared (как и MovementSystem), но реально используется только
  * сервером: клиент не запускает эту систему у себя, он лишь показывает
  * результат из снапшотов.
+ *
+ * НОВОЕ: интеграция с DynamicPathfinding.
+ * - Вызывает recalculatePath вместо старого Pathfinding.setDestination
+ * - При уничтожении здания вызывает buildingDestroyedListener callback
  */
 public class CombatSystem extends IteratingSystem {
 
@@ -45,6 +50,14 @@ public class CombatSystem extends IteratingSystem {
         void onShotFired(UnitType attackerType, float fromX, float fromY, float toX, float toY);
     }
 
+    /**
+     * НОВОЕ: слушатель на событие разрушения здания.
+     * Вызывается при 0 HP здания.
+     */
+    public interface BuildingDestroyedListener {
+        void onBuildingDestroyed(Entity building);
+    }
+
     private static final ComponentMapper<PositionComponent> POSITION =
             ComponentMapper.getFor(PositionComponent.class);
     private static final ComponentMapper<DirectionComponent> DIRECTION =
@@ -55,20 +68,25 @@ public class CombatSystem extends IteratingSystem {
             ComponentMapper.getFor(HealthComponent.class);
     private static final ComponentMapper<UnitTypeComponent> UNIT_TYPE =
             ComponentMapper.getFor(UnitTypeComponent.class);
+    private static final ComponentMapper<BuildingComponent> BUILDING =
+            ComponentMapper.getFor(BuildingComponent.class);
 
     /** Тот же реестр unitId -> Entity, что и в GameServer — передаётся по ссылке, не копируется. */
     private final Map<Integer, Entity> unitsById;
     private final ShotFiredListener shotFiredListener;
+    private final BuildingDestroyedListener buildingDestroyedListener;
 
-    /** Переиспользуемый вектор для точки подхода при погоне — не аллоцируем новый каждый тик на каждого атакующего. */
+    /** Переиспользуемый вектор для точки подхода при погоне — не аллоцируем новый каждый тик. */
     private final Vector2 approachPoint = new Vector2();
 
     private Engine engine;
 
-    public CombatSystem(Map<Integer, Entity> unitsById, ShotFiredListener shotFiredListener) {
+    public CombatSystem(Map<Integer, Entity> unitsById, ShotFiredListener shotFiredListener,
+                        BuildingDestroyedListener buildingDestroyedListener) {
         super(Family.all(AttackComponent.class, PositionComponent.class, DirectionComponent.class).get(), 0);
         this.unitsById = unitsById;
         this.shotFiredListener = shotFiredListener;
+        this.buildingDestroyedListener = buildingDestroyedListener;
     }
 
     @Override
@@ -105,7 +123,7 @@ public class CombatSystem extends IteratingSystem {
             // можно стрелять. Это не только естественно (не нужно доходить
             // вплотную), но и обязательно для зданий: их собственный центр
             // всегда лежит "внутри" них самих, а значит формально заблокирован
-            // для Pathfinding (см. PATH_CLEARANCE) — атакующий, направленный
+            // для DynamicPathfinding (см. PATH_CLEARANCE) — атакующий, направленный
             // прямо в центр здания, просто никуда не пошёл бы. Точка в
             // attackRange от цели гарантированно снаружи любого препятствия,
             // потому что attackRange (70 у воина, 210 у стрелка) всегда
@@ -117,12 +135,12 @@ public class CombatSystem extends IteratingSystem {
             // больше, чем самая большая раздутая (на PATH_CLEARANCE)
             // половина здания (сейчас максимум — 62, у дома), иначе точка
             // подхода будет попадать ВНУТРЬ заблокированной зоны здания, и
-            // Pathfinding.setDestination будет её игнорировать — юнит с
+            // DynamicPathfinding.setDestination будет её игнорировать — юнит с
             // слишком маленьким attackRadius не сможет атаковать здания
             // издалека вообще.
             approachPoint.set(myPosition.position).sub(targetPosition.position).nor()
                     .scl(attackRange).add(targetPosition.position);
-            Pathfinding.setDestination(attacker, myPosition, direction, approachPoint.x, approachPoint.y);
+            DynamicPathfinding.setDestination(attacker, myPosition, direction, approachPoint.x, approachPoint.y);
             return;
         }
 
@@ -146,6 +164,12 @@ public class CombatSystem extends IteratingSystem {
         }
 
         if (targetHealth.currentHealth <= 0) {
+            // НОВОЕ: если это здание — вызываем callback для DynamicPathfinding
+            BuildingComponent buildingMarker = BUILDING.get(target);
+            if (buildingMarker != null && buildingDestroyedListener != null) {
+                buildingDestroyedListener.onBuildingDestroyed(target);
+            }
+
             engine.removeEntity(target);
             unitsById.remove(attack.targetUnitId);
             attacker.remove(AttackComponent.class);
