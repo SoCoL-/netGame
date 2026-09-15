@@ -21,6 +21,11 @@ public class UnitSnapshot {
     public int queuedCount;
     public float buildProgress;
 
+    /** Актуально только для здания с production (building=true, queuedCount/buildProgress осмысленны). Точка сбора для новых юнитов — см. ProductionComponent.hasRallyPoint. */
+    public boolean hasRallyPoint;
+    public float rallyX;
+    public float rallyY;
+
     /** Актуально только для юнита (building=false) — его собственный тип (воин/стрелок), ordinal() значения UnitType. */
     public int unitType;
 

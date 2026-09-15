@@ -73,6 +73,9 @@ public class EntityFactory {
             if (production != null) {
                 production.queuedCount = snapshot.queuedCount;
                 production.progress = snapshot.buildProgress;
+                production.hasRallyPoint = snapshot.hasRallyPoint;
+                production.rallyX = snapshot.rallyX;
+                production.rallyY = snapshot.rallyY;
                 // producesUnitType не меняется у здания после создания — обновлять не нужно.
             }
 
@@ -178,6 +181,9 @@ public class EntityFactory {
             production.queuedCount = snapshot.queuedCount;
             production.progress = snapshot.buildProgress;
             production.producesUnitType = producesUnitType;
+            production.hasRallyPoint = snapshot.hasRallyPoint;
+            production.rallyX = snapshot.rallyX;
+            production.rallyY = snapshot.rallyY;
             entity.add(production);
             return;
         }

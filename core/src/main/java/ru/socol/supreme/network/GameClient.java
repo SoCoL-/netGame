@@ -18,6 +18,7 @@ import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
 import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
+import ru.socol.supreme.shared.network.messages.SetRallyPointRequest;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 
 import java.io.IOException;
@@ -119,6 +120,14 @@ public class GameClient implements Disposable {
     public void requestQueueUnit(int buildingUnitId) {
         QueueUnitRequest request = new QueueUnitRequest();
         request.buildingUnitId = buildingUnitId;
+        client.sendTCP(request);
+    }
+
+    public void requestSetRallyPoint(int buildingUnitId, float x, float y) {
+        SetRallyPointRequest request = new SetRallyPointRequest();
+        request.buildingUnitId = buildingUnitId;
+        request.x = x;
+        request.y = y;
         client.sendTCP(request);
     }
 

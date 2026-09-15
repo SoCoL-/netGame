@@ -14,6 +14,7 @@ import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
+import ru.socol.supreme.shared.network.messages.SetRallyPointRequest;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 
@@ -47,5 +48,6 @@ public final class NetworkRegistration {
         kryo.register(PlayerResources.class);
         kryo.register(PlaceIronMineRequest.class);
         kryo.register(PlaceBuildingRequest.class);
+        kryo.register(SetRallyPointRequest.class);
     }
 }

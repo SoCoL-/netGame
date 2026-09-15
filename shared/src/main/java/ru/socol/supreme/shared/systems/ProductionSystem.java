@@ -12,10 +12,12 @@ import ru.socol.supreme.shared.ResourceType;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
+import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
 import java.util.Map;
 
@@ -45,15 +47,19 @@ import java.util.Map;
  * через UnitFactory — у этой системы (как и у всех shared-систем) нет
  * доступа к unitIdSequence/PooledEngine.createComponent для конкретно
  * GameServer'а, а дублировать логику создания юнита здесь означало бы
- * держать два места, которые легко могут разойтись.
+ * держать два места, которые легко могут разойтись. UnitFactory
+ * возвращает созданную сущность именно для точки сбора — если у
+ * ProductionComponent.hasRallyPoint выставлен, свежесозданный юнит сразу
+ * получает Pathfinding.setDestination к ней, тем же путём, каким сервер
+ * обрабатывает обычный ручной приказ на движение.
  *
  * Работает только на сервере, как и остальные gameplay-системы.
  */
 public class ProductionSystem extends IteratingSystem {
 
-    /** Единственная точка создания юнита — реализует GameServer, у которого есть unitIdSequence/engine. */
+    /** Единственная точка создания юнита — реализует GameServer, у которого есть unitIdSequence/engine. Возвращает созданную сущность — нужна ProductionSystem, чтобы сразу отправить юнита к точке сбора, если она задана. */
     public interface UnitFactory {
-        void createUnit(int playerId, float x, float y, UnitType type);
+        Entity createUnit(int playerId, float x, float y, UnitType type);
     }
 
     private static final ComponentMapper<PositionComponent> POSITION =
@@ -117,7 +123,12 @@ public class ProductionSystem extends IteratingSystem {
 
         PositionComponent position = POSITION.get(entity);
         Vector2 spawnPoint = computeSpawnPoint(position.position, buildingType);
-        unitFactory.createUnit(owner.playerId, spawnPoint.x, spawnPoint.y, production.producesUnitType);
+        Entity newUnit = unitFactory.createUnit(owner.playerId, spawnPoint.x, spawnPoint.y, production.producesUnitType);
+
+        if (production.hasRallyPoint) {
+            Pathfinding.setDestination(newUnit, newUnit.getComponent(PositionComponent.class),
+                    newUnit.getComponent(DirectionComponent.class), production.rallyX, production.rallyY);
+        }
 
         production.queuedCount--;
         production.progress = 0f;

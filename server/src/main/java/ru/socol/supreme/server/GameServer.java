@@ -37,6 +37,7 @@ import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
+import ru.socol.supreme.shared.network.messages.SetRallyPointRequest;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
@@ -412,6 +413,45 @@ public class GameServer {
     }
 
     /**
+     * Точка сбора — куда идёт каждый только что произведённый юнит этого
+     * здания (см. ProductionSystem). Клиент присылает её, когда игрок
+     * кликает левой кнопкой по карте при выделенном СВОЁМ здании (см.
+     * GameScreen.touchUp) — координаты не проверяются на валидность
+     * (не в воде/не в здании) специально: Pathfinding.setDestination сам
+     * молча проигнорирует недостижимую точку, как и при обычном ручном
+     * приказе на движение — отдельной проверки тут не нужно.
+     */
+    synchronized void handleSetRallyPoint(Connection connection, SetRallyPointRequest request) {
+        if (gameOver) {
+            return;
+        }
+
+        Integer playerId = connectionToPlayer.get(connection.getID());
+        if (playerId == null) {
+            return;
+        }
+
+        Entity building = unitsById.get(request.buildingUnitId);
+        if (building == null) {
+            return;
+        }
+
+        OwnerComponent owner = building.getComponent(OwnerComponent.class);
+        if (owner == null || owner.playerId != playerId) {
+            return;
+        }
+
+        ProductionComponent production = building.getComponent(ProductionComponent.class);
+        if (production == null) {
+            return; // здание не производит юнитов — точке сбора тут нечего значить
+        }
+
+        production.hasRallyPoint = true;
+        production.rallyX = request.x;
+        production.rallyY = request.y;
+    }
+
+    /**
      * Шахта железа — встаёт только на месторождение (индекс в
      * GameConstants.IRON_DEPOSITS). Клиент уже проверил, что курсор был
      * "прилипшим" к месторождению (см. GameScreen), но решение всегда за
@@ -663,6 +703,9 @@ public class GameServer {
             if (production != null) {
                 unitSnapshot.queuedCount = production.queuedCount;
                 unitSnapshot.buildProgress = production.progress;
+                unitSnapshot.hasRallyPoint = production.hasRallyPoint;
+                unitSnapshot.rallyX = production.rallyX;
+                unitSnapshot.rallyY = production.rallyY;
             }
 
             ConstructionComponent construction = unit.getComponent(ConstructionComponent.class);

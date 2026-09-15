@@ -8,6 +8,7 @@ import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
 import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
+import ru.socol.supreme.shared.network.messages.SetRallyPointRequest;
 
 /** Разбирает входящие сетевые сообщения и передаёт их нужному обработчику GameServer. */
 public class ServerNetworkListener extends Listener {
@@ -32,6 +33,8 @@ public class ServerNetworkListener extends Listener {
             gameServer.handlePlaceIronMine(connection, (PlaceIronMineRequest) object);
         } else if (object instanceof PlaceBuildingRequest) {
             gameServer.handlePlaceBuilding(connection, (PlaceBuildingRequest) object);
+        } else if (object instanceof SetRallyPointRequest) {
+            gameServer.handleSetRallyPoint(connection, (SetRallyPointRequest) object);
         }
     }
 

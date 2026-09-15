@@ -78,6 +78,10 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float IRON_DEPOSIT_RADIUS = 18f;
     private static final Color IRON_MINE_GHOST_VALID_COLOR = Color.GREEN;
     private static final Color IRON_MINE_GHOST_INVALID_COLOR = Color.RED;
+    private static final Color RALLY_POINT_COLOR = Color.TEAL;
+    private static final float RALLY_POINT_RADIUS = 10f;
+    private static final float RALLY_DASH_LENGTH = 15f;
+    private static final float RALLY_GAP_LENGTH = 10f;
 
     // Панель ресурсов — тоже экранные координаты, сверху слева, всегда видна
     // (в отличие от панели постройки — не только когда что-то выбрано).
@@ -90,24 +94,32 @@ public class GameScreen extends InputAdapter implements Screen {
     // (1 против 4 разрядов) иначе сдвигала бы ставку то туда, то сюда.
     private static final float RESOURCE_PANEL_RATE_X = RESOURCE_PANEL_X + RESOURCE_PANEL_WIDTH - 60f;
 
-    // Меню "что строить" по клавише B — фиксированная позиция ближе к
-    // центру экрана, чтобы не пересекаться ни с панелью ресурсов (сверху
-    // слева), ни с панелью постройки (снизу слева). Три кнопки снизу вверх:
-    // электростанция, казарма стрелков, шахта железа.
-    private static final float BUILD_MENU_X = 300f;
-    private static final float BUILD_MENU_Y = 220f;
-    private static final float BUILD_MENU_WIDTH = 200f;
-    private static final float BUILD_MENU_HEIGHT = 230f;
-    private static final float BUILD_MENU_BUTTON_HEIGHT = 32f;
-    private static final float BUILD_MENU_ELECTRICITY_STORAGE_BUTTON_Y = BUILD_MENU_Y + 182f;
-    private static final float BUILD_MENU_IRON_STORAGE_BUTTON_Y = BUILD_MENU_Y + 139f;
-    private static final float BUILD_MENU_IRON_BUTTON_Y = BUILD_MENU_Y + 96f;
-    private static final float BUILD_MENU_BARRACKS_BUTTON_Y = BUILD_MENU_Y + 53f;
-    private static final float BUILD_MENU_POWER_BUTTON_Y = BUILD_MENU_Y + 10f;
+    // Панель построек — горизонтальный ряд кнопок у самого низа экрана,
+    // видна всегда во время игры (не по клавише — см. поле
+    // placingBuildingType выше). Один и тот же Y для всех пяти кнопок,
+    // раздельные X, вычисляются в drawBuildBar/buildBarButtonAt по
+    // индексу в BUILD_BAR_TYPES, а не пятью отдельными константами, как
+    // было у вертикального меню — с одинаковым по форме рядом кнопок это
+    // не нужно.
+    private static final BuildingType[] BUILD_BAR_TYPES = {
+            BuildingType.IRON_MINE,
+            BuildingType.ARCHER_BARRACKS,
+            BuildingType.POWER_PLANT,
+            BuildingType.IRON_STORAGE,
+            BuildingType.ELECTRICITY_STORAGE,
+    };
+    private static final float BUILD_BAR_X = 20f;
+    private static final float BUILD_BAR_Y = 5f;
+    private static final float BUILD_BAR_BUTTON_WIDTH = 150f;
+    private static final float BUILD_BAR_BUTTON_HEIGHT = 50f;
+    private static final float BUILD_BAR_GAP = 4f;
 
     // Панель постройки — экранные (HUD) координаты, не мировые, см. hudCamera.
     private static final float PANEL_X = 20f;
-    private static final float PANEL_Y = 20f;
+    // BUILD_BAR_Y + BUILD_BAR_BUTTON_HEIGHT + запас, а не число само по
+    // себе — чтобы панель постройки гарантированно не перекрылась с
+    // баром построек под ней, даже если его высота ещё поменяется.
+    private static final float PANEL_Y = BUILD_BAR_Y + BUILD_BAR_BUTTON_HEIGHT + 10f;
     private static final float PANEL_WIDTH = 280f;
     private static final float PANEL_HEIGHT = 100f;
     private static final float QUEUE_BUTTON_X = PANEL_X + 15f;
@@ -171,13 +183,14 @@ public class GameScreen extends InputAdapter implements Screen {
     // сеткой клеток поиска пути и рисует маршруты движущихся юнитов.
     private boolean debugMode = false;
 
-    // Клавиша B (см. keyDown) открывает меню "что строить" — showBuildMenu.
-    // Выбор в меню переводит в режим постройки конкретного здания —
+    // Панель построек — горизонтальный ряд кнопок внизу экрана, виден
+    // всегда во время игры (drawBuildBar), не по клавише. Клик по кнопке
+    // сразу переводит в режим постройки конкретного здания —
     // placingBuildingType (null = не строим ничего). Пока идёт постройка,
-    // ЛКМ не выделяет юнитов/здания, а подтверждает — см. touchDown.
-    // Превью считается каждый кадр в render() (обычный опрос текущей
-    // позиции курсора, без отдельного mouseMoved).
-    private boolean showBuildMenu = false;
+    // ЛКМ по карте не выделяет юнитов/здания, а подтверждает — см.
+    // touchDown. Превью считается каждый кадр в render() (обычный опрос
+    // текущей позиции курсора, без отдельного mouseMoved). Клавиша B
+    // осталась только как отмена текущей постройки — см. keyDown.
     private BuildingType placingBuildingType = null;
     private float buildGhostX;
     private float buildGhostY;
@@ -356,6 +369,7 @@ public class GameScreen extends InputAdapter implements Screen {
         updateArrows(delta);
         drawOverlayLines();
         drawArrows();
+        drawRallyPoints();
         if (debugMode) {
             drawDebugPaths();
         }
@@ -369,10 +383,9 @@ public class GameScreen extends InputAdapter implements Screen {
             if (placingBuildingType != null) {
                 updateBuildGhost();
                 drawBuildGhost();
-            } else if (showBuildMenu) {
-                drawBuildMenu();
             }
             drawResourcePanel(); // всегда видна во время игры, не только когда выбрано здание
+            drawBuildBar(); // тоже всегда — горизонтальный ряд кнопок построек внизу экрана
             if (selectedBuildingId != null) {
                 drawProductionPanel();
             }
@@ -473,59 +486,62 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     /** Меню "что строить" — открыто клавишей B, пока не выбран конкретный тип здания (см. keyDown/touchDown). */
-    private void drawBuildMenu() {
+    /** Название кнопки для конкретного типа здания — единственное место, которое переводит BuildingType в подпись на баре. */
+    private String buildBarLabel(BuildingType type) {
+        switch (type) {
+            case IRON_MINE:
+                return "Iron mine";
+            case ARCHER_BARRACKS:
+                return "Archer barracks";
+            case POWER_PLANT:
+                return "Power plant";
+            case IRON_STORAGE:
+                return "Iron storage";
+            case ELECTRICITY_STORAGE:
+                return "Electricity storage";
+            default:
+                return "";
+        }
+    }
+
+    /** Левый X кнопки с этим индексом в баре — единая формула, чтобы отрисовка и проверка клика не могли разойтись. */
+    private float buildBarButtonX(int index) {
+        return BUILD_BAR_X + index * (BUILD_BAR_BUTTON_WIDTH + BUILD_BAR_GAP);
+    }
+
+    private void drawBuildBar() {
         shapeRenderer.setProjectionMatrix(hudCamera.combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-
         shapeRenderer.setColor(Color.valueOf("222222"));
-        shapeRenderer.rect(BUILD_MENU_X, BUILD_MENU_Y, BUILD_MENU_WIDTH, BUILD_MENU_HEIGHT);
-
-        shapeRenderer.setColor(Color.LIGHT_GRAY);
-        shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_ELECTRICITY_STORAGE_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
-        shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_IRON_STORAGE_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
-        shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_IRON_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
-        shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_BARRACKS_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
-        shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_POWER_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
-
+        for (int i = 0; i < BUILD_BAR_TYPES.length; i++) {
+            shapeRenderer.rect(buildBarButtonX(i), BUILD_BAR_Y, BUILD_BAR_BUTTON_WIDTH, BUILD_BAR_BUTTON_HEIGHT);
+        }
         shapeRenderer.end();
 
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
-        uiFont.setColor(Color.BLACK);
-        uiFont.draw(spriteBatch, "Electricity storage", BUILD_MENU_X + 25f, BUILD_MENU_ELECTRICITY_STORAGE_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
-        uiFont.draw(spriteBatch, "Iron storage", BUILD_MENU_X + 25f, BUILD_MENU_IRON_STORAGE_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
-        uiFont.draw(spriteBatch, "Iron mine", BUILD_MENU_X + 25f, BUILD_MENU_IRON_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
-        uiFont.draw(spriteBatch, "Archer barracks", BUILD_MENU_X + 25f, BUILD_MENU_BARRACKS_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
-        uiFont.draw(spriteBatch, "Power plant", BUILD_MENU_X + 25f, BUILD_MENU_POWER_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
+        uiFont.setColor(Color.WHITE);
+        for (int i = 0; i < BUILD_BAR_TYPES.length; i++) {
+            uiFont.draw(spriteBatch, buildBarLabel(BUILD_BAR_TYPES[i]), buildBarButtonX(i) + 10f, BUILD_BAR_Y + BUILD_BAR_BUTTON_HEIGHT - 18f);
+        }
         spriteBatch.end();
 
         shapeRenderer.setProjectionMatrix(camera.combined);
         spriteBatch.setProjectionMatrix(camera.combined);
     }
 
-    private boolean isInsideElectricityStorageButton(float hudX, float hudY) {
-        return hudX >= BUILD_MENU_X + 10f && hudX <= BUILD_MENU_X + BUILD_MENU_WIDTH - 10f
-                && hudY >= BUILD_MENU_ELECTRICITY_STORAGE_BUTTON_Y && hudY <= BUILD_MENU_ELECTRICITY_STORAGE_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT;
-    }
-
-    private boolean isInsideIronStorageButton(float hudX, float hudY) {
-        return hudX >= BUILD_MENU_X + 10f && hudX <= BUILD_MENU_X + BUILD_MENU_WIDTH - 10f
-                && hudY >= BUILD_MENU_IRON_STORAGE_BUTTON_Y && hudY <= BUILD_MENU_IRON_STORAGE_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT;
-    }
-
-    private boolean isInsideIronMineButton(float hudX, float hudY) {
-        return hudX >= BUILD_MENU_X + 10f && hudX <= BUILD_MENU_X + BUILD_MENU_WIDTH - 10f
-                && hudY >= BUILD_MENU_IRON_BUTTON_Y && hudY <= BUILD_MENU_IRON_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT;
-    }
-
-    private boolean isInsideArcherBarracksButton(float hudX, float hudY) {
-        return hudX >= BUILD_MENU_X + 10f && hudX <= BUILD_MENU_X + BUILD_MENU_WIDTH - 10f
-                && hudY >= BUILD_MENU_BARRACKS_BUTTON_Y && hudY <= BUILD_MENU_BARRACKS_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT;
-    }
-
-    private boolean isInsidePowerPlantButton(float hudX, float hudY) {
-        return hudX >= BUILD_MENU_X + 10f && hudX <= BUILD_MENU_X + BUILD_MENU_WIDTH - 10f
-                && hudY >= BUILD_MENU_POWER_BUTTON_Y && hudY <= BUILD_MENU_POWER_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT;
+    /** Какое здание нажато по HUD-координатам клика — null, если мимо всех кнопок бара. */
+    private BuildingType buildBarButtonAt(float hudX, float hudY) {
+        if (hudY < BUILD_BAR_Y || hudY > BUILD_BAR_Y + BUILD_BAR_BUTTON_HEIGHT) {
+            return null;
+        }
+        for (int i = 0; i < BUILD_BAR_TYPES.length; i++) {
+            float buttonX = buildBarButtonX(i);
+            if (hudX >= buttonX && hudX <= buttonX + BUILD_BAR_BUTTON_WIDTH) {
+                return BUILD_BAR_TYPES[i];
+            }
+        }
+        return null;
     }
 
     /**
@@ -636,6 +652,52 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.end();
     }
 
+    /**
+     * Точка сбора каждого производящего здания, у которого она задана —
+     * пунктирная линия от здания до точки и сама точка (бирюзовый круг).
+     * Видна всегда, не только пока здание выделено (это настройка,
+     * влияющая на всех будущих юнитов, а не разовое действие — держать
+     * её скрытой было бы неудобно), и для обеих сторон одинаково, как и
+     * остальное на карте (отдельного тумана войны в игре нет).
+     */
+    private void drawRallyPoints() {
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        for (Entity entity : engine.getEntities()) {
+            ProductionComponent production = entity.getComponent(ProductionComponent.class);
+            if (production == null || !production.hasRallyPoint) {
+                continue;
+            }
+            PositionComponent position = entity.getComponent(PositionComponent.class);
+            drawDashedLine(position.position.x, position.position.y, production.rallyX, production.rallyY);
+            shapeRenderer.setColor(RALLY_POINT_COLOR);
+            shapeRenderer.circle(production.rallyX, production.rallyY, RALLY_POINT_RADIUS);
+        }
+        shapeRenderer.end();
+    }
+
+    /** ShapeRenderer не рисует пунктир сам — чередуем короткие толстые отрезки (rectLine) с промежутками вдоль направления линии. */
+    private void drawDashedLine(float x1, float y1, float x2, float y2) {
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float length = (float) Math.sqrt(dx * dx + dy * dy);
+        if (length < 1f) {
+            return;
+        }
+
+        float dirX = dx / length;
+        float dirY = dy / length;
+        float step = RALLY_DASH_LENGTH + RALLY_GAP_LENGTH;
+
+        shapeRenderer.setColor(RALLY_POINT_COLOR);
+        for (float traveled = 0f; traveled < length; traveled += step) {
+            float dashEnd = Math.min(traveled + RALLY_DASH_LENGTH, length);
+            shapeRenderer.rectLine(
+                    x1 + dirX * traveled, y1 + dirY * traveled,
+                    x1 + dirX * dashEnd, y1 + dirY * dashEnd,
+                    2f);
+        }
+    }
+
     private void drawCenteredText(String text) {
         GlyphLayout layout = new GlyphLayout(font, text);
         spriteBatch.begin();
@@ -738,6 +800,20 @@ public class GameScreen extends InputAdapter implements Screen {
             return true;
         }
 
+        if (button == Input.Buttons.LEFT) {
+            Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
+            BuildingType barButton = buildBarButtonAt(hudPoint.x, hudPoint.y);
+            if (barButton != null) {
+                // Клик по бару — всегда переключает, что строим, даже если
+                // уже что-то строилось (см. javadoc массива BUILD_BAR_TYPES);
+                // выделение снимаем, панель постройки в этом режиме не нужна.
+                placingBuildingType = barButton;
+                setSelection(Collections.emptySet());
+                selectedBuildingId = null;
+                return true;
+            }
+        }
+
         if (placingBuildingType != null) {
             if (button == Input.Buttons.LEFT && buildGhostValid) {
                 if (placingBuildingType == BuildingType.IRON_MINE) {
@@ -749,25 +825,6 @@ public class GameScreen extends InputAdapter implements Screen {
             }
             // Клик поглощён размещением здания целиком — ни выделение, ни
             // рамка, ни приказ на движение в этом режиме не должны сработать.
-            return true;
-        }
-
-        if (showBuildMenu) {
-            if (button == Input.Buttons.LEFT) {
-                Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
-                if (isInsideElectricityStorageButton(hudPoint.x, hudPoint.y)) {
-                    placingBuildingType = BuildingType.ELECTRICITY_STORAGE;
-                } else if (isInsideIronStorageButton(hudPoint.x, hudPoint.y)) {
-                    placingBuildingType = BuildingType.IRON_STORAGE;
-                } else if (isInsideIronMineButton(hudPoint.x, hudPoint.y)) {
-                    placingBuildingType = BuildingType.IRON_MINE;
-                } else if (isInsideArcherBarracksButton(hudPoint.x, hudPoint.y)) {
-                    placingBuildingType = BuildingType.ARCHER_BARRACKS;
-                } else if (isInsidePowerPlantButton(hudPoint.x, hudPoint.y)) {
-                    placingBuildingType = BuildingType.POWER_PLANT;
-                }
-            }
-            showBuildMenu = false; // клик куда угодно — по кнопке или мимо — закрывает меню
             return true;
         }
 
@@ -814,7 +871,20 @@ public class GameScreen extends InputAdapter implements Screen {
             Vector3 end = camera.unproject(new Vector3(screenX, screenY, 0));
 
             if (dragStartWorld.dst(end) < DRAG_THRESHOLD) {
-                handleSingleClickSelect(end.x, end.y);
+                Entity clicked = findEntityNear(end.x, end.y);
+                OwnerComponent clickedOwner = clicked != null ? clicked.getComponent(OwnerComponent.class) : null;
+                boolean clickedOwnEntity = clickedOwner != null && clickedOwner.playerId == client.getPlayerId();
+
+                if (selectedBuildingId != null && !clickedOwnEntity) {
+                    // Клик мимо своего юнита/здания, пока выделено (своё)
+                    // производящее здание — не выделение, а точка сбора.
+                    // Клик по СВОЕМУ юниту/зданию по-прежнему переключает
+                    // выделение как обычно (иначе нельзя было бы выйти из
+                    // этого режима, не отменив выделение как-то ещё).
+                    client.requestSetRallyPoint(selectedBuildingId, end.x, end.y);
+                } else {
+                    handleSingleClickSelect(end.x, end.y);
+                }
             } else {
                 handleBoxSelect(dragStartWorld.x, dragStartWorld.y, end.x, end.y);
             }
@@ -833,19 +903,11 @@ public class GameScreen extends InputAdapter implements Screen {
             return true;
         }
         if (keycode == Input.Keys.B) {
-            if (gameOverText != null || connectionStatusText != null) {
-                return true; // нечего строить до/после игры
-            }
+            // Панель построек теперь всегда на экране (см. drawBuildBar) —
+            // клавиша B осталась только как способ отменить уже начатое
+            // размещение здания, не открывает больше никакого меню.
             if (placingBuildingType != null) {
-                placingBuildingType = null; // уже строим что-то конкретное — B отменяет
-                return true;
-            }
-            showBuildMenu = !showBuildMenu;
-            if (showBuildMenu) {
-                // Меню постройки — не режим выделения: закрываем всё, что
-                // может быть открыто, как и при других переключениях контекста.
-                setSelection(Collections.emptySet());
-                selectedBuildingId = null;
+                placingBuildingType = null;
             }
             return true;
         }
