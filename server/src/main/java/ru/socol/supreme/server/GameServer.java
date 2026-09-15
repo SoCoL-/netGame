@@ -147,7 +147,7 @@ public class GameServer {
         engine.addSystem(new CombatSystem(unitsById, this::handleShotFired));
         engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit));
         engine.addSystem(new ConstructionSystem());
-        engine.addSystem(new ResourceExtractionSystem(resourcesByPlayer));
+        engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new MovementSystem());
         engine.addSystem(new CollisionSystem(unitsById, collisionGrid));
     }

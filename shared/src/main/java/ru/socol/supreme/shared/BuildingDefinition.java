@@ -12,8 +12,10 @@ package ru.socol.supreme.shared;
  * activeConsumptionRate только для ARCHER_BARRACKS (пока — но поле
  * общее, не специфичное для неё одной, если в будущем появится ещё одно
  * потребляющее здание), spawnMargin только для HOME, snapRadius только
- * для IRON_MINE. Здание само не использует свои "чужие" поля — какие
- * именно читать, решает BuildingType.
+ * для IRON_MINE, storesResourceType/storageCapacity только для
+ * IRON_STORAGE (тоже общее поле, не специфичное для железа — если
+ * появится хранилище электричества, использует то же). Здание само не
+ * использует свои "чужие" поля — какие именно читать, решает BuildingType.
  */
 public class BuildingDefinition {
 
@@ -54,6 +56,12 @@ public class BuildingDefinition {
 
     /** Актуально только для IRON_MINE — радиус "прилипания" превью к месторождению при постройке. */
     public float snapRadius;
+
+    /** Какой ресурс это здание хранит (увеличивает вместимость) — null, если не хранилище. Сейчас только IRON_STORAGE. */
+    public ResourceType storesResourceType;
+
+    /** Актуально только если storesResourceType != null — на сколько единиц это здание увеличивает вместимость хранилища сверх базовой (GameConstants.IRON_BASE_CAPACITY). */
+    public float storageCapacity;
 
     public BuildingDefinition() {
         // требуется Json для десериализации

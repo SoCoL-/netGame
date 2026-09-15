@@ -97,8 +97,9 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float BUILD_MENU_X = 300f;
     private static final float BUILD_MENU_Y = 220f;
     private static final float BUILD_MENU_WIDTH = 200f;
-    private static final float BUILD_MENU_HEIGHT = 140f;
+    private static final float BUILD_MENU_HEIGHT = 190f;
     private static final float BUILD_MENU_BUTTON_HEIGHT = 32f;
+    private static final float BUILD_MENU_STORAGE_BUTTON_Y = BUILD_MENU_Y + 139f;
     private static final float BUILD_MENU_IRON_BUTTON_Y = BUILD_MENU_Y + 96f;
     private static final float BUILD_MENU_BARRACKS_BUTTON_Y = BUILD_MENU_Y + 53f;
     private static final float BUILD_MENU_POWER_BUTTON_Y = BUILD_MENU_Y + 10f;
@@ -479,6 +480,7 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.rect(BUILD_MENU_X, BUILD_MENU_Y, BUILD_MENU_WIDTH, BUILD_MENU_HEIGHT);
 
         shapeRenderer.setColor(Color.LIGHT_GRAY);
+        shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_STORAGE_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
         shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_IRON_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
         shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_BARRACKS_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
         shapeRenderer.rect(BUILD_MENU_X + 10f, BUILD_MENU_POWER_BUTTON_Y, BUILD_MENU_WIDTH - 20f, BUILD_MENU_BUTTON_HEIGHT);
@@ -488,6 +490,7 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
         uiFont.setColor(Color.BLACK);
+        uiFont.draw(spriteBatch, "Iron storage", BUILD_MENU_X + 25f, BUILD_MENU_STORAGE_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
         uiFont.draw(spriteBatch, "Iron mine", BUILD_MENU_X + 25f, BUILD_MENU_IRON_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
         uiFont.draw(spriteBatch, "Archer barracks", BUILD_MENU_X + 25f, BUILD_MENU_BARRACKS_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
         uiFont.draw(spriteBatch, "Power plant", BUILD_MENU_X + 25f, BUILD_MENU_POWER_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT - 8f);
@@ -495,6 +498,11 @@ public class GameScreen extends InputAdapter implements Screen {
 
         shapeRenderer.setProjectionMatrix(camera.combined);
         spriteBatch.setProjectionMatrix(camera.combined);
+    }
+
+    private boolean isInsideIronStorageButton(float hudX, float hudY) {
+        return hudX >= BUILD_MENU_X + 10f && hudX <= BUILD_MENU_X + BUILD_MENU_WIDTH - 10f
+                && hudY >= BUILD_MENU_STORAGE_BUTTON_Y && hudY <= BUILD_MENU_STORAGE_BUTTON_Y + BUILD_MENU_BUTTON_HEIGHT;
     }
 
     private boolean isInsideIronMineButton(float hudX, float hudY) {
@@ -739,7 +747,9 @@ public class GameScreen extends InputAdapter implements Screen {
         if (showBuildMenu) {
             if (button == Input.Buttons.LEFT) {
                 Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
-                if (isInsideIronMineButton(hudPoint.x, hudPoint.y)) {
+                if (isInsideIronStorageButton(hudPoint.x, hudPoint.y)) {
+                    placingBuildingType = BuildingType.IRON_STORAGE;
+                } else if (isInsideIronMineButton(hudPoint.x, hudPoint.y)) {
                     placingBuildingType = BuildingType.IRON_MINE;
                 } else if (isInsideArcherBarracksButton(hudPoint.x, hudPoint.y)) {
                     placingBuildingType = BuildingType.ARCHER_BARRACKS;

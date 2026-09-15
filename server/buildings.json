@@ -37,5 +37,14 @@
     "buildTime": 10,
     "resourceType": "ELECTRICITY",
     "extractionRate": 150
+  },
+  {
+    "type": "IRON_STORAGE",
+    "halfWidth": 25,
+    "halfHeight": 25,
+    "maxHealth": 80,
+    "buildTime": 10,
+    "storesResourceType": "IRON",
+    "storageCapacity": 500
   }
 ]

@@ -87,6 +87,16 @@ public final class BuildingDefinitions {
         return DEFINITIONS.get(type).snapRadius;
     }
 
+    /** null, если это здание не увеличивает вместимость хранилища ресурса. Сейчас — только IRON_STORAGE (IRON). */
+    public static ResourceType storesResourceTypeFor(BuildingType type) {
+        return DEFINITIONS.get(type).storesResourceType;
+    }
+
+    /** Актуально только если storesResourceTypeFor != null. */
+    public static float storageCapacityFor(BuildingType type) {
+        return DEFINITIONS.get(type).storageCapacity;
+    }
+
     /** Место автоспавна дома игрока — в противоположных углах карты. Возвращает {x, y}. Единственное здание, которое сервер ставит сам при входе игрока — остальные строит сам игрок из меню (клавиша B). */
     public static float[] homeSpawnPoint(int playerId) {
         float margin = DEFINITIONS.get(BuildingType.HOME).spawnMargin;
@@ -192,6 +202,16 @@ public final class BuildingDefinitions {
         powerPlant.resourceType = ResourceType.ELECTRICITY;
         powerPlant.extractionRate = 150f;
         definitions.put(BuildingType.POWER_PLANT, powerPlant);
+
+        BuildingDefinition ironStorage = new BuildingDefinition();
+        ironStorage.type = BuildingType.IRON_STORAGE;
+        ironStorage.halfWidth = 25f;
+        ironStorage.halfHeight = 25f;
+        ironStorage.maxHealth = 80;
+        ironStorage.buildTime = 10f;
+        ironStorage.storesResourceType = ResourceType.IRON;
+        ironStorage.storageCapacity = 500f;
+        definitions.put(BuildingType.IRON_STORAGE, ironStorage);
 
         return definitions;
     }

@@ -96,6 +96,19 @@ public final class GameConstants {
             {1500f, 1800f}, {1800f, 1500f}, // игрок 1
     };
 
+    /**
+     * Базовая вместимость хранилища железа — доступна игроку всегда, даже
+     * без единого здания IRON_STORAGE (иначе шахта железа была бы
+     * бесполезна до постройки первого хранилища — слишком жёстко для
+     * старта). Здания IRON_STORAGE добавляют к ней
+     * BuildingDefinitions.storageCapacityFor(IRON_STORAGE) за каждое —
+     * см. ResourceExtractionSystem, она же считает итоговую вместимость
+     * каждый тик. 300 — ровно стоимость одного стрелка (UnitDefinitions
+     * .ironCostFor(ARCHER)), чтобы на первого стрелка хватало запасать
+     * железо и без хранилища.
+     */
+    public static final float IRON_BASE_CAPACITY = 300f;
+
     /** Размер клетки сетки для поиска пути (Pathfinding) — 2000/50 = 40x40 клеток. */
     public static final float PATH_GRID_CELL_SIZE = 50f;
 

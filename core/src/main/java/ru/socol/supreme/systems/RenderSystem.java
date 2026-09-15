@@ -148,6 +148,9 @@ public class RenderSystem extends IteratingSystem {
             case POWER_PLANT:
                 drawPowerPlantMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
                 break;
+            case IRON_STORAGE:
+                drawIronStorageMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
+                break;
             case HOME:
             default:
                 drawStar(position.position.x, position.position.y, Math.min(halfWidth, halfHeight) * 0.6f);
@@ -189,6 +192,13 @@ public class RenderSystem extends IteratingSystem {
     private void drawPowerPlantMarker(float cx, float cy, float halfSize) {
         shapeRenderer.setColor(POWER_PLANT_MARKER_COLOR);
         shapeRenderer.circle(cx, cy, halfSize * 0.5f);
+    }
+
+    /** Маленький квадрат в том же ржавом цвете, что у шахты/месторождений (оба про железо) — но квадрат, не ромб, чтобы не путать с шахтой. */
+    private void drawIronStorageMarker(float cx, float cy, float halfSize) {
+        float markerHalf = halfSize * 0.4f;
+        shapeRenderer.setColor(IRON_MINE_MARKER_COLOR);
+        shapeRenderer.rect(cx - markerHalf, cy - markerHalf, markerHalf * 2f, markerHalf * 2f);
     }
 
     /**
