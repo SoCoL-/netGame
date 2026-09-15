@@ -70,7 +70,6 @@ public class ConstructionSystem extends IteratingSystem {
         if (resourceType != null) {
             ResourceExtractorComponent extractor = engine.createComponent(ResourceExtractorComponent.class);
             extractor.resourceType = resourceType;
-            extractor.progress = 0f;
             entity.add(extractor);
         }
 
