@@ -40,7 +40,7 @@ import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
 import ru.socol.supreme.shared.network.messages.SetRallyPointRequest;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
-import ru.socol.supreme.shared.pathfinding.Pathfinding;
+import ru.socol.supreme.shared.pathfinding.DynamicPathfinding;
 import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 import ru.socol.supreme.shared.systems.AggroSystem;
 import ru.socol.supreme.shared.systems.CollisionSystem;
@@ -64,6 +64,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * снапшоты мира всем клиентам. Как только у одного из игроков уничтожен дом
  * (не казарма стрелков — см. spawnHome) — объявляет победителя и
  * замораживает симуляцию.
+ *
+ * НОВОЕ: интеграция с DynamicPathfinding.
+ * - При постройке здания (spawnBuilding) вызывает registerDynamicBuilding
+ * - При уничтожении здания (CombatSystem) вызывает unregisterDynamicBuilding
  *
  * Это "каркас" — минимальный, но рабочий скелет. Он не занимается
  * аутентификацией, реконнектом с сохранением состояния, unreliable-каналом
@@ -145,7 +149,7 @@ public class GameServer {
         SpatialHashGrid collisionGrid = new SpatialHashGrid(BuildingDefinitions.maxInteractionRadius());
 
         engine.addSystem(new AggroSystem(unitsById, aggroGrid));
-        engine.addSystem(new CombatSystem(unitsById, this::handleShotFired));
+        engine.addSystem(new CombatSystem(unitsById, this::handleShotFired, this::handleBuildingDestroyed));
         engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit));
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
@@ -288,6 +292,9 @@ public class GameServer {
      * доведёт его до рабочего состояния. Иначе (дом, казарма) — сразу
      * готовым, с ProductionComponent, если это здание производит юнитов.
      * Возвращает unitId созданного здания.
+     *
+     * НОВОЕ: после создания здания регистрируем его в DynamicPathfinding,
+     * если это казарма/шахта/электростанция (не дом).
      */
     private int spawnBuilding(int playerId, BuildingType type, float x, float y) {
         Entity building = engine.createEntity();
@@ -334,6 +341,10 @@ public class GameServer {
 
         engine.addEntity(building);
         unitsById.put(unitId, building);
+
+        // НОВОЕ: регистрируем в DynamicPathfinding (для казарм/шахт/электростанций, не дома)
+        DynamicPathfinding.registerDynamicBuilding(building, position, buildingMarker);
+
         return unitId;
     }
 
@@ -417,7 +428,7 @@ public class GameServer {
      * здания (см. ProductionSystem). Клиент присылает её, когда игрок
      * кликает левой кнопкой по карте при выделенном СВОЁМ здании (см.
      * GameScreen.touchUp) — координаты не проверяются на валидность
-     * (не в воде/не в здании) специально: Pathfinding.setDestination сам
+     * (не в воде/не в здании) специально: DynamicPathfinding.setDestination сам
      * молча проигнорирует недостижимую точку, как и при обычном ручном
      * приказе на движение — отдельной проверки тут не нужно.
      */
@@ -570,7 +581,7 @@ public class GameServer {
 
         // Pathfinding сама решает: прямая линия свободна — идём напрямую,
         // как раньше; если по пути препятствие (вода/здание) — обойдёт его.
-        Pathfinding.setDestination(unit, position, direction, targetX, targetY);
+        DynamicPathfinding.setDestination(unit, position, direction, targetX, targetY);
     }
 
     synchronized void handleAttackUnit(Connection connection, AttackUnitRequest request) {
@@ -629,6 +640,20 @@ public class GameServer {
         event.toX = toX;
         event.toY = toY;
         server.sendToAllTCP(event);
+    }
+
+    // ---- НОВОЕ: Callback при разрушении здания ----
+
+    /**
+     * Вызывается из CombatSystem при уничтожении здания.
+     * Удаляет здание из DynamicPathfinding сетки препятствий.
+     */
+    synchronized void handleBuildingDestroyed(Entity building) {
+        PositionComponent position = building.getComponent(PositionComponent.class);
+        BuildingComponent buildingMarker = building.getComponent(BuildingComponent.class);
+        if (position != null && buildingMarker != null) {
+            DynamicPathfinding.unregisterDynamicBuilding(building, position, buildingMarker);
+        }
     }
 
     // ---- Условие победы ----
