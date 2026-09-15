@@ -14,6 +14,7 @@ import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AttackComponent;
+import ru.socol.supreme.shared.components.BuildOrderComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
@@ -26,6 +27,7 @@ import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.network.NetworkRegistration;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
+import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
@@ -43,6 +45,7 @@ import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 import ru.socol.supreme.shared.systems.AggroSystem;
+import ru.socol.supreme.shared.systems.BuildSystem;
 import ru.socol.supreme.shared.systems.CollisionSystem;
 import ru.socol.supreme.shared.systems.CombatSystem;
 import ru.socol.supreme.shared.systems.ConstructionSystem;
@@ -146,6 +149,7 @@ public class GameServer {
 
         engine.addSystem(new AggroSystem(unitsById, aggroGrid));
         engine.addSystem(new CombatSystem(unitsById, this::handleShotFired));
+        engine.addSystem(new BuildSystem(unitsById));
         engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit));
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
@@ -321,15 +325,9 @@ public class GameServer {
             construction.totalTime = buildTime;
             construction.remaining = buildTime;
             building.add(construction);
-        } else {
-            UnitType producesUnitType = BuildingDefinitions.producesUnitTypeFor(type);
-            if (producesUnitType != null) {
-                ProductionComponent production = engine.createComponent(ProductionComponent.class);
-                production.queuedCount = 0;
-                production.progress = 0f;
-                production.producesUnitType = producesUnitType;
-                building.add(production);
-            }
+        } else if (BuildingDefinitions.producesUnitTypesFor(type).length > 0) {
+            ProductionComponent production = engine.createComponent(ProductionComponent.class);
+            building.add(production);
         }
 
         engine.addEntity(building);
@@ -400,7 +398,24 @@ public class GameServer {
 
         ProductionComponent production = building.getComponent(ProductionComponent.class);
         if (production == null) {
-            return; // не здание с производством (сейчас все здания такие, но на всякий случай)
+            return; // не здание с производством
+        }
+
+        if (request.unitType < 0 || request.unitType >= UnitType.values().length) {
+            return; // некорректный индекс — либо баг клиента, либо модифицированный клиент
+        }
+        UnitType unitType = UnitType.values()[request.unitType];
+
+        BuildingType buildingType = building.getComponent(BuildingComponent.class).type;
+        boolean canProduceThisType = false;
+        for (UnitType producible : BuildingDefinitions.producesUnitTypesFor(buildingType)) {
+            if (producible == unitType) {
+                canProduceThisType = true;
+                break;
+            }
+        }
+        if (!canProduceThisType) {
+            return; // это здание не умеет производить такой юнит — не доверяем клиенту слепо
         }
 
         if (unitsById.size() >= GameConstants.MAX_TOTAL_UNITS) {
@@ -409,7 +424,7 @@ public class GameServer {
             return;
         }
 
-        production.queuedCount++;
+        production.queue.add(unitType);
     }
 
     /**
@@ -563,6 +578,10 @@ public class GameServer {
         if (unit.getComponent(AttackComponent.class) != null) {
             unit.remove(AttackComponent.class);
         }
+        // И текущую стройку — если это был строитель.
+        if (unit.getComponent(BuildOrderComponent.class) != null) {
+            unit.remove(BuildOrderComponent.class);
+        }
 
         PositionComponent position = unit.getComponent(PositionComponent.class);
         float targetX = clamp(request.targetX, 0f, GameConstants.MAP_WIDTH);
@@ -603,6 +622,11 @@ public class GameServer {
             return; // нельзя атаковать своих (свои здания — тоже)
         }
 
+        // Ручной приказ на атаку отменяет текущую стройку — как и обычный приказ на движение.
+        if (attacker.getComponent(BuildOrderComponent.class) != null) {
+            attacker.remove(BuildOrderComponent.class);
+        }
+
         AttackComponent attack = attacker.getComponent(AttackComponent.class);
         if (attack == null) {
             // cooldown уже 0 — AttackComponent реализует Pool.Poolable,
@@ -615,6 +639,62 @@ public class GameServer {
         // cooldown намеренно не трогаем: юнит не должен получать
         // "бесплатный" мгновенный выстрел просто от смены цели.
         attack.targetUnitId = request.targetUnitId;
+    }
+
+    /**
+     * Приказ строителю строить (или продолжить строить) конкретное
+     * здание — по правому клику на своё недостроенное здание при
+     * выделенных строителях (см. GameScreen.issueBuildOrder). Обработка
+     * зеркальна handleAttackUnit: та же проверка владения, тот же приём
+     * "если компонент уже был — не сбрасываем его состояние зря", только
+     * цель не убить, а достроить.
+     */
+    synchronized void handleBuildOrder(Connection connection, BuildOrderRequest request) {
+        if (gameOver) {
+            return;
+        }
+
+        Integer playerId = connectionToPlayer.get(connection.getID());
+        if (playerId == null) {
+            return;
+        }
+
+        Entity builder = unitsById.get(request.builderUnitId);
+        Entity targetBuilding = unitsById.get(request.targetBuildingUnitId);
+        if (builder == null || targetBuilding == null) {
+            return;
+        }
+
+        OwnerComponent builderOwner = builder.getComponent(OwnerComponent.class);
+        if (builderOwner == null || builderOwner.playerId != playerId) {
+            return; // не ваш юнит
+        }
+
+        UnitTypeComponent builderType = builder.getComponent(UnitTypeComponent.class);
+        if (builderType == null || builderType.type != UnitType.BUILDER) {
+            return; // строить может только строитель
+        }
+
+        OwnerComponent targetOwner = targetBuilding.getComponent(OwnerComponent.class);
+        if (targetOwner == null || targetOwner.playerId != playerId) {
+            return; // строить можно только своё — чужое недостроенное здание не трогаем
+        }
+
+        if (targetBuilding.getComponent(ConstructionComponent.class) == null) {
+            return; // уже достроено (или не здание вовсе) — нечего строить
+        }
+
+        // Ручной приказ на стройку отменяет текущую атаку — как и обычный приказ на движение.
+        if (builder.getComponent(AttackComponent.class) != null) {
+            builder.remove(AttackComponent.class);
+        }
+
+        BuildOrderComponent order = builder.getComponent(BuildOrderComponent.class);
+        if (order == null) {
+            order = engine.createComponent(BuildOrderComponent.class);
+            builder.add(order);
+        }
+        order.targetBuildingUnitId = request.targetBuildingUnitId;
     }
 
     // ---- Визуальный эффект полёта стрелы (см. CombatSystem.ShotFiredListener) ----
@@ -701,7 +781,7 @@ public class GameServer {
 
             ProductionComponent production = unit.getComponent(ProductionComponent.class);
             if (production != null) {
-                unitSnapshot.queuedCount = production.queuedCount;
+                unitSnapshot.queuedCount = production.queue.size();
                 unitSnapshot.buildProgress = production.progress;
                 unitSnapshot.hasRallyPoint = production.hasRallyPoint;
                 unitSnapshot.rallyX = production.rallyX;

@@ -7,8 +7,10 @@ import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.network.NetworkRegistration;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
+import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
@@ -117,9 +119,17 @@ public class GameClient implements Disposable {
         connectThread.start();
     }
 
-    public void requestQueueUnit(int buildingUnitId) {
+    public void requestQueueUnit(int buildingUnitId, UnitType unitType) {
         QueueUnitRequest request = new QueueUnitRequest();
         request.buildingUnitId = buildingUnitId;
+        request.unitType = unitType.ordinal();
+        client.sendTCP(request);
+    }
+
+    public void requestBuildOrder(int builderUnitId, int targetBuildingUnitId) {
+        BuildOrderRequest request = new BuildOrderRequest();
+        request.builderUnitId = builderUnitId;
+        request.targetBuildingUnitId = targetBuildingUnitId;
         client.sendTCP(request);
     }
 

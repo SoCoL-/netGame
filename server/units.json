@@ -7,7 +7,8 @@
     "damage": 2,
     "attackRadius": 70,
     "ironCost": 0,
-    "electricityCost": 0
+    "electricityCost": 0,
+    "buildRadius": 0
   },
   {
     "type": "ARCHER",
@@ -17,6 +18,18 @@
     "damage": 2,
     "attackRadius": 210,
     "ironCost": 300,
-    "electricityCost": 300
+    "electricityCost": 300,
+    "buildRadius": 0
+  },
+  {
+    "type": "BUILDER",
+    "speed": 80,
+    "health": 65,
+    "fireRate": 4,
+    "damage": 1,
+    "attackRadius": 70,
+    "ironCost": 100,
+    "electricityCost": 150,
+    "buildRadius": 70
   }
 ]

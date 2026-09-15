@@ -28,10 +28,12 @@ import ru.socol.supreme.network.GameClient;
 import ru.socol.supreme.systems.InterpolationSystem;
 import ru.socol.supreme.systems.RenderSystem;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
+import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
@@ -122,12 +124,20 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float PANEL_Y = BUILD_BAR_Y + BUILD_BAR_BUTTON_HEIGHT + 10f;
     private static final float PANEL_WIDTH = 280f;
     private static final float PANEL_HEIGHT = 100f;
+    // Кнопки очереди — теперь их может быть несколько (у дома их две:
+    // воин и строитель, у казармы по-прежнему одна), поэтому ряд сверху
+    // панели по индексу (queueButtonX), а не одна фиксированная позиция,
+    // как было раньше. Прогресс-бар и текст "Queue: N" — под ними, а не
+    // сбоку, иначе при двух кнопках не осталось бы места.
+    private static final float QUEUE_BUTTON_WIDTH = 90f;
+    private static final float QUEUE_BUTTON_HEIGHT = 32f;
+    private static final float QUEUE_BUTTON_GAP = 8f;
     private static final float QUEUE_BUTTON_X = PANEL_X + 15f;
-    private static final float QUEUE_BUTTON_Y = PANEL_Y + 15f;
-    private static final float QUEUE_BUTTON_SIZE = 40f;
-    private static final float PROGRESS_BAR_X = QUEUE_BUTTON_X + QUEUE_BUTTON_SIZE + 15f;
-    private static final float PROGRESS_BAR_WIDTH = 170f;
+    private static final float QUEUE_BUTTON_Y = PANEL_Y + PANEL_HEIGHT - QUEUE_BUTTON_HEIGHT - 15f;
+    private static final float PROGRESS_BAR_X = PANEL_X + 15f;
+    private static final float PROGRESS_BAR_WIDTH = 250f;
     private static final float PROGRESS_BAR_HEIGHT = 12f;
+    private static final float PROGRESS_BAR_Y = PANEL_Y + 25f;
 
     // Чисто визуальный полёт стрелы — урон уже применён на сервере в момент
     // выстрела (см. ProjectileFiredEvent), скорость тут только для картинки.
@@ -751,6 +761,8 @@ public class GameScreen extends InputAdapter implements Screen {
             return;
         }
         ProductionComponent production = building.getComponent(ProductionComponent.class);
+        BuildingType buildingType = building.getComponent(BuildingComponent.class).type;
+        UnitType[] producible = BuildingDefinitions.producesUnitTypesFor(buildingType);
 
         shapeRenderer.setProjectionMatrix(hudCamera.combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
@@ -759,16 +771,17 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.rect(PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT);
 
         shapeRenderer.setColor(Color.LIGHT_GRAY);
-        shapeRenderer.rect(QUEUE_BUTTON_X, QUEUE_BUTTON_Y, QUEUE_BUTTON_SIZE, QUEUE_BUTTON_SIZE);
+        for (int i = 0; i < producible.length; i++) {
+            shapeRenderer.rect(queueButtonX(i), QUEUE_BUTTON_Y, QUEUE_BUTTON_WIDTH, QUEUE_BUTTON_HEIGHT);
+        }
 
         if (production.queuedCount > 0) {
             float fraction = MathUtils.clamp(production.progress / GameConstants.UNIT_BUILD_TIME, 0f, 1f);
-            float barY = QUEUE_BUTTON_Y + QUEUE_BUTTON_SIZE / 2f - PROGRESS_BAR_HEIGHT / 2f;
 
             shapeRenderer.setColor(Color.DARK_GRAY);
-            shapeRenderer.rect(PROGRESS_BAR_X, barY, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT);
+            shapeRenderer.rect(PROGRESS_BAR_X, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT);
             shapeRenderer.setColor(Color.GREEN);
-            shapeRenderer.rect(PROGRESS_BAR_X, barY, PROGRESS_BAR_WIDTH * fraction, PROGRESS_BAR_HEIGHT);
+            shapeRenderer.rect(PROGRESS_BAR_X, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH * fraction, PROGRESS_BAR_HEIGHT);
         }
 
         shapeRenderer.end();
@@ -776,10 +789,10 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
         uiFont.setColor(Color.WHITE);
-        uiFont.draw(spriteBatch, "+", QUEUE_BUTTON_X + QUEUE_BUTTON_SIZE / 2f - 6f, QUEUE_BUTTON_Y + QUEUE_BUTTON_SIZE / 2f + 8f);
-        String unitTypeName = production.producesUnitType == UnitType.ARCHER ? "Archers" : "Warriors";
-        uiFont.draw(spriteBatch, "Builds: " + unitTypeName, PANEL_X + 15f, PANEL_Y + PANEL_HEIGHT - 12f);
-        uiFont.draw(spriteBatch, "Queue: " + production.queuedCount, PANEL_X + 15f, PANEL_Y + PANEL_HEIGHT - 34f);
+        for (int i = 0; i < producible.length; i++) {
+            uiFont.draw(spriteBatch, "+" + unitTypeLabel(producible[i]), queueButtonX(i) + 8f, QUEUE_BUTTON_Y + QUEUE_BUTTON_HEIGHT - 10f);
+        }
+        uiFont.draw(spriteBatch, "Queue: " + production.queuedCount, PANEL_X + 15f, PROGRESS_BAR_Y - 6f);
         spriteBatch.end();
 
         // Возвращаем world-камеру шейп-рендереру и спрайт-батчу для следующего кадра.
@@ -787,9 +800,36 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.setProjectionMatrix(camera.combined);
     }
 
-    private boolean isInsideQueueButton(float hudX, float hudY) {
-        return hudX >= QUEUE_BUTTON_X && hudX <= QUEUE_BUTTON_X + QUEUE_BUTTON_SIZE
-                && hudY >= QUEUE_BUTTON_Y && hudY <= QUEUE_BUTTON_Y + QUEUE_BUTTON_SIZE;
+    /** Левый X кнопки очереди с этим индексом — единая формула, чтобы отрисовка и проверка клика не могли разойтись. */
+    private float queueButtonX(int index) {
+        return QUEUE_BUTTON_X + index * (QUEUE_BUTTON_WIDTH + QUEUE_BUTTON_GAP);
+    }
+
+    private String unitTypeLabel(UnitType type) {
+        switch (type) {
+            case WARRIOR:
+                return "Warrior";
+            case ARCHER:
+                return "Archer";
+            case BUILDER:
+                return "Builder";
+            default:
+                return "";
+        }
+    }
+
+    /** Какой тип юнита нажат по HUD-координатам клика — null, если мимо всех кнопок очереди этого здания. */
+    private UnitType queueButtonAt(float hudX, float hudY, UnitType[] producible) {
+        if (hudY < QUEUE_BUTTON_Y || hudY > QUEUE_BUTTON_Y + QUEUE_BUTTON_HEIGHT) {
+            return null;
+        }
+        for (int i = 0; i < producible.length; i++) {
+            float x = queueButtonX(i);
+            if (hudX >= x && hudX <= x + QUEUE_BUTTON_WIDTH) {
+                return producible[i];
+            }
+        }
+        return null;
     }
 
     // ---- Ввод ----
@@ -831,9 +871,14 @@ public class GameScreen extends InputAdapter implements Screen {
         if (button == Input.Buttons.LEFT) {
             if (selectedBuildingId != null) {
                 Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
-                if (isInsideQueueButton(hudPoint.x, hudPoint.y)) {
-                    client.requestQueueUnit(selectedBuildingId);
-                    return true; // клик поглощён кнопкой — не начинаем рамку выделения
+                Entity selectedBuilding = entityFactory.getEntity(selectedBuildingId);
+                if (selectedBuilding != null) {
+                    BuildingType buildingType = selectedBuilding.getComponent(BuildingComponent.class).type;
+                    UnitType clickedUnitType = queueButtonAt(hudPoint.x, hudPoint.y, BuildingDefinitions.producesUnitTypesFor(buildingType));
+                    if (clickedUnitType != null) {
+                        client.requestQueueUnit(selectedBuildingId, clickedUnitType);
+                        return true; // клик поглощён кнопкой — не начинаем рамку выделения
+                    }
                 }
             }
             dragStartWorld.set(camera.unproject(new Vector3(screenX, screenY, 0)));
@@ -844,6 +889,13 @@ public class GameScreen extends InputAdapter implements Screen {
             Entity target = findEntityNear(world.x, world.y);
             if (target != null && isEnemy(target)) {
                 issueAttackOrder(target.getComponent(UnitComponent.class).unitId);
+            } else if (target != null && !isEnemy(target) && target.getComponent(ConstructionComponent.class) != null) {
+                // Своё (не чужое — isEnemy(target) уже false тут исключает и
+                // "ничьё" быть не может, раз ConstructionComponent вообще
+                // есть) недостроенное здание — строители из выделения идут
+                // его достраивать, остальные юниты выделения просто
+                // игнорируют клик (см. javadoc issueBuildOrder).
+                issueBuildOrder(target.getComponent(UnitComponent.class).unitId);
             } else {
                 issueMoveOrder(world.x, world.y);
             }
@@ -1034,6 +1086,27 @@ public class GameScreen extends InputAdapter implements Screen {
         // юниты естественным образом расходятся вокруг цели кольцом.
         for (int unitId : selectedUnitIds) {
             client.requestAttackUnit(unitId, targetUnitId);
+        }
+    }
+
+    /**
+     * Приказ строить это здание — только строителям из выделения (если
+     * там оказались ещё воины/стрелки вместе со строителем, они просто
+     * ничего не делают в ответ на этот клик, не двигаются к зданию и не
+     * получают никакого другого приказа). Спред тут не нужен по той же
+     * причине, что и в issueAttackOrder — BuildSystem сама останавливает
+     * каждого строителя на buildRadius от цели.
+     */
+    private void issueBuildOrder(int targetBuildingUnitId) {
+        for (int unitId : selectedUnitIds) {
+            Entity unit = entityFactory.getEntity(unitId);
+            if (unit == null) {
+                continue;
+            }
+            UnitTypeComponent unitType = unit.getComponent(UnitTypeComponent.class);
+            if (unitType != null && unitType.type == UnitType.BUILDER) {
+                client.requestBuildOrder(unitId, targetBuildingUnitId);
+            }
         }
     }
 

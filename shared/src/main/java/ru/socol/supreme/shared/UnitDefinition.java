@@ -41,12 +41,20 @@ public class UnitDefinition {
     public int ironCost;
     public int electricityCost;
 
+    /**
+     * Актуально только для строителя — на каком расстоянии от здания он
+     * может его строить (см. BuildSystem — та же идея, что и attackRadius
+     * у боевых юнитов: точка подхода на этом расстоянии от цели, не
+     * вплотную). 0 у остальных типов — не используется.
+     */
+    public float buildRadius;
+
     public UnitDefinition() {
         // требуется Json для десериализации
     }
 
     public UnitDefinition(UnitType type, float speed, int health, float fireRate, int damage, float attackRadius,
-                           int ironCost, int electricityCost) {
+                           int ironCost, int electricityCost, float buildRadius) {
         this.type = type;
         this.speed = speed;
         this.health = health;
@@ -55,5 +63,6 @@ public class UnitDefinition {
         this.attackRadius = attackRadius;
         this.ironCost = ironCost;
         this.electricityCost = electricityCost;
+        this.buildRadius = buildRadius;
     }
 }

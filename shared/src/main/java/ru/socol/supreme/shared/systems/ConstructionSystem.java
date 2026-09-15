@@ -8,29 +8,29 @@ import com.badlogic.ashley.systems.IteratingSystem;
 import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.ResourceType;
-import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
 import ru.socol.supreme.shared.components.ResourceExtractorComponent;
 
 /**
- * Продвигает постройку зданий, поставленных игроком (сейчас — шахта
- * железа и электростанция, см. GameServer.spawnBuilding): пока у здания
- * есть ConstructionComponent, оно просто существует и ничего не делает —
- * RenderSystem на клиенте рисует его как стройку. По достижении
- * remaining <= 0 компонент снимается, а какой компонент добавить взамен
- * — решает BuildingComponent.type той же сущности через
- * BuildingDefinitions: если здание производит юнитов
- * (producesUnitTypeFor != null) — добавляется ProductionComponent, если
+ * Продвигает постройку зданий, поставленных игроком (шахта железа,
+ * казарма стрелков, электростанция, оба хранилища). По достижении
+ * remaining <= 0 у ConstructionComponent компонент снимается, а какой
+ * компонент добавить взамен — решает BuildingComponent.type той же
+ * сущности через BuildingDefinitions: если здание производит юнитов
+ * (producesUnitTypesFor непусто) — добавляется ProductionComponent (с
+ * пустой очередью — какие юниты в неё добавлять, решает игрок), если
  * добывает ресурс (resourceTypeFor != null) — ResourceExtractorComponent.
- * Дом и казарма сейчас никогда не проходят через этот путь (buildTime=0
- * у них, GameServer создаёт их сразу готовыми), но система написана так,
- * что от этого не пострадает, если однажды у них тоже появится время
- * стройки.
  *
- * Приоритет 2 — после ProductionSystem (1), до MovementSystem (10); не
- * взаимодействует с движением напрямую, точный порядок не критичен.
+ * Сама remaining этой системой больше НЕ уменьшается — с тех пор как
+ * появились строители, за это отвечает BuildSystem, и только пока рядом
+ * активно работает строитель (см. её javadoc, почему здание "не
+ * достраивается само"). Эта система лишь следит за моментом завершения и
+ * переводит здание в рабочее состояние.
+ *
+ * Приоритет 3 — после BuildSystem (1, уменьшает remaining) и
+ * ProductionSystem (2), до MovementSystem (10).
  *
  * Живёт в shared (как и остальные gameplay-системы), но реально
  * используется только сервером.
@@ -45,7 +45,7 @@ public class ConstructionSystem extends IteratingSystem {
     private Engine engine;
 
     public ConstructionSystem() {
-        super(Family.all(ConstructionComponent.class, BuildingComponent.class).get(), 2);
+        super(Family.all(ConstructionComponent.class, BuildingComponent.class).get(), 3);
     }
 
     @Override
@@ -57,7 +57,6 @@ public class ConstructionSystem extends IteratingSystem {
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
         ConstructionComponent construction = CONSTRUCTION.get(entity);
-        construction.remaining -= deltaTime;
 
         if (construction.remaining > 0f) {
             return;
@@ -73,12 +72,8 @@ public class ConstructionSystem extends IteratingSystem {
             entity.add(extractor);
         }
 
-        UnitType producesUnitType = BuildingDefinitions.producesUnitTypeFor(buildingType);
-        if (producesUnitType != null) {
+        if (BuildingDefinitions.producesUnitTypesFor(buildingType).length > 0) {
             ProductionComponent production = engine.createComponent(ProductionComponent.class);
-            production.queuedCount = 0;
-            production.progress = 0f;
-            production.producesUnitType = producesUnitType;
             entity.add(production);
         }
     }

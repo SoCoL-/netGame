@@ -40,7 +40,7 @@ import java.util.Map;
  * несколькими зданиями добычи одного игрока считали бы одно и то же по
  * нескольку раз.
  *
- * Приоритет 3 — после ConstructionSystem (2), до MovementSystem (10).
+ * Приоритет 4 — после ConstructionSystem (3), до MovementSystem (10).
  *
  * Живёт в shared (как и остальные gameplay-системы), но реально
  * используется только сервером.
@@ -64,7 +64,7 @@ public class ResourceExtractionSystem extends IteratingSystem {
     private final Map<ResourceType, Map<Integer, Float>> capacityByResourceAndPlayer = new EnumMap<>(ResourceType.class);
 
     public ResourceExtractionSystem(Map<Integer, Entity> unitsById, Map<Integer, PlayerResources> resourcesByPlayer) {
-        super(Family.all(ResourceExtractorComponent.class, OwnerComponent.class, BuildingComponent.class).get(), 3);
+        super(Family.all(ResourceExtractorComponent.class, OwnerComponent.class, BuildingComponent.class).get(), 4);
         this.unitsById = unitsById;
         this.resourcesByPlayer = resourcesByPlayer;
         for (ResourceType type : ResourceType.values()) {

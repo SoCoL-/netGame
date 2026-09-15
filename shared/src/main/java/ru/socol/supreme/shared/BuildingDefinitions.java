@@ -55,8 +55,12 @@ public final class BuildingDefinitions {
     }
 
     /** null, если это здание не производит юнитов (здания добычи ресурсов). */
-    public static UnitType producesUnitTypeFor(BuildingType type) {
-        return DEFINITIONS.get(type).producesUnitType;
+    private static final UnitType[] NO_PRODUCED_TYPES = new UnitType[0];
+
+    /** Какие юниты это здание умеет производить — пустой массив (не null), если ничего не производит (здания добычи/хранилища). */
+    public static UnitType[] producesUnitTypesFor(BuildingType type) {
+        UnitType[] types = DEFINITIONS.get(type).producesUnitTypes;
+        return types != null ? types : NO_PRODUCED_TYPES;
     }
 
     /** null, если это здание не добывает ресурс (дом, казарма). */
@@ -166,7 +170,7 @@ public final class BuildingDefinitions {
         home.halfHeight = 50f;
         home.maxHealth = 500;
         home.buildTime = 0f;
-        home.producesUnitType = UnitType.WARRIOR;
+        home.producesUnitTypes = new UnitType[]{UnitType.WARRIOR, UnitType.BUILDER};
         home.spawnMargin = 200f;
         definitions.put(BuildingType.HOME, home);
 
@@ -176,7 +180,7 @@ public final class BuildingDefinitions {
         archerBarracks.halfHeight = 50f;
         archerBarracks.maxHealth = 70;
         archerBarracks.buildTime = 10f; // теперь строит сам игрок, не автоспавн — та же длительность, что у шахты/станции
-        archerBarracks.producesUnitType = UnitType.ARCHER;
+        archerBarracks.producesUnitTypes = new UnitType[]{UnitType.ARCHER};
         archerBarracks.consumesResourceType = ResourceType.ELECTRICITY;
         archerBarracks.idleConsumptionRate = 0.5f;
         archerBarracks.activeConsumptionRate = 2f;

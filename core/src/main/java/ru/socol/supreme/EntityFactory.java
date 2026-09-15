@@ -76,7 +76,10 @@ public class EntityFactory {
                 production.hasRallyPoint = snapshot.hasRallyPoint;
                 production.rallyX = snapshot.rallyX;
                 production.rallyY = snapshot.rallyY;
-                // producesUnitType не меняется у здания после создания — обновлять не нужно.
+                // Какие типы юнитов это здание умеет производить — не меняется
+                // после создания здания (решает BuildingDefinitions по типу
+                // здания), обновлять не нужно; сама очередь (queue) клиенту не
+                // нужна вовсе, только queuedCount, см. javadoc ProductionComponent.
             }
 
             if (snapshot.building) {
@@ -165,9 +168,9 @@ public class EntityFactory {
      * snapshot напрямую, а BuildingDefinitions по типу: под стройкой
      * (underConstruction) — ConstructionComponent; иначе — ProductionComponent,
      * если это здание производит юнитов, или ResourceExtractorComponent,
-     * если добывает ресурс (BuildingDefinitions.producesUnitTypeFor/
-     * resourceTypeFor — одно из двух не null, второе всегда null, у
-     * каждого типа здания ровно одна роль).
+     * если добывает ресурс (BuildingDefinitions.producesUnitTypesFor/
+     * resourceTypeFor — одно из двух не пусто/не null, второе всегда
+     * пусто/null, у каждого типа здания ровно одна роль).
      */
     private void addBuildingBehaviorComponent(Entity entity, BuildingType type, UnitSnapshot snapshot) {
         if (snapshot.underConstruction) {
@@ -175,12 +178,10 @@ public class EntityFactory {
             return;
         }
 
-        UnitType producesUnitType = BuildingDefinitions.producesUnitTypeFor(type);
-        if (producesUnitType != null) {
+        if (BuildingDefinitions.producesUnitTypesFor(type).length > 0) {
             ProductionComponent production = new ProductionComponent();
             production.queuedCount = snapshot.queuedCount;
             production.progress = snapshot.buildProgress;
-            production.producesUnitType = producesUnitType;
             production.hasRallyPoint = snapshot.hasRallyPoint;
             production.rallyX = snapshot.rallyX;
             production.rallyY = snapshot.rallyY;

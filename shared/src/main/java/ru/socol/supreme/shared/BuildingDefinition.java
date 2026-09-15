@@ -6,7 +6,7 @@ package ru.socol.supreme.shared;
  * .Json (см. BuildingDefinitions) десериализует такие классы через
  * рефлексию по имени поля, включая enum-поля, без ручной настройки.
  *
- * Не у каждого здания используются все поля — producesUnitType актуален
+ * Не у каждого здания используются все поля — producesUnitTypes актуален
  * только для HOME/ARCHER_BARRACKS, resourceType/extractionRate только для
  * IRON_MINE/POWER_PLANT, consumesResourceType/idleConsumptionRate/
  * activeConsumptionRate только для ARCHER_BARRACKS (пока — но поле
@@ -29,7 +29,8 @@ public class BuildingDefinition {
     public float buildTime;
 
     /** Актуально только для HOME/ARCHER_BARRACKS — какой юнит производится. Иначе null. */
-    public UnitType producesUnitType;
+    /** Актуален только для HOME/ARCHER_BARRACKS — какие юниты производятся. Иначе null/пусто. */
+    public UnitType[] producesUnitTypes;
 
     /** Актуально только для IRON_MINE/POWER_PLANT — какой ресурс добывается. Иначе null. */
     public ResourceType resourceType;

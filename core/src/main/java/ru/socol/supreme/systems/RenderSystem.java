@@ -56,6 +56,8 @@ public class RenderSystem extends IteratingSystem {
     private static final Color SELECTION_RING_COLOR = Color.WHITE;
     private static final Color ARCHER_MARKER_COLOR = Color.WHITE;
     private static final float ARCHER_MARKER_RADIUS = GameConstants.UNIT_RADIUS * 0.4f;
+    private static final Color BUILDER_MARKER_COLOR = Color.LIGHT_GRAY; // тот же цвет, что у "стройки" (UNDER_CONSTRUCTION_COLOR) — тематическая связь
+    private static final float BUILDER_MARKER_HALF_SIZE = GameConstants.UNIT_RADIUS * 0.35f;
 
     private static final float SELECTION_RING_RADIUS = GameConstants.UNIT_RADIUS + 3f;
 
@@ -108,12 +110,19 @@ public class RenderSystem extends IteratingSystem {
         shapeRenderer.setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
         shapeRenderer.circle(position.position.x, position.position.y, GameConstants.UNIT_RADIUS);
 
-        // Маленькая белая точка внутри — единственное, что отличает стрелка
-        // от воина на глаз (оба одного размера и цвета иначе).
+        // Маленькая метка внутри — единственное, что отличает стрелка и
+        // строителя от воина (и друг от друга) на глаз: у всех троих
+        // одинаковый размер и цвет круга иначе. Стрелок — белая точка,
+        // строитель — серый квадратик (тот же цвет, что у "стройки" на
+        // зданиях — тематическая связь), у воина метки нет вовсе.
         UnitTypeComponent unitType = UNIT_TYPE.get(entity);
         if (unitType != null && unitType.type == UnitType.ARCHER) {
             shapeRenderer.setColor(ARCHER_MARKER_COLOR);
             shapeRenderer.circle(position.position.x, position.position.y, ARCHER_MARKER_RADIUS);
+        } else if (unitType != null && unitType.type == UnitType.BUILDER) {
+            shapeRenderer.setColor(BUILDER_MARKER_COLOR);
+            float half = BUILDER_MARKER_HALF_SIZE;
+            shapeRenderer.rect(position.position.x - half, position.position.y - half, half * 2f, half * 2f);
         }
 
         drawHealthBar(position, health, UNIT_HEALTH_BAR_Y_OFFSET, UNIT_HEALTH_BAR_WIDTH);

@@ -25,9 +25,14 @@ import java.util.Map;
  * Двигает очередь производства юнитов у зданий, и заодно — непрерывное
  * потребление ресурсов самим зданием (пока — только у казармы стрелков,
  * см. BuildingDefinitions.consumesResourceTypeFor): оба процесса завязаны
- * на одно и то же состояние (production.queuedCount), так что держать их
- * в разных системах означало бы дважды спрашивать "простаивает здание
- * или работает".
+ * на одно и то же состояние (production.queue), так что держать их в
+ * разных системах означало бы дважды спрашивать "простаивает здание или
+ * работает".
+ *
+ * Очередь — список типов юнита (не счётчик одного фиксированного типа):
+ * здание может уметь производить несколько разных типов сразу (сейчас —
+ * только дом, воин и строитель), и строится в данный момент именно
+ * первый элемент очереди, FIFO.
  *
  * Потребление здания безусловно — идёт всегда, пока здание существует,
  * по ставке idleConsumptionRateFor (очередь пуста) или
@@ -35,13 +40,14 @@ import java.util.Map;
  * хватает ли ресурсов на самого производимого юнита. Ресурс не уходит в
  * минус — при нехватке зажимается на 0, не блокирует ничего другого.
  *
- * Стоимость самого юнита (UnitDefinitions.ironCostFor/electricityCostFor)
- * списывается РАВНОМЕРНО за UNIT_BUILD_TIME, а не разом: за один тик
- * длительности deltaTime тратится cost * deltaTime / UNIT_BUILD_TIME
- * каждого ресурса — так что за весь UNIT_BUILD_TIME спишется ровно cost.
- * Если на очередной тик не хватает ХОТЯ БЫ ОДНОГО из двух — прогресс
- * просто не растёт (как и при нехватке места под юнита, MAX_TOTAL_UNITS),
- * а не уходит в минус и не теряется.
+ * Стоимость самого юнита (UnitDefinitions.ironCostFor/electricityCostFor,
+ * по типу ПЕРВОГО элемента очереди) списывается РАВНОМЕРНО за
+ * UNIT_BUILD_TIME, а не разом: за один тик длительности deltaTime
+ * тратится cost * deltaTime / UNIT_BUILD_TIME каждого ресурса — так что
+ * за весь UNIT_BUILD_TIME спишется ровно cost. Если на очередной тик не
+ * хватает ХОТЯ БЫ ОДНОГО из двух — прогресс просто не растёт (как и при
+ * нехватке места под юнита, MAX_TOTAL_UNITS), а не уходит в минус и не
+ * теряется.
  *
  * Фактическое создание сущности юнита делегируется обратно в GameServer
  * через UnitFactory — у этой системы (как и у всех shared-систем) нет
@@ -52,6 +58,8 @@ import java.util.Map;
  * ProductionComponent.hasRallyPoint выставлен, свежесозданный юнит сразу
  * получает Pathfinding.setDestination к ней, тем же путём, каким сервер
  * обрабатывает обычный ручной приказ на движение.
+ *
+ * Приоритет 2 — после BuildSystem (1), до ConstructionSystem (3).
  *
  * Работает только на сервере, как и остальные gameplay-системы.
  */
@@ -77,7 +85,7 @@ public class ProductionSystem extends IteratingSystem {
 
     public ProductionSystem(Map<Integer, Entity> unitsById, Map<Integer, PlayerResources> resourcesByPlayer, UnitFactory unitFactory) {
         super(Family.all(BuildingComponent.class, ProductionComponent.class,
-                PositionComponent.class, OwnerComponent.class).get(), 1);
+                PositionComponent.class, OwnerComponent.class).get(), 2);
         this.unitsById = unitsById;
         this.resourcesByPlayer = resourcesByPlayer;
         this.unitFactory = unitFactory;
@@ -92,14 +100,14 @@ public class ProductionSystem extends IteratingSystem {
 
         ResourceType consumedType = BuildingDefinitions.consumesResourceTypeFor(buildingType);
         if (consumedType != null && resources != null) {
-            boolean active = production.queuedCount > 0;
+            boolean active = !production.queue.isEmpty();
             float rate = active
                     ? BuildingDefinitions.activeConsumptionRateFor(buildingType)
                     : BuildingDefinitions.idleConsumptionRateFor(buildingType);
             drain(resources, consumedType, rate * deltaTime);
         }
 
-        if (production.queuedCount <= 0) {
+        if (production.queue.isEmpty()) {
             return;
         }
 
@@ -107,8 +115,10 @@ public class ProductionSystem extends IteratingSystem {
             return; // лимит юнитов исчерпан — ждём, прогресс не растёт, но и не теряется
         }
 
-        float tickIron = UnitDefinitions.ironCostFor(production.producesUnitType) * deltaTime / GameConstants.UNIT_BUILD_TIME;
-        float tickElectricity = UnitDefinitions.electricityCostFor(production.producesUnitType) * deltaTime / GameConstants.UNIT_BUILD_TIME;
+        UnitType buildingUnitType = production.queue.get(0); // первый в очереди — тот, что строится сейчас
+
+        float tickIron = UnitDefinitions.ironCostFor(buildingUnitType) * deltaTime / GameConstants.UNIT_BUILD_TIME;
+        float tickElectricity = UnitDefinitions.electricityCostFor(buildingUnitType) * deltaTime / GameConstants.UNIT_BUILD_TIME;
 
         if (resources == null || resources.iron < tickIron || resources.electricity < tickElectricity) {
             return; // не хватает ресурсов на этот тик — ждём, прогресс не растёт, но и не теряется
@@ -123,14 +133,14 @@ public class ProductionSystem extends IteratingSystem {
 
         PositionComponent position = POSITION.get(entity);
         Vector2 spawnPoint = computeSpawnPoint(position.position, buildingType);
-        Entity newUnit = unitFactory.createUnit(owner.playerId, spawnPoint.x, spawnPoint.y, production.producesUnitType);
+        Entity newUnit = unitFactory.createUnit(owner.playerId, spawnPoint.x, spawnPoint.y, buildingUnitType);
 
         if (production.hasRallyPoint) {
             Pathfinding.setDestination(newUnit, newUnit.getComponent(PositionComponent.class),
                     newUnit.getComponent(DirectionComponent.class), production.rallyX, production.rallyY);
         }
 
-        production.queuedCount--;
+        production.queue.remove(0);
         production.progress = 0f;
     }
 

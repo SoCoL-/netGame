@@ -3,6 +3,7 @@ package ru.socol.supreme.shared.network;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryonet.EndPoint;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
+import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
@@ -49,5 +50,6 @@ public final class NetworkRegistration {
         kryo.register(PlaceIronMineRequest.class);
         kryo.register(PlaceBuildingRequest.class);
         kryo.register(SetRallyPointRequest.class);
+        kryo.register(BuildOrderRequest.class);
     }
 }

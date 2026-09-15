@@ -94,6 +94,11 @@ public final class UnitDefinitions {
         return DEFINITIONS.get(type).electricityCost;
     }
 
+    /** Актуально только для строителя — на каком расстоянии он может строить здание, см. UnitDefinition.buildRadius. */
+    public static float buildRadiusFor(UnitType type) {
+        return DEFINITIONS.get(type).buildRadius;
+    }
+
     private static Map<UnitType, UnitDefinition> load() {
         Map<UnitType, UnitDefinition> definitions = defaultDefinitions();
 
@@ -117,8 +122,9 @@ public final class UnitDefinitions {
     /** Встроенные значения — то, чем баланс был до вынесения в JSON. Подстраховка на случай отсутствия/поломки файла. */
     private static Map<UnitType, UnitDefinition> defaultDefinitions() {
         Map<UnitType, UnitDefinition> definitions = new EnumMap<>(UnitType.class);
-        definitions.put(UnitType.WARRIOR, new UnitDefinition(UnitType.WARRIOR, 80f, 20, 4f, 2, 70f, 0, 0));
-        definitions.put(UnitType.ARCHER, new UnitDefinition(UnitType.ARCHER, 80f, 20, 4f, 2, 210f, 300, 300));
+        definitions.put(UnitType.WARRIOR, new UnitDefinition(UnitType.WARRIOR, 80f, 20, 4f, 2, 70f, 0, 0, 0f));
+        definitions.put(UnitType.ARCHER, new UnitDefinition(UnitType.ARCHER, 80f, 20, 4f, 2, 210f, 300, 300, 0f));
+        definitions.put(UnitType.BUILDER, new UnitDefinition(UnitType.BUILDER, 80f, 65, 4f, 1, 70f, 100, 150, 70f));
         return definitions;
     }
 }

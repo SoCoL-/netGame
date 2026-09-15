@@ -9,6 +9,7 @@ import com.badlogic.gdx.utils.Array;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AttackComponent;
+import ru.socol.supreme.shared.components.BuildOrderComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -41,7 +42,10 @@ import java.util.Map;
  *
  * Это "агрессивная стойка" по умолчанию и безусловно для всех юнитов:
  * приказ на движение прерывается, если по пути подвернулся враг — стоек
- * "не атаковать" / "удерживать позицию" в игре нет.
+ * "не атаковать" / "удерживать позицию" в игре нет. То же и с текущей
+ * стройкой у строителя (BuildOrderComponent) — автоагрессия снимает и
+ * её: строитель, на которого напали, переключается на защиту, а не
+ * продолжает стучать молотком, пока его убивают.
  *
  * Family намеренно ИСКЛЮЧАЕТ AttackComponent — уже атакующие юниты цель не
  * пересматривают каждый тик, этим занимается только CombatSystem. Здания
@@ -144,5 +148,12 @@ public class AggroSystem extends IteratingSystem {
         AttackComponent attack = engine.createComponent(AttackComponent.class);
         attack.targetUnitId = nearestEnemy.getComponent(UnitComponent.class).unitId;
         entity.add(attack);
+
+        // Автоагрессия прерывает вообще любое текущее занятие, включая
+        // стройку — строитель, на которого напали, должен защищаться
+        // (или хотя бы попытаться), а не долбить молотком, пока его убивают.
+        if (entity.getComponent(BuildOrderComponent.class) != null) {
+            entity.remove(BuildOrderComponent.class);
+        }
     }
 }

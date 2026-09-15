@@ -5,7 +5,7 @@
     "halfHeight": 50,
     "maxHealth": 500,
     "buildTime": 0,
-    "producesUnitType": "WARRIOR",
+    "producesUnitTypes": ["WARRIOR", "BUILDER"],
     "spawnMargin": 200
   },
   {
@@ -14,7 +14,7 @@
     "halfHeight": 50,
     "maxHealth": 70,
     "buildTime": 10,
-    "producesUnitType": "ARCHER",
+    "producesUnitTypes": ["ARCHER"],
     "consumesResourceType": "ELECTRICITY",
     "idleConsumptionRate": 0.5,
     "activeConsumptionRate": 2

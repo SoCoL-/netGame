@@ -5,12 +5,14 @@ import com.badlogic.gdx.utils.Pool;
 import ru.socol.supreme.shared.UnitType;
 
 /**
- * Тип юнита (воин/стрелок). На сервере CombatSystem/GameServer читают
- * его, чтобы взять скорость/урон/дальность атаки из UnitDefinitions
- * (units.json); на клиенте RenderSystem читает его, чтобы нарисовать
- * стрелка иначе, чем воина. Только у мобильных юнитов — у зданий его
- * нет, у них вместо этого ProductionComponent.producesUnitType (какой
- * тип они производят, а не какой тип они сами — здание не сражается).
+ * Тип юнита (воин/стрелок/строитель). На сервере CombatSystem/BuildSystem
+ * /GameServer читают его, чтобы взять скорость/урон/дальность
+ * атаки/дальность стройки из UnitDefinitions (units.json); на клиенте
+ * RenderSystem читает его, чтобы нарисовать каждый тип со своей меткой.
+ * Только у мобильных юнитов — у зданий его нет, у них вместо этого
+ * BuildingComponent.type (какое это здание, а какие юниты оно
+ * производит — решает не оно само, а BuildingDefinitions.
+ * producesUnitTypesFor по этому типу здания).
  */
 public class UnitTypeComponent implements Component, Pool.Poolable {
 
