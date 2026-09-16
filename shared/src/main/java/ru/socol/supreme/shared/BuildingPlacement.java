@@ -2,6 +2,7 @@ package ru.socol.supreme.shared;
 
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -11,8 +12,10 @@ import ru.socol.supreme.shared.components.PositionComponent;
  * привязаны к фиксированной точке на карте (в отличие от шахты железа,
  * которая может встать только на месторождение — см.
  * GameServer.isDepositOccupied, у неё своя, гораздо более простая
- * проверка). Сейчас это казарма стрелков и электростанция — обе строит
- * сам игрок в произвольном месте из меню постройки.
+ * проверка, зазор вокруг производящих зданий, описанный ниже, её не
+ * касается — на нынешней карте все месторождения и так стоят далеко от
+ * дома). Сейчас это казарма стрелков, электростанция и оба хранилища —
+ * все четыре строит сам игрок в произвольном месте из меню постройки.
  *
  * Общий метод, а не два разных (клиент/сервер): оба принимают один и тот
  * же Iterable&lt;Entity&gt; — на клиенте это engine.getEntities(), на
@@ -26,7 +29,20 @@ public final class BuildingPlacement {
     private BuildingPlacement() {
     }
 
-    /** Помещается ли здание данного типа центром в (x, y) — в границах карты, не на воде, не пересекая юнитов/другие здания. */
+    /**
+     * Помещается ли здание данного типа центром в (x, y) — в границах
+     * карты, не на воде, не пересекая юнитов/другие здания, и с зазором
+     * вокруг ЛЮБОГО здания, производящего юнитов (своего или чужого —
+     * проверка чисто геометрическая, без учёта владельца, как и остальные
+     * условия этой функции). Зазор — clearanceRadiusFor того же
+     * производящего здания, той же величины, на которой у него
+     * появляется готовый юнит (BuildingDefinitions
+     * .productionSpawnDistanceFor): без него соседняя постройка могла бы
+     * перекрыть юниту точку появления. Действует в обе стороны — и когда
+     * рядом уже стоит производящее здание, и когда само строящееся
+     * здание производит юнитов (тогда зазор нужен вокруг НЕГО, чтобы
+     * ЕГО собственное место появления юнита осталось свободным).
+     */
     public static boolean canPlaceBuilding(BuildingType type, Iterable<Entity> entities, float x, float y) {
         float halfWidth = BuildingDefinitions.halfWidthFor(type);
         float halfHeight = BuildingDefinitions.halfHeightFor(type);
@@ -44,18 +60,33 @@ public final class BuildingPlacement {
             return false;
         }
 
+        float ownClearance = clearanceRadiusFor(type);
+
         for (Entity entity : entities) {
             PositionComponent position = entity.getComponent(PositionComponent.class);
             if (position == null) {
                 continue;
             }
 
-            if (entity.getComponent(BuildingComponent.class) != null) {
+            BuildingComponent buildingMarker = entity.getComponent(BuildingComponent.class);
+            if (buildingMarker != null) {
                 float otherHalfWidth = BuildingSizes.halfWidth(entity);
                 float otherHalfHeight = BuildingSizes.halfHeight(entity);
                 if (rectsOverlap(minX, minY, maxX, maxY,
                         position.position.x - otherHalfWidth, position.position.y - otherHalfHeight,
                         position.position.x + otherHalfWidth, position.position.y + otherHalfHeight)) {
+                    return false;
+                }
+
+                // Зазор вокруг производящего здания — своего (ownClearance,
+                // если само строящееся здание производит юнитов) или
+                // соседнего (clearanceRadiusFor(buildingMarker.type)), какой
+                // бы из них ни требовал большего расстояния. У обоих
+                // непроизводящих зданий это 0 — условие не сработает вовсе, как
+                // и раньше, когда этой проверки не было.
+                float requiredClearance = Math.max(ownClearance, clearanceRadiusFor(buildingMarker.type));
+                if (requiredClearance > 0f
+                        && Vector2.dst(x, y, position.position.x, position.position.y) < requiredClearance) {
                     return false;
                 }
             } else if (entity.getComponent(DirectionComponent.class) != null) {
@@ -73,6 +104,12 @@ public final class BuildingPlacement {
         }
 
         return true;
+    }
+
+    /** 0, если это здание не производит юнитов — иначе рекомендуемый зазор вокруг него, равный расстоянию до точки появления юнита (BuildingDefinitions.productionSpawnDistanceFor). */
+    private static float clearanceRadiusFor(BuildingType type) {
+        return BuildingDefinitions.producesUnitTypesFor(type).length > 0
+                ? BuildingDefinitions.productionSpawnDistanceFor(type) : 0f;
     }
 
     private static boolean rectsOverlap(float minX1, float minY1, float maxX1, float maxY1,
