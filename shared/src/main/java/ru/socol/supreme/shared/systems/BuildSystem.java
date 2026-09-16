@@ -6,6 +6,7 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.EntitySystem;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
+import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingType;
@@ -16,6 +17,7 @@ import ru.socol.supreme.shared.components.BuildOrderComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
+import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
@@ -179,6 +181,17 @@ public class BuildSystem extends EntitySystem {
         }
 
         construction.remaining -= progressThisTick;
+
+        // Здоровье растёт вместе с прогрессом стройки — от почти нуля
+        // (см. GameServer.spawnBuilding, где оно и стартует) до полного,
+        // ровно к моменту завершения. Обновляем именно тут, там же, где
+        // реально двигается remaining — значит, здоровье тоже не растёт
+        // само по себе, только пока строитель действительно работает.
+        HealthComponent health = target.getComponent(HealthComponent.class);
+        if (health != null) {
+            float progressFraction = MathUtils.clamp(1f - construction.remaining / construction.totalTime, 0f, 1f);
+            health.currentHealth = Math.max(1, Math.round(health.maxHealth * progressFraction));
+        }
     }
 
     /** Решает для одного строителя: цель ещё актуальна? Идти к ней или уже на месте? Если на месте — засчитывает его в buildersInRangeByTarget, саму скорость стройки тут не трогает. */

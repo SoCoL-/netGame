@@ -126,6 +126,9 @@ public class GameScreen extends InputAdapter implements Screen {
             BuildingType.IRON_STORAGE,
             BuildingType.ELECTRICITY_STORAGE,
     };
+    // Пустой массив вместо null — для ещё строящегося (или непроизводящего)
+    // здания, см. drawBuildingInfoPanel/touchDown.
+    private static final UnitType[] NO_PRODUCIBLE_TYPES = new UnitType[0];
 
     private static final float PANEL_X = 20f;
     private static final float PANEL_Y = 5f;
@@ -921,8 +924,20 @@ public class GameScreen extends InputAdapter implements Screen {
         }
         HealthComponent health = building.getComponent(HealthComponent.class);
         ProductionComponent production = building.getComponent(ProductionComponent.class);
+        ConstructionComponent construction = building.getComponent(ConstructionComponent.class);
         BuildingType buildingType = building.getComponent(BuildingComponent.class).type;
-        UnitType[] producible = BuildingDefinitions.producesUnitTypesFor(buildingType);
+        // Кнопки очереди — только если у СУЩНОСТИ прямо сейчас есть
+        // ProductionComponent, не по одному лишь типу здания:
+        // BuildingDefinitions.producesUnitTypesFor(buildingType) говорит,
+        // что этот ТИП умеет производить в принципе, но ConstructionSystem
+        // добавляет сам компонент только по завершении стройки — раньше
+        // кнопка рисовалась и была кликабельна даже на ещё строящемся
+        // здании (сервер её молча отклонял, но выглядело как рабочая
+        // кнопка). Тот же самый признак (production != null) и есть общий
+        // "здание готово и функционально" на будущее — им же стоит
+        // проверять доступность любого другого функционала здания
+        // (радары, щиты и что угодно ещё), не только очередь.
+        UnitType[] producible = production != null ? BuildingDefinitions.producesUnitTypesFor(buildingType) : NO_PRODUCIBLE_TYPES;
 
         shapeRenderer.setProjectionMatrix(hudCamera.combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
@@ -954,6 +969,12 @@ public class GameScreen extends InputAdapter implements Screen {
         uiFont.draw(spriteBatch, "HP: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
         for (int i = 0; i < producible.length; i++) {
             uiFont.draw(spriteBatch, "+" + unitTypeLabel(producible[i]), actionButtonX(i) + 10f, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 14f);
+        }
+        if (construction != null) {
+            // Занимает то же место, где были бы кнопки очереди — их тут
+            // нет, раз функционал недоступен до завершения стройки.
+            int percent = Math.round(MathUtils.clamp(1f - construction.remaining / construction.totalTime, 0f, 1f) * 100f);
+            uiFont.draw(spriteBatch, "Under construction: " + percent + "%", ACTION_BUTTON_X, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 14f);
         }
         if (production != null) {
             uiFont.draw(spriteBatch, "Queue: " + production.queuedCount, PROGRESS_BAR_X + PROGRESS_BAR_WIDTH + 20f, PROGRESS_BAR_Y + 11f);
@@ -1138,7 +1159,13 @@ public class GameScreen extends InputAdapter implements Screen {
                     return true;
                 }
                 Entity selectedBuilding = entityFactory.getEntity(selectedBuildingId);
-                if (selectedBuilding != null) {
+                // Кнопка очереди кликабельна, только если у здания СЕЙЧАС
+                // есть ProductionComponent (готово и правда производит) —
+                // та же причина, что и в drawBuildingInfoPanel: тип здания
+                // сам по себе не говорит, достроено ли оно.
+                ProductionComponent selectedProduction = selectedBuilding != null
+                        ? selectedBuilding.getComponent(ProductionComponent.class) : null;
+                if (selectedProduction != null) {
                     BuildingType buildingType = selectedBuilding.getComponent(BuildingComponent.class).type;
                     UnitType clickedUnitType = queueButtonAt(hudPoint.x, hudPoint.y, BuildingDefinitions.producesUnitTypesFor(buildingType));
                     if (clickedUnitType != null) {

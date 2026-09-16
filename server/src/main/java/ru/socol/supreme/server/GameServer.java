@@ -336,9 +336,15 @@ public class GameServer {
         owner.playerId = playerId;
 
         int maxHealth = BuildingDefinitions.maxHealthFor(type);
+        float buildTime = BuildingDefinitions.buildTimeFor(type);
         HealthComponent health = engine.createComponent(HealthComponent.class);
         health.maxHealth = maxHealth;
-        health.currentHealth = maxHealth;
+        // Пока не достроено — здоровье растёт вместе с прогрессом
+        // (BuildSystem.advanceConstruction), начинаем не с нуля, а с 1 HP
+        // — сущность с буквально нулевым здоровьем выглядела бы как уже
+        // мёртвая. Готовым зданиям (buildTime == 0, сейчас только дом)
+        // полное здоровье сразу, строить их некому.
+        health.currentHealth = buildTime > 0f ? 1 : maxHealth;
 
         BuildingComponent buildingMarker = engine.createComponent(BuildingComponent.class);
         buildingMarker.type = type;
@@ -348,7 +354,6 @@ public class GameServer {
         // автоматически его игнорировали за счёт своих Family-фильтров.
         building.add(position).add(unitComponent).add(owner).add(health).add(buildingMarker);
 
-        float buildTime = BuildingDefinitions.buildTimeFor(type);
         if (buildTime > 0f) {
             ConstructionComponent construction = engine.createComponent(ConstructionComponent.class);
             construction.totalTime = buildTime;
