@@ -156,7 +156,7 @@ public final class BuildingDefinitions {
         return new Vector2(buildingPosition).mulAdd(towardCenter, productionSpawnDistanceFor(type));
     }
 
-    /** Сколько железа стоит построить это здание — списывается разом при подтверждении размещения (GameServer.handlePlaceIronMine/handlePlaceBuilding), не постепенно. 0, если бесплатно (сейчас — казарма, оба хранилища). */
+    /** Сколько железа стоит построить это здание — списывается равномерно за время постройки (BuildSystem), тем же приёмом, что и стоимость юнита в ProductionSystem. 0, если бесплатно (сейчас — казарма, оба хранилища). */
     public static int ironCostFor(BuildingType type) {
         return DEFINITIONS.get(type).ironCost;
     }

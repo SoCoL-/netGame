@@ -151,7 +151,7 @@ public class GameServer {
 
         engine.addSystem(new AggroSystem(unitsById, aggroGrid));
         engine.addSystem(new CombatSystem(unitsById, this::handleShotFired));
-        engine.addSystem(new BuildSystem(unitsById));
+        engine.addSystem(new BuildSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit));
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
@@ -521,36 +521,8 @@ public class GameServer {
             return;
         }
 
-        if (!chargeForBuilding(connection, playerId, BuildingType.IRON_MINE)) {
-            return;
-        }
-
         float[] deposit = GameConstants.IRON_DEPOSITS[request.depositIndex];
         spawnBuilding(playerId, BuildingType.IRON_MINE, deposit[0], deposit[1]);
-    }
-
-    /**
-     * Проверяет, хватает ли игроку ресурсов на постройку этого типа
-     * здания (BuildingDefinitions.ironCostFor/electricityCostFor), и если
-     * да — сразу списывает всю стоимость целиком, одним разом при
-     * подтверждении размещения (не постепенно, в отличие от стоимости
-     * юнита в ProductionSystem). Общий метод для handlePlaceIronMine и
-     * handlePlaceBuilding — оба нуждаются ровно в одной и той же
-     * проверке+списании, разница только в том, какое здание и куда ставят
-     * дальше. false — денег не хватило (уже отправлен ErrorResponse),
-     * вызывающий код должен прервать размещение в этом случае.
-     */
-    private boolean chargeForBuilding(Connection connection, int playerId, BuildingType type) {
-        PlayerResources resources = resourcesByPlayer.get(playerId);
-        int ironCost = BuildingDefinitions.ironCostFor(type);
-        int electricityCost = BuildingDefinitions.electricityCostFor(type);
-        if (resources == null || resources.iron < ironCost || resources.electricity < electricityCost) {
-            server.sendToTCP(connection.getID(), new ErrorResponse("Not enough resources to build this"));
-            return false;
-        }
-        resources.iron -= ironCost;
-        resources.electricity -= electricityCost;
-        return true;
     }
 
     /**
@@ -583,10 +555,6 @@ public class GameServer {
 
         if (!BuildingPlacement.canPlaceBuilding(type, unitsById.values(), request.x, request.y)) {
             server.sendToTCP(connection.getID(), new ErrorResponse("Cannot place building there"));
-            return;
-        }
-
-        if (!chargeForBuilding(connection, playerId, type)) {
             return;
         }
 
