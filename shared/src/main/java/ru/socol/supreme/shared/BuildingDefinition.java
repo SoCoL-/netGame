@@ -16,6 +16,8 @@ package ru.socol.supreme.shared;
  * IRON_STORAGE (тоже общее поле, не специфичное для железа — если
  * появится хранилище электричества, использует то же). Здание само не
  * использует свои "чужие" поля — какие именно читать, решает BuildingType.
+ * ironCost/electricityCost — 0 у казармы и обоих хранилищ (бесплатны),
+ * ненулевое у шахты и станции (см. их javadoc чуть ниже).
  */
 public class BuildingDefinition {
 
@@ -28,7 +30,6 @@ public class BuildingDefinition {
     /** Секунд на постройку. 0 — здание появляется сразу готовым (сейчас только дом), не через ConstructionComponent. */
     public float buildTime;
 
-    /** Актуально только для HOME/ARCHER_BARRACKS — какой юнит производится. Иначе null. */
     /** Актуален только для HOME/ARCHER_BARRACKS — какие юниты производятся. Иначе null/пусто. */
     public UnitType[] producesUnitTypes;
 
@@ -63,6 +64,18 @@ public class BuildingDefinition {
 
     /** Актуально только если storesResourceType != null — на сколько единиц это здание увеличивает вместимость хранилища сверх базовой (GameConstants.IRON_BASE_CAPACITY). */
     public float storageCapacity;
+
+    /**
+     * Сколько железа/электричества стоит ПОСТРОИТЬ это здание —
+     * списывается разом при подтверждении размещения (не постепенно, в
+     * отличие от стоимости юнита — GameServer.handlePlaceIronMine/
+     * handlePlaceBuilding проверяют и сразу вычитают весь costFor одним
+     * числом), если сервер не одобрит запрос из-за нехватки ресурсов.
+     * 0 у обоих — здание бесплатно (сейчас так у казармы и обоих
+     * хранилищ; шахта и станция стоят что-то одно из двух каждая).
+     */
+    public int ironCost;
+    public int electricityCost;
 
     public BuildingDefinition() {
         // требуется Json для десериализации

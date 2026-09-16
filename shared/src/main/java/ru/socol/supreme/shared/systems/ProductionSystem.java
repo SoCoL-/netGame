@@ -145,11 +145,9 @@ public class ProductionSystem extends IteratingSystem {
     }
 
     /** Точка появления готового юнита — чуть в стороне от здания, по направлению к центру карты. */
+    /** Точка появления готового юнита — чуть в стороне от здания, по направлению к центру карты (BuildingDefinitions.spawnPointNear — та же формула для начального строителя, GameServer.spawnHomeAndBuilder). */
     private Vector2 computeSpawnPoint(Vector2 buildingPosition, BuildingType buildingType) {
-        Vector2 towardCenter = new Vector2(GameConstants.MAP_WIDTH / 2f, GameConstants.MAP_HEIGHT / 2f)
-                .sub(buildingPosition)
-                .nor();
-        return new Vector2(buildingPosition).mulAdd(towardCenter, BuildingDefinitions.productionSpawnDistanceFor(buildingType));
+        return BuildingDefinitions.spawnPointNear(buildingType, buildingPosition);
     }
 
     /** Безусловное потребление здания — не уходит в минус, зажимается на 0. */

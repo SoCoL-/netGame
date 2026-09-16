@@ -27,7 +27,8 @@
     "buildTime": 10,
     "resourceType": "IRON",
     "extractionRate": 20,
-    "snapRadius": 60
+    "snapRadius": 60,
+    "ironCost": 50
   },
   {
     "type": "POWER_PLANT",
@@ -36,7 +37,8 @@
     "maxHealth": 90,
     "buildTime": 10,
     "resourceType": "ELECTRICITY",
-    "extractionRate": 150
+    "extractionRate": 150,
+    "electricityCost": 50
   },
   {
     "type": "IRON_STORAGE",

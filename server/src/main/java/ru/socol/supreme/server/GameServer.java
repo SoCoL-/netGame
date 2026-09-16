@@ -67,7 +67,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * бой, применяет правила игры (максимум 2 игрока, максимум 300 юнитов на
  * всю игру суммарно, карта 2000x2000) и с фиксированной частотой рассылает
  * снапшоты мира всем клиентам. Как только у одного из игроков уничтожен дом
- * (не казарма стрелков — см. spawnHome) — объявляет победителя и
+ * (не казарма стрелков — см. spawnHomeAndBuilder) — объявляет победителя и
  * замораживает симуляцию.
  *
  * Это "каркас" — минимальный, но рабочий скелет. Он не занимается
@@ -236,8 +236,8 @@ public class GameServer {
 
         playerSlotUsed[playerId] = true;
         connectionToPlayer.put(connection.getID(), playerId);
-        resourcesByPlayer.put(playerId, new PlayerResources(playerId));
-        spawnHome(playerId);
+        resourcesByPlayer.put(playerId, startingResources(playerId));
+        spawnHomeAndBuilder(playerId);
 
         response.accepted = true;
         response.playerId = playerId;
@@ -270,6 +270,22 @@ public class GameServer {
         playerSlotUsed[playerId] = false;
     }
 
+    /**
+     * Стартовый запас — ровно на постройку одной шахты железа и одной
+     * электростанции (BuildingDefinitions.ironCostFor/electricityCostFor),
+     * не отдельные захардкоженные числа: если стоимость этих двух зданий
+     * потом перебалансируют в buildings.json, стартовый запас
+     * автоматически пересчитается вместе с ними, не может разойтись.
+     */
+    private PlayerResources startingResources(int playerId) {
+        PlayerResources resources = new PlayerResources(playerId);
+        resources.iron = BuildingDefinitions.ironCostFor(BuildingType.IRON_MINE)
+                + BuildingDefinitions.ironCostFor(BuildingType.POWER_PLANT);
+        resources.electricity = BuildingDefinitions.electricityCostFor(BuildingType.IRON_MINE)
+                + BuildingDefinitions.electricityCostFor(BuildingType.POWER_PLANT);
+        return resources;
+    }
+
     // ---- Спавн зданий ----
 
     /**
@@ -280,12 +296,17 @@ public class GameServer {
      * Единственное здание, которое сервер ставит сам при входе игрока —
      * казарма стрелков, шахта железа и электростанция теперь строятся
      * самим игроком из меню постройки (клавиша B), см. handlePlaceBuilding
-     * /handlePlaceIronMine.
+     * /handlePlaceIronMine. Вместе с домом игрок сразу получает и одного
+     * строителя — без него некому было бы строить ни шахту, ни станцию,
+     * ни вообще что-либо (см. BuildSystem — здание не достраивается само).
      */
-    private void spawnHome(int playerId) {
+    private void spawnHomeAndBuilder(int playerId) {
         float[] home = BuildingDefinitions.homeSpawnPoint(playerId);
         int homeUnitId = spawnBuilding(playerId, BuildingType.HOME, home[0], home[1]);
         buildingIdByPlayer.put(playerId, homeUnitId);
+
+        Vector2 builderSpawn = BuildingDefinitions.spawnPointNear(BuildingType.HOME, new Vector2(home[0], home[1]));
+        createUnit(playerId, builderSpawn.x, builderSpawn.y, UnitType.BUILDER);
     }
 
     /**
@@ -500,8 +521,36 @@ public class GameServer {
             return;
         }
 
+        if (!chargeForBuilding(connection, playerId, BuildingType.IRON_MINE)) {
+            return;
+        }
+
         float[] deposit = GameConstants.IRON_DEPOSITS[request.depositIndex];
         spawnBuilding(playerId, BuildingType.IRON_MINE, deposit[0], deposit[1]);
+    }
+
+    /**
+     * Проверяет, хватает ли игроку ресурсов на постройку этого типа
+     * здания (BuildingDefinitions.ironCostFor/electricityCostFor), и если
+     * да — сразу списывает всю стоимость целиком, одним разом при
+     * подтверждении размещения (не постепенно, в отличие от стоимости
+     * юнита в ProductionSystem). Общий метод для handlePlaceIronMine и
+     * handlePlaceBuilding — оба нуждаются ровно в одной и той же
+     * проверке+списании, разница только в том, какое здание и куда ставят
+     * дальше. false — денег не хватило (уже отправлен ErrorResponse),
+     * вызывающий код должен прервать размещение в этом случае.
+     */
+    private boolean chargeForBuilding(Connection connection, int playerId, BuildingType type) {
+        PlayerResources resources = resourcesByPlayer.get(playerId);
+        int ironCost = BuildingDefinitions.ironCostFor(type);
+        int electricityCost = BuildingDefinitions.electricityCostFor(type);
+        if (resources == null || resources.iron < ironCost || resources.electricity < electricityCost) {
+            server.sendToTCP(connection.getID(), new ErrorResponse("Not enough resources to build this"));
+            return false;
+        }
+        resources.iron -= ironCost;
+        resources.electricity -= electricityCost;
+        return true;
     }
 
     /**
@@ -534,6 +583,10 @@ public class GameServer {
 
         if (!BuildingPlacement.canPlaceBuilding(type, unitsById.values(), request.x, request.y)) {
             server.sendToTCP(connection.getID(), new ErrorResponse("Cannot place building there"));
+            return;
+        }
+
+        if (!chargeForBuilding(connection, playerId, type)) {
             return;
         }
 

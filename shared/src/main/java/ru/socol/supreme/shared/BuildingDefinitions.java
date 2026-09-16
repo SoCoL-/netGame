@@ -1,5 +1,6 @@
 package ru.socol.supreme.shared;
 
+import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Json;
 
 import java.nio.charset.StandardCharsets;
@@ -140,6 +141,31 @@ public final class BuildingDefinitions {
         return cornerDistance * 1.5f;
     }
 
+    /**
+     * Точка чуть в стороне от здания данного типа, по направлению к
+     * центру карты, на productionSpawnDistanceFor от него — общая формула
+     * для места появления произведённого юнита (ProductionSystem) и
+     * начального строителя, который появляется вместе с домом при входе
+     * игрока (GameServer.spawnHomeAndBuilder), чтобы не дублировать один и тот же
+     * расчёт в двух местах.
+     */
+    public static Vector2 spawnPointNear(BuildingType type, Vector2 buildingPosition) {
+        Vector2 towardCenter = new Vector2(GameConstants.MAP_WIDTH / 2f, GameConstants.MAP_HEIGHT / 2f)
+                .sub(buildingPosition)
+                .nor();
+        return new Vector2(buildingPosition).mulAdd(towardCenter, productionSpawnDistanceFor(type));
+    }
+
+    /** Сколько железа стоит построить это здание — списывается разом при подтверждении размещения (GameServer.handlePlaceIronMine/handlePlaceBuilding), не постепенно. 0, если бесплатно (сейчас — казарма, оба хранилища). */
+    public static int ironCostFor(BuildingType type) {
+        return DEFINITIONS.get(type).ironCost;
+    }
+
+    /** Сколько электричества стоит построить это здание — см. ironCostFor. */
+    public static int electricityCostFor(BuildingType type) {
+        return DEFINITIONS.get(type).electricityCost;
+    }
+
     private static Map<BuildingType, BuildingDefinition> load() {
         Map<BuildingType, BuildingDefinition> definitions = defaultDefinitions();
 
@@ -195,6 +221,7 @@ public final class BuildingDefinitions {
         ironMine.resourceType = ResourceType.IRON;
         ironMine.extractionRate = 20f;
         ironMine.snapRadius = 60f;
+        ironMine.ironCost = 50;
         definitions.put(BuildingType.IRON_MINE, ironMine);
 
         BuildingDefinition powerPlant = new BuildingDefinition();
@@ -205,6 +232,7 @@ public final class BuildingDefinitions {
         powerPlant.buildTime = 10f;
         powerPlant.resourceType = ResourceType.ELECTRICITY;
         powerPlant.extractionRate = 150f;
+        powerPlant.electricityCost = 50;
         definitions.put(BuildingType.POWER_PLANT, powerPlant);
 
         BuildingDefinition ironStorage = new BuildingDefinition();
