@@ -4,6 +4,7 @@ import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
+import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
@@ -38,6 +39,8 @@ public class ServerNetworkListener extends Listener {
             gameServer.handleSetRallyPoint(connection, (SetRallyPointRequest) object);
         } else if (object instanceof BuildOrderRequest) {
             gameServer.handleBuildOrder(connection, (BuildOrderRequest) object);
+        } else if (object instanceof DemolishBuildingRequest) {
+            gameServer.handleDemolishBuilding(connection, (DemolishBuildingRequest) object);
         }
     }
 

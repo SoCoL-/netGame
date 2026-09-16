@@ -123,7 +123,12 @@ public class GameScreen extends InputAdapter implements Screen {
     // баром построек под ней, даже если его высота ещё поменяется.
     private static final float PANEL_Y = BUILD_BAR_Y + BUILD_BAR_BUTTON_HEIGHT + 10f;
     private static final float PANEL_WIDTH = 280f;
-    private static final float PANEL_HEIGHT = 100f;
+    // Выросла со 100 до 138 — снизу появился отдельный ряд под кнопку
+    // "Demolish" (см. её ниже): у здания без производства (сейчас —
+    // шахта, обе электростанции, оба хранилища) кнопок очереди и
+    // прогресс-бара вообще нет, но панель для него теперь тоже
+    // открывается — раз в ней есть эта кнопка.
+    private static final float PANEL_HEIGHT = 138f;
     // Кнопки очереди — теперь их может быть несколько (у дома их две:
     // воин и строитель, у казармы по-прежнему одна), поэтому ряд сверху
     // панели по индексу (queueButtonX), а не одна фиксированная позиция,
@@ -137,7 +142,14 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float PROGRESS_BAR_X = PANEL_X + 15f;
     private static final float PROGRESS_BAR_WIDTH = 250f;
     private static final float PROGRESS_BAR_HEIGHT = 12f;
-    private static final float PROGRESS_BAR_Y = PANEL_Y + 25f;
+    private static final float PROGRESS_BAR_Y = PANEL_Y + 63f;
+    // Кнопка сноса — отдельный, самый нижний ряд панели, есть у ЛЮБОГО
+    // своего здания (не только производящего), фиксированная позиция
+    // независимо от того, сколько кнопок очереди выше неё (0, 1 или 2).
+    private static final float DEMOLISH_BUTTON_WIDTH = 110f;
+    private static final float DEMOLISH_BUTTON_HEIGHT = 28f;
+    private static final float DEMOLISH_BUTTON_X = PANEL_X + 15f;
+    private static final float DEMOLISH_BUTTON_Y = PANEL_Y + 15f;
 
     // Чисто визуальный полёт стрелы — урон уже применён на сервере в момент
     // выстрела (см. ProjectileFiredEvent), скорость тут только для картинки.
@@ -397,7 +409,7 @@ public class GameScreen extends InputAdapter implements Screen {
             drawResourcePanel(); // всегда видна во время игры, не только когда выбрано здание
             drawBuildBar(); // тоже всегда — горизонтальный ряд кнопок построек внизу экрана
             if (selectedBuildingId != null) {
-                drawProductionPanel();
+                drawBuildingPanel();
             }
         }
     }
@@ -754,7 +766,8 @@ public class GameScreen extends InputAdapter implements Screen {
         uiFont.draw(spriteBatch, text, RESOURCE_PANEL_RATE_X, y);
     }
 
-    private void drawProductionPanel() {
+    /** Панель выделенного своего здания — очередь производства (если есть, см. producible.length) плюс кнопка "Demolish" (есть всегда). */
+    private void drawBuildingPanel() {
         Entity building = entityFactory.getEntity(selectedBuildingId);
         if (building == null) {
             selectedBuildingId = null; // здание пропало — не должно происходить для своего дома, но на всякий случай
@@ -775,7 +788,7 @@ public class GameScreen extends InputAdapter implements Screen {
             shapeRenderer.rect(queueButtonX(i), QUEUE_BUTTON_Y, QUEUE_BUTTON_WIDTH, QUEUE_BUTTON_HEIGHT);
         }
 
-        if (production.queuedCount > 0) {
+        if (production != null && production.queuedCount > 0) {
             float fraction = MathUtils.clamp(production.progress / GameConstants.UNIT_BUILD_TIME, 0f, 1f);
 
             shapeRenderer.setColor(Color.DARK_GRAY);
@@ -783,6 +796,9 @@ public class GameScreen extends InputAdapter implements Screen {
             shapeRenderer.setColor(Color.GREEN);
             shapeRenderer.rect(PROGRESS_BAR_X, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH * fraction, PROGRESS_BAR_HEIGHT);
         }
+
+        shapeRenderer.setColor(Color.FIREBRICK);
+        shapeRenderer.rect(DEMOLISH_BUTTON_X, DEMOLISH_BUTTON_Y, DEMOLISH_BUTTON_WIDTH, DEMOLISH_BUTTON_HEIGHT);
 
         shapeRenderer.end();
 
@@ -792,7 +808,10 @@ public class GameScreen extends InputAdapter implements Screen {
         for (int i = 0; i < producible.length; i++) {
             uiFont.draw(spriteBatch, "+" + unitTypeLabel(producible[i]), queueButtonX(i) + 8f, QUEUE_BUTTON_Y + QUEUE_BUTTON_HEIGHT - 10f);
         }
-        uiFont.draw(spriteBatch, "Queue: " + production.queuedCount, PANEL_X + 15f, PROGRESS_BAR_Y - 6f);
+        if (production != null) {
+            uiFont.draw(spriteBatch, "Queue: " + production.queuedCount, PANEL_X + 15f, PROGRESS_BAR_Y - 6f);
+        }
+        uiFont.draw(spriteBatch, "Demolish", DEMOLISH_BUTTON_X + 10f, DEMOLISH_BUTTON_Y + DEMOLISH_BUTTON_HEIGHT - 8f);
         spriteBatch.end();
 
         // Возвращаем world-камеру шейп-рендереру и спрайт-батчу для следующего кадра.
@@ -830,6 +849,12 @@ public class GameScreen extends InputAdapter implements Screen {
             }
         }
         return null;
+    }
+
+    /** Клик по кнопке "Demolish" панели — та же кнопка у любого своего здания, независимо от того, сколько кнопок очереди выше неё. */
+    private boolean isInsideDemolishButton(float hudX, float hudY) {
+        return hudX >= DEMOLISH_BUTTON_X && hudX <= DEMOLISH_BUTTON_X + DEMOLISH_BUTTON_WIDTH
+                && hudY >= DEMOLISH_BUTTON_Y && hudY <= DEMOLISH_BUTTON_Y + DEMOLISH_BUTTON_HEIGHT;
     }
 
     // ---- Ввод ----
@@ -871,6 +896,12 @@ public class GameScreen extends InputAdapter implements Screen {
         if (button == Input.Buttons.LEFT) {
             if (selectedBuildingId != null) {
                 Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
+                if (isInsideDemolishButton(hudPoint.x, hudPoint.y)) {
+                    client.requestDemolishBuilding(selectedBuildingId);
+                    setSelection(Collections.emptySet());
+                    selectedBuildingId = null; // не ждём подтверждения от сервера — здание всё равно скоро пропадёт из снапшота
+                    return true;
+                }
                 Entity selectedBuilding = entityFactory.getEntity(selectedBuildingId);
                 if (selectedBuilding != null) {
                     BuildingType buildingType = selectedBuilding.getComponent(BuildingComponent.class).type;
@@ -927,12 +958,19 @@ public class GameScreen extends InputAdapter implements Screen {
                 OwnerComponent clickedOwner = clicked != null ? clicked.getComponent(OwnerComponent.class) : null;
                 boolean clickedOwnEntity = clickedOwner != null && clickedOwner.playerId == client.getPlayerId();
 
-                if (selectedBuildingId != null && !clickedOwnEntity) {
+                Entity selectedBuilding = selectedBuildingId != null ? entityFactory.getEntity(selectedBuildingId) : null;
+                boolean selectedIsProducer = selectedBuilding != null && selectedBuilding.getComponent(ProductionComponent.class) != null;
+
+                if (selectedIsProducer && !clickedOwnEntity) {
                     // Клик мимо своего юнита/здания, пока выделено (своё)
                     // производящее здание — не выделение, а точка сбора.
                     // Клик по СВОЕМУ юниту/зданию по-прежнему переключает
                     // выделение как обычно (иначе нельзя было бы выйти из
-                    // этого режима, не отменив выделение как-то ещё).
+                    // этого режима, не отменив выделение как-то ещё). У
+                    // непроизводящего здания (снова выделяемого — теперь и
+                    // у него есть панель, но с одной кнопкой "Demolish", не
+                    // очередью) точки сбора не бывает вовсе — клик мимо него
+                    // просто выделяет/двигает как обычно.
                     client.requestSetRallyPoint(selectedBuildingId, end.x, end.y);
                 } else {
                     handleSingleClickSelect(end.x, end.y);
@@ -963,6 +1001,17 @@ public class GameScreen extends InputAdapter implements Screen {
             }
             return true;
         }
+
+        if (keycode == Input.Keys.ESCAPE) {
+            // То же самое, что и B выше — убирает чертёж здания из-под
+            // курсора, если сейчас что-то размещаем. Отдельная клавиша, а
+            // не альтернативная ветка того же if, чтобы обе продолжали
+            // работать независимо, если одну из них потом всё же уберут.
+            if (placingBuildingType != null) {
+                placingBuildingType = null;
+            }
+            return true;
+        }
         return false;
     }
 
@@ -983,13 +1032,12 @@ public class GameScreen extends InputAdapter implements Screen {
         if (isMine && isBuilding) {
             int buildingUnitId = clicked.getComponent(UnitComponent.class).unitId;
             setSelection(Collections.emptySet());
-            if (clicked.getComponent(ProductionComponent.class) == null) {
-                // Здание без производства (сейчас — здание добычи железа):
-                // панели постройки для него нет, ей нечего показывать.
-                selectedBuildingId = null;
-                return;
-            }
-            // Повторный клик по уже открытому зданию закрывает панель, иначе — открывает.
+            // Повторный клик по уже открытому зданию закрывает панель, иначе
+            // — открывает. Панель теперь показывается для ЛЮБОГО своего
+            // здания (не только производящего) — раз в ней появилась кнопка
+            // "Demolish", а не только очередь производства; сама очередь
+            // просто не рисуется, если у здания нет ProductionComponent (см.
+            // drawBuildingPanel).
             selectedBuildingId = (selectedBuildingId != null && selectedBuildingId == buildingUnitId)
                     ? null : buildingUnitId;
             return;

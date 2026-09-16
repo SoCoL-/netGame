@@ -28,6 +28,7 @@ import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.network.NetworkRegistration;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
+import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
@@ -695,6 +696,45 @@ public class GameServer {
             builder.add(order);
         }
         order.targetBuildingUnitId = request.targetBuildingUnitId;
+    }
+
+    /**
+     * Игрок добровольно сносит своё же здание — по кнопке "Demolish" в
+     * панели выделенного здания (см. GameScreen.drawBuildingPanel), для
+     * любого своего здания, не только производящего. Снос идёт тем же
+     * путём, каким CombatSystem убирает юнита/здание, погибшее в бою
+     * (engine.removeEntity + unitsById.remove) — специально, а не
+     * какой-то отдельной логикой: если снесли свой же HQ, обычная
+     * checkGameOver() в основном цикле сама заметит его пропажу из
+     * unitsById и засчитает поражение, ничего дополнительного тут для
+     * этого случая делать не нужно.
+     */
+    synchronized void handleDemolishBuilding(Connection connection, DemolishBuildingRequest request) {
+        if (gameOver) {
+            return;
+        }
+
+        Integer playerId = connectionToPlayer.get(connection.getID());
+        if (playerId == null) {
+            return;
+        }
+
+        Entity building = unitsById.get(request.buildingUnitId);
+        if (building == null) {
+            return;
+        }
+
+        OwnerComponent owner = building.getComponent(OwnerComponent.class);
+        if (owner == null || owner.playerId != playerId) {
+            return; // не ваше здание
+        }
+
+        if (building.getComponent(BuildingComponent.class) == null) {
+            return; // не здание вовсе (защита от модифицированного клиента)
+        }
+
+        engine.removeEntity(building);
+        unitsById.remove(request.buildingUnitId);
     }
 
     // ---- Визуальный эффект полёта стрелы (см. CombatSystem.ShotFiredListener) ----

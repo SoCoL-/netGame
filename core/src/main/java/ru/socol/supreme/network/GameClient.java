@@ -11,6 +11,7 @@ import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.network.NetworkRegistration;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
+import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
@@ -130,6 +131,12 @@ public class GameClient implements Disposable {
         BuildOrderRequest request = new BuildOrderRequest();
         request.builderUnitId = builderUnitId;
         request.targetBuildingUnitId = targetBuildingUnitId;
+        client.sendTCP(request);
+    }
+
+    public void requestDemolishBuilding(int buildingUnitId) {
+        DemolishBuildingRequest request = new DemolishBuildingRequest();
+        request.buildingUnitId = buildingUnitId;
         client.sendTCP(request);
     }
 
