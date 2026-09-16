@@ -30,6 +30,7 @@ import ru.socol.supreme.systems.InterpolationSystem;
 import ru.socol.supreme.systems.RenderSystem;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
+import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
@@ -110,60 +111,57 @@ public class GameScreen extends InputAdapter implements Screen {
     // (1 против 4 разрядов) иначе сдвигала бы ставку то туда, то сюда.
     private static final float RESOURCE_PANEL_RATE_X = RESOURCE_PANEL_X + RESOURCE_PANEL_WIDTH - 60f;
 
-    // Панель построек — горизонтальный ряд кнопок у самого низа экрана,
-    // видна всегда во время игры (не по клавише — см. поле
-    // placingBuildingType выше). Один и тот же Y для всех пяти кнопок,
-    // раздельные X, вычисляются в drawBuildBar/buildBarButtonAt по
-    // индексу в BUILD_BAR_TYPES, а не пятью отдельными константами, как
-    // было у вертикального меню — с одинаковым по форме рядом кнопок это
-    // не нужно.
-    private static final BuildingType[] BUILD_BAR_TYPES = {
+    // Единая контекстная плашка внизу экрана — раньше тут было два разных
+    // блока (постоянный бар построек + отдельная панель здания), теперь
+    // одна плашка, чьё содержимое зависит от текущего выделения (см.
+    // drawInfoPanel): здание — имя, HP, очередь (если производит), кнопка
+    // сноса; юнит — имя, HP; строитель — имя, HP, кнопки построек вместо
+    // очереди; несколько юнитов — просто счётчик. Кнопки построек больше
+    // не в постоянном баре, а в панели ВЫДЕЛЕННОГО строителя — строить
+    // может только он, вот кнопки и живут при нём, а не сами по себе.
+    private static final BuildingType[] BUILDABLE_TYPES = {
             BuildingType.IRON_MINE,
             BuildingType.ARCHER_BARRACKS,
             BuildingType.POWER_PLANT,
             BuildingType.IRON_STORAGE,
             BuildingType.ELECTRICITY_STORAGE,
     };
-    private static final float BUILD_BAR_X = 20f;
-    private static final float BUILD_BAR_Y = 5f;
-    private static final float BUILD_BAR_BUTTON_WIDTH = 150f;
-    private static final float BUILD_BAR_BUTTON_HEIGHT = 50f;
-    private static final float BUILD_BAR_GAP = 4f;
 
-    // Панель постройки — экранные (HUD) координаты, не мировые, см. hudCamera.
     private static final float PANEL_X = 20f;
-    // BUILD_BAR_Y + BUILD_BAR_BUTTON_HEIGHT + запас, а не число само по
-    // себе — чтобы панель постройки гарантированно не перекрылась с
-    // баром построек под ней, даже если его высота ещё поменяется.
-    private static final float PANEL_Y = BUILD_BAR_Y + BUILD_BAR_BUTTON_HEIGHT + 10f;
-    private static final float PANEL_WIDTH = 280f;
-    // Выросла со 100 до 138 — снизу появился отдельный ряд под кнопку
-    // "Demolish" (см. её ниже): у здания без производства (сейчас —
-    // шахта, обе электростанции, оба хранилища) кнопок очереди и
-    // прогресс-бара вообще нет, но панель для него теперь тоже
-    // открывается — раз в ней есть эта кнопка.
-    private static final float PANEL_HEIGHT = 138f;
-    // Кнопки очереди — теперь их может быть несколько (у дома их две:
-    // воин и строитель, у казармы по-прежнему одна), поэтому ряд сверху
-    // панели по индексу (queueButtonX), а не одна фиксированная позиция,
-    // как было раньше. Прогресс-бар и текст "Queue: N" — под ними, а не
-    // сбоку, иначе при двух кнопках не осталось бы места.
-    private static final float QUEUE_BUTTON_WIDTH = 90f;
-    private static final float QUEUE_BUTTON_HEIGHT = 32f;
-    private static final float QUEUE_BUTTON_GAP = 8f;
-    private static final float QUEUE_BUTTON_X = PANEL_X + 15f;
-    private static final float QUEUE_BUTTON_Y = PANEL_Y + PANEL_HEIGHT - QUEUE_BUTTON_HEIGHT - 15f;
+    private static final float PANEL_Y = 5f;
+    // Достаточно широкая, чтобы вместить все пять кнопок построек в ряд —
+    // раньше это было заботой отдельного полноширинного бара, теперь той
+    // же ширины должна быть сама плашка.
+    private static final float PANEL_WIDTH = 770f;
+    private static final float PANEL_HEIGHT = 160f;
+
+    // Имя и HP — верхняя строка плашки, слева.
+    private static final float NAME_TEXT_Y = PANEL_Y + PANEL_HEIGHT - 20f;
+    private static final float HP_TEXT_Y = PANEL_Y + PANEL_HEIGHT - 42f;
+
+    // Ряд кнопок действия — очередь производства ИЛИ кнопки построек
+    // (никогда не оба сразу, зависит от того, что выделено), поэтому одна
+    // общая геометрия на оба случая, не две раздельные.
+    private static final float ACTION_BUTTON_WIDTH = 140f;
+    private static final float ACTION_BUTTON_HEIGHT = 42f;
+    private static final float ACTION_BUTTON_GAP = 8f;
+    private static final float ACTION_BUTTON_X = PANEL_X + 15f;
+    private static final float ACTION_BUTTON_Y = PANEL_Y + 58f;
+
+    // Прогресс-бар очереди — нижняя часть плашки, только когда выделено
+    // производящее здание и очередь не пуста.
     private static final float PROGRESS_BAR_X = PANEL_X + 15f;
-    private static final float PROGRESS_BAR_WIDTH = 250f;
-    private static final float PROGRESS_BAR_HEIGHT = 12f;
-    private static final float PROGRESS_BAR_Y = PANEL_Y + 63f;
-    // Кнопка сноса — отдельный, самый нижний ряд панели, есть у ЛЮБОГО
-    // своего здания (не только производящего), фиксированная позиция
-    // независимо от того, сколько кнопок очереди выше неё (0, 1 или 2).
+    private static final float PROGRESS_BAR_WIDTH = 400f;
+    private static final float PROGRESS_BAR_HEIGHT = 14f;
+    private static final float PROGRESS_BAR_Y = PANEL_Y + 18f;
+
+    // Кнопка сноса — верхний правый угол плашки, есть у ЛЮБОГО своего
+    // здания (не только производящего), фиксированная позиция независимо
+    // от ряда кнопок действия под ней.
     private static final float DEMOLISH_BUTTON_WIDTH = 110f;
-    private static final float DEMOLISH_BUTTON_HEIGHT = 28f;
-    private static final float DEMOLISH_BUTTON_X = PANEL_X + 15f;
-    private static final float DEMOLISH_BUTTON_Y = PANEL_Y + 15f;
+    private static final float DEMOLISH_BUTTON_HEIGHT = 34f;
+    private static final float DEMOLISH_BUTTON_X = PANEL_X + PANEL_WIDTH - DEMOLISH_BUTTON_WIDTH - 15f;
+    private static final float DEMOLISH_BUTTON_Y = PANEL_Y + PANEL_HEIGHT - DEMOLISH_BUTTON_HEIGHT - 15f;
 
     // Чисто визуальный полёт стрелы — урон уже применён на сервере в момент
     // выстрела (см. ProjectileFiredEvent), скорость тут только для картинки.
@@ -223,8 +221,8 @@ public class GameScreen extends InputAdapter implements Screen {
     // сеткой клеток поиска пути и рисует маршруты движущихся юнитов.
     private boolean debugMode = false;
 
-    // Панель построек — горизонтальный ряд кнопок внизу экрана, виден
-    // всегда во время игры (drawBuildBar), не по клавише. Клик по кнопке
+    // Кнопки построек — теперь в панели выделенного строителя
+    // (drawUnitInfoPanel), не в отдельном постоянном баре. Клик по кнопке
     // сразу переводит в режим постройки конкретного здания —
     // placingBuildingType (null = не строим ничего). Пока идёт постройка,
     // ЛКМ по карте не выделяет юнитов/здания, а подтверждает — см.
@@ -426,11 +424,13 @@ public class GameScreen extends InputAdapter implements Screen {
                 updateBuildGhost();
                 drawBuildGhost();
             }
-            drawResourcePanel(); // всегда видна во время игры, не только когда выбрано здание
-            drawBuildBar(); // тоже всегда — горизонтальный ряд кнопок построек внизу экрана
-            if (selectedBuildingId != null) {
-                drawBuildingPanel();
-            }
+            drawResourcePanel(); // всегда видна во время игры, не только когда что-то выбрано
+            // Единая контекстная плашка — сама решает, что показать (или
+            // не показывает вовсе, если не выбрано ничего). Рисуется и во
+            // время placingBuildingType != null тоже: если выделен
+            // строитель, его кнопки построек остаются видны и кликабельны,
+            // это и позволяет переключить тип здания на лету — см. touchDown.
+            drawInfoPanel();
         }
     }
 
@@ -527,60 +527,40 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.end();
     }
 
-    /** Меню "что строить" — открыто клавишей B, пока не выбран конкретный тип здания (см. keyDown/touchDown). */
-    /** Название кнопки для конкретного типа здания — единственное место, которое переводит BuildingType в подпись на баре. */
-    private String buildBarLabel(BuildingType type) {
+    /** Название здания этого типа — используется и как имя в плашке выделения (drawBuildingInfoPanel), и как подпись кнопки постройки (drawBuilderActionButtons). Единственное место, переводящее BuildingType в текст для игрока. */
+    private String buildingTypeLabel(BuildingType type) {
         switch (type) {
-            case IRON_MINE:
-                return "Iron mine";
+            case HOME:
+                return "Home";
             case ARCHER_BARRACKS:
-                return "Archer barracks";
+                return "Archer Barracks";
+            case IRON_MINE:
+                return "Iron Mine";
             case POWER_PLANT:
-                return "Power plant";
+                return "Power Plant";
             case IRON_STORAGE:
-                return "Iron storage";
+                return "Iron Storage";
             case ELECTRICITY_STORAGE:
-                return "Electricity storage";
+                return "Electricity Storage";
             default:
                 return "";
         }
     }
 
-    /** Левый X кнопки с этим индексом в баре — единая формула, чтобы отрисовка и проверка клика не могли разойтись. */
-    private float buildBarButtonX(int index) {
-        return BUILD_BAR_X + index * (BUILD_BAR_BUTTON_WIDTH + BUILD_BAR_GAP);
+    /** Левый X кнопки действия с этим индексом — общая формула что для кнопок очереди, что для кнопок построек, чтобы отрисовка и проверка клика не могли разойтись. */
+    private float actionButtonX(int index) {
+        return ACTION_BUTTON_X + index * (ACTION_BUTTON_WIDTH + ACTION_BUTTON_GAP);
     }
 
-    private void drawBuildBar() {
-        shapeRenderer.setProjectionMatrix(hudCamera.combined);
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(Color.valueOf("222222"));
-        for (int i = 0; i < BUILD_BAR_TYPES.length; i++) {
-            shapeRenderer.rect(buildBarButtonX(i), BUILD_BAR_Y, BUILD_BAR_BUTTON_WIDTH, BUILD_BAR_BUTTON_HEIGHT);
-        }
-        shapeRenderer.end();
-
-        spriteBatch.setProjectionMatrix(hudCamera.combined);
-        spriteBatch.begin();
-        uiFont.setColor(Color.WHITE);
-        for (int i = 0; i < BUILD_BAR_TYPES.length; i++) {
-            uiFont.draw(spriteBatch, buildBarLabel(BUILD_BAR_TYPES[i]), buildBarButtonX(i) + 10f, BUILD_BAR_Y + BUILD_BAR_BUTTON_HEIGHT - 18f);
-        }
-        spriteBatch.end();
-
-        shapeRenderer.setProjectionMatrix(camera.combined);
-        spriteBatch.setProjectionMatrix(camera.combined);
-    }
-
-    /** Какое здание нажато по HUD-координатам клика — null, если мимо всех кнопок бара. */
-    private BuildingType buildBarButtonAt(float hudX, float hudY) {
-        if (hudY < BUILD_BAR_Y || hudY > BUILD_BAR_Y + BUILD_BAR_BUTTON_HEIGHT) {
+    /** Какое здание нажато по HUD-координатам клика среди кнопок построек — null, если мимо всех них. */
+    private BuildingType buildButtonAt(float hudX, float hudY) {
+        if (hudY < ACTION_BUTTON_Y || hudY > ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT) {
             return null;
         }
-        for (int i = 0; i < BUILD_BAR_TYPES.length; i++) {
-            float buttonX = buildBarButtonX(i);
-            if (hudX >= buttonX && hudX <= buttonX + BUILD_BAR_BUTTON_WIDTH) {
-                return BUILD_BAR_TYPES[i];
+        for (int i = 0; i < BUILDABLE_TYPES.length; i++) {
+            float buttonX = actionButtonX(i);
+            if (hudX >= buttonX && hudX <= buttonX + ACTION_BUTTON_WIDTH) {
+                return BUILDABLE_TYPES[i];
             }
         }
         return null;
@@ -882,25 +862,48 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     /** Панель выделенного своего здания — очередь производства (если есть, см. producible.length) плюс кнопка "Demolish" (есть всегда). */
-    private void drawBuildingPanel() {
+    /**
+     * Единая контекстная плашка внизу экрана — что в ней, решает текущее
+     * выделение: здание (drawBuildingInfoPanel), один юнит
+     * (drawUnitInfoPanel — для строителя ещё и кнопки построек), несколько
+     * юнитов (drawMultiSelectionPanel) — или ничего, если не выделено
+     * вообще ничего, тогда плашка просто не рисуется.
+     */
+    private void drawInfoPanel() {
+        if (selectedBuildingId != null) {
+            drawBuildingInfoPanel();
+        } else if (selectedUnitIds.size() == 1) {
+            drawUnitInfoPanel(selectedUnitIds.iterator().next());
+        } else if (selectedUnitIds.size() > 1) {
+            drawMultiSelectionPanel();
+        }
+    }
+
+    /** Тёмный прямоугольник плашки — общий для всех режимов, вызывается уже внутри открытого ShapeType.Filled. */
+    private void drawPanelBackground() {
+        shapeRenderer.setColor(Color.valueOf("222222"));
+        shapeRenderer.rect(PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT);
+    }
+
+    /** Здание: имя, HP, очередь производства (если производит — иначе этого ряда просто нет), кнопка "Demolish" (есть всегда). */
+    private void drawBuildingInfoPanel() {
         Entity building = entityFactory.getEntity(selectedBuildingId);
         if (building == null) {
             selectedBuildingId = null; // здание пропало — не должно происходить для своего дома, но на всякий случай
             return;
         }
+        HealthComponent health = building.getComponent(HealthComponent.class);
         ProductionComponent production = building.getComponent(ProductionComponent.class);
         BuildingType buildingType = building.getComponent(BuildingComponent.class).type;
         UnitType[] producible = BuildingDefinitions.producesUnitTypesFor(buildingType);
 
         shapeRenderer.setProjectionMatrix(hudCamera.combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-
-        shapeRenderer.setColor(Color.valueOf("222222"));
-        shapeRenderer.rect(PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT);
+        drawPanelBackground();
 
         shapeRenderer.setColor(Color.LIGHT_GRAY);
         for (int i = 0; i < producible.length; i++) {
-            shapeRenderer.rect(queueButtonX(i), QUEUE_BUTTON_Y, QUEUE_BUTTON_WIDTH, QUEUE_BUTTON_HEIGHT);
+            shapeRenderer.rect(actionButtonX(i), ACTION_BUTTON_Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT);
         }
 
         if (production != null && production.queuedCount > 0) {
@@ -920,13 +923,15 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
         uiFont.setColor(Color.WHITE);
+        uiFont.draw(spriteBatch, buildingTypeLabel(buildingType), PANEL_X + 15f, NAME_TEXT_Y);
+        uiFont.draw(spriteBatch, "HP: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
         for (int i = 0; i < producible.length; i++) {
-            uiFont.draw(spriteBatch, "+" + unitTypeLabel(producible[i]), queueButtonX(i) + 8f, QUEUE_BUTTON_Y + QUEUE_BUTTON_HEIGHT - 10f);
+            uiFont.draw(spriteBatch, "+" + unitTypeLabel(producible[i]), actionButtonX(i) + 10f, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 14f);
         }
         if (production != null) {
-            uiFont.draw(spriteBatch, "Queue: " + production.queuedCount, PANEL_X + 15f, PROGRESS_BAR_Y - 6f);
+            uiFont.draw(spriteBatch, "Queue: " + production.queuedCount, PROGRESS_BAR_X + PROGRESS_BAR_WIDTH + 20f, PROGRESS_BAR_Y + 11f);
         }
-        uiFont.draw(spriteBatch, "Demolish", DEMOLISH_BUTTON_X + 10f, DEMOLISH_BUTTON_Y + DEMOLISH_BUTTON_HEIGHT - 8f);
+        uiFont.draw(spriteBatch, "Demolish", DEMOLISH_BUTTON_X + 10f, DEMOLISH_BUTTON_Y + DEMOLISH_BUTTON_HEIGHT - 10f);
         spriteBatch.end();
 
         // Возвращаем world-камеру шейп-рендереру и спрайт-батчу для следующего кадра.
@@ -934,9 +939,59 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.setProjectionMatrix(camera.combined);
     }
 
-    /** Левый X кнопки очереди с этим индексом — единая формула, чтобы отрисовка и проверка клика не могли разойтись. */
-    private float queueButtonX(int index) {
-        return QUEUE_BUTTON_X + index * (QUEUE_BUTTON_WIDTH + QUEUE_BUTTON_GAP);
+    /** Один юнит: имя, HP — и для строителя ещё ряд кнопок построек вместо очереди (строить может только он). */
+    private void drawUnitInfoPanel(int unitId) {
+        Entity unit = entityFactory.getEntity(unitId);
+        if (unit == null) {
+            return; // юнит уже пропал из-под курсора выделения между снапшотами — просто ничего не рисуем в этом кадре
+        }
+        HealthComponent health = unit.getComponent(HealthComponent.class);
+        UnitTypeComponent unitTypeComponent = unit.getComponent(UnitTypeComponent.class);
+        UnitType unitType = unitTypeComponent != null ? unitTypeComponent.type : UnitType.WARRIOR;
+        boolean isBuilder = unitType == UnitType.BUILDER;
+
+        shapeRenderer.setProjectionMatrix(hudCamera.combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        drawPanelBackground();
+        if (isBuilder) {
+            shapeRenderer.setColor(Color.LIGHT_GRAY);
+            for (int i = 0; i < BUILDABLE_TYPES.length; i++) {
+                shapeRenderer.rect(actionButtonX(i), ACTION_BUTTON_Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT);
+            }
+        }
+        shapeRenderer.end();
+
+        spriteBatch.setProjectionMatrix(hudCamera.combined);
+        spriteBatch.begin();
+        uiFont.setColor(Color.WHITE);
+        uiFont.draw(spriteBatch, unitTypeLabel(unitType), PANEL_X + 15f, NAME_TEXT_Y);
+        uiFont.draw(spriteBatch, "HP: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
+        if (isBuilder) {
+            for (int i = 0; i < BUILDABLE_TYPES.length; i++) {
+                uiFont.draw(spriteBatch, buildingTypeLabel(BUILDABLE_TYPES[i]), actionButtonX(i) + 10f, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 14f);
+            }
+        }
+        spriteBatch.end();
+
+        shapeRenderer.setProjectionMatrix(camera.combined);
+        spriteBatch.setProjectionMatrix(camera.combined);
+    }
+
+    /** Несколько юнитов сразу — просто счётчик, без имени/HP отдельного юнита (они все разные) и без кнопок. */
+    private void drawMultiSelectionPanel() {
+        shapeRenderer.setProjectionMatrix(hudCamera.combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        drawPanelBackground();
+        shapeRenderer.end();
+
+        spriteBatch.setProjectionMatrix(hudCamera.combined);
+        spriteBatch.begin();
+        uiFont.setColor(Color.WHITE);
+        uiFont.draw(spriteBatch, selectedUnitIds.size() + " units selected", PANEL_X + 15f, NAME_TEXT_Y);
+        spriteBatch.end();
+
+        shapeRenderer.setProjectionMatrix(camera.combined);
+        spriteBatch.setProjectionMatrix(camera.combined);
     }
 
     private String unitTypeLabel(UnitType type) {
@@ -952,14 +1007,14 @@ public class GameScreen extends InputAdapter implements Screen {
         }
     }
 
-    /** Какой тип юнита нажат по HUD-координатам клика — null, если мимо всех кнопок очереди этого здания. */
+    /** Какой тип юнита нажат по HUD-координатам клика среди кнопок очереди этого здания — null, если мимо всех них. */
     private UnitType queueButtonAt(float hudX, float hudY, UnitType[] producible) {
-        if (hudY < QUEUE_BUTTON_Y || hudY > QUEUE_BUTTON_Y + QUEUE_BUTTON_HEIGHT) {
+        if (hudY < ACTION_BUTTON_Y || hudY > ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT) {
             return null;
         }
         for (int i = 0; i < producible.length; i++) {
-            float x = queueButtonX(i);
-            if (hudX >= x && hudX <= x + QUEUE_BUTTON_WIDTH) {
+            float x = actionButtonX(i);
+            if (hudX >= x && hudX <= x + ACTION_BUTTON_WIDTH) {
                 return producible[i];
             }
         }
@@ -981,16 +1036,23 @@ public class GameScreen extends InputAdapter implements Screen {
         }
 
         if (button == Input.Buttons.LEFT) {
-            Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
-            BuildingType barButton = buildBarButtonAt(hudPoint.x, hudPoint.y);
-            if (barButton != null) {
-                // Клик по бару — всегда переключает, что строим, даже если
-                // уже что-то строилось (см. javadoc массива BUILD_BAR_TYPES);
-                // выделение снимаем, панель постройки в этом режиме не нужна.
-                placingBuildingType = barButton;
-                setSelection(Collections.emptySet());
-                selectedBuildingId = null;
-                return true;
+            // Клик по кнопке постройки в панели выделенного строителя —
+            // проверяем ПЕРВЫМ, ещё до проверки "уже что-то размещаем":
+            // так можно переключить тип здания на лету во время
+            // размещения, потому что панель строителя остаётся видна и
+            // кликабельна всё это время (мы не снимаем с него выделение
+            // ниже, когда начинаем размещение).
+            if (selectedBuildingId == null && selectedUnitIds.size() == 1) {
+                Entity selectedUnit = entityFactory.getEntity(selectedUnitIds.iterator().next());
+                UnitTypeComponent unitType = selectedUnit != null ? selectedUnit.getComponent(UnitTypeComponent.class) : null;
+                if (unitType != null && unitType.type == UnitType.BUILDER) {
+                    Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
+                    BuildingType clickedBuildingType = buildButtonAt(hudPoint.x, hudPoint.y);
+                    if (clickedBuildingType != null) {
+                        placingBuildingType = clickedBuildingType;
+                        return true;
+                    }
+                }
             }
         }
 
@@ -1108,9 +1170,9 @@ public class GameScreen extends InputAdapter implements Screen {
             return true;
         }
         if (keycode == Input.Keys.B) {
-            // Панель построек теперь всегда на экране (см. drawBuildBar) —
-            // клавиша B осталась только как способ отменить уже начатое
-            // размещение здания, не открывает больше никакого меню.
+            // Кнопки построек теперь в панели выделенного строителя, не в
+            // отдельном меню — клавиша B осталась только как способ
+            // отменить уже начатое размещение здания.
             if (placingBuildingType != null) {
                 placingBuildingType = null;
             }
@@ -1152,7 +1214,7 @@ public class GameScreen extends InputAdapter implements Screen {
             // здания (не только производящего) — раз в ней появилась кнопка
             // "Demolish", а не только очередь производства; сама очередь
             // просто не рисуется, если у здания нет ProductionComponent (см.
-            // drawBuildingPanel).
+            // drawBuildingInfoPanel).
             selectedBuildingId = (selectedBuildingId != null && selectedBuildingId == buildingUnitId)
                     ? null : buildingUnitId;
             return;
