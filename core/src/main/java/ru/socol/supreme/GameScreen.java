@@ -404,13 +404,13 @@ public class GameScreen extends InputAdapter implements Screen {
 
         drawGround(); // до engine.update() — юниты должны рисоваться поверх земли/воды, а не под ними
         drawIronDeposits(); // тоже до engine.update() — поверх земли, но под юнитами/зданиями
+        drawRallyPoints(); // тоже до engine.update() — под юнитами, не поверх них
 
         engine.update(delta);
 
         updateArrows(delta);
         drawOverlayLines();
         drawArrows();
-        drawRallyPoints();
         drawBuildBeams();
         if (debugMode) {
             drawDebugPaths();
@@ -695,25 +695,30 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     /**
-     * Точка сбора каждого производящего здания, у которого она задана —
-     * пунктирная линия от здания до точки и сама точка (бирюзовый круг).
-     * Видна всегда, не только пока здание выделено (это настройка,
-     * влияющая на всех будущих юнитов, а не разовое действие — держать
-     * её скрытой было бы неудобно), и для обеих сторон одинаково, как и
-     * остальное на карте (отдельного тумана войны в игре нет).
+     * Точка сбора выделенного здания — пунктирная линия от здания до
+     * точки и сама точка (бирюзовый круг), только пока это здание
+     * выделено (иначе не показываем вовсе — точки сбора чужих или просто
+     * невыделенных зданий не должны загромождать экран). Рисуется до
+     * engine.update() в render() — под юнитами/зданиями, а не поверх них.
      */
     private void drawRallyPoints() {
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        for (Entity entity : engine.getEntities()) {
-            ProductionComponent production = entity.getComponent(ProductionComponent.class);
-            if (production == null || !production.hasRallyPoint) {
-                continue;
-            }
-            PositionComponent position = entity.getComponent(PositionComponent.class);
-            drawDashedLine(position.position.x, position.position.y, production.rallyX, production.rallyY);
-            shapeRenderer.setColor(RALLY_POINT_COLOR);
-            shapeRenderer.circle(production.rallyX, production.rallyY, RALLY_POINT_RADIUS);
+        if (selectedBuildingId == null) {
+            return;
         }
+        Entity building = entityFactory.getEntity(selectedBuildingId);
+        if (building == null) {
+            return;
+        }
+        ProductionComponent production = building.getComponent(ProductionComponent.class);
+        if (production == null || !production.hasRallyPoint) {
+            return;
+        }
+
+        PositionComponent position = building.getComponent(PositionComponent.class);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        drawDashedLine(position.position.x, position.position.y, production.rallyX, production.rallyY);
+        shapeRenderer.setColor(RALLY_POINT_COLOR);
+        shapeRenderer.circle(production.rallyX, production.rallyY, RALLY_POINT_RADIUS);
         shapeRenderer.end();
     }
 
