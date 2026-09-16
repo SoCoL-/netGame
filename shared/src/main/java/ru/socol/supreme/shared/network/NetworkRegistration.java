@@ -43,6 +43,10 @@ public final class NetworkRegistration {
         kryo.register(UnitSnapshot.class);
         kryo.register(WorldSnapshot.class);
         kryo.register(ArrayList.class);
+        // PlaceIronMineRequest/PlaceBuildingRequest.builderUnitIds — Kryo
+        // умеет массивы примитивов и без явной регистрации, но
+        // регистрируем явно, чтобы не полагаться на это неявное поведение.
+        kryo.register(int[].class);
         kryo.register(ErrorResponse.class);
         kryo.register(GameOverMessage.class);
         kryo.register(ProjectileFiredEvent.class);

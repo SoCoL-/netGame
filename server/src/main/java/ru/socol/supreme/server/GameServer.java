@@ -522,7 +522,8 @@ public class GameServer {
         }
 
         float[] deposit = GameConstants.IRON_DEPOSITS[request.depositIndex];
-        spawnBuilding(playerId, BuildingType.IRON_MINE, deposit[0], deposit[1]);
+        int minedBuildingUnitId = spawnBuilding(playerId, BuildingType.IRON_MINE, deposit[0], deposit[1]);
+        assignBuildersToNewBuilding(playerId, minedBuildingUnitId, request.builderUnitIds);
     }
 
     /**
@@ -558,7 +559,8 @@ public class GameServer {
             return;
         }
 
-        spawnBuilding(playerId, type, request.x, request.y);
+        int newBuildingUnitId = spawnBuilding(playerId, type, request.x, request.y);
+        assignBuildersToNewBuilding(playerId, newBuildingUnitId, request.builderUnitIds);
     }
 
     /** Занято ли месторождение — ищем среди unitsById здание добычи (строящееся или уже готовое) точно в этой точке. */
@@ -689,8 +691,22 @@ public class GameServer {
             return;
         }
 
-        Entity builder = unitsById.get(request.builderUnitId);
-        Entity targetBuilding = unitsById.get(request.targetBuildingUnitId);
+        assignBuilderToBuild(playerId, request.builderUnitId, request.targetBuildingUnitId);
+    }
+
+    /**
+     * Назначает одного строителя строить конкретное здание — общая логика
+     * для двух путей: ручной приказ по правому клику (handleBuildOrder) и
+     * автоматическое назначение сразу после размещения только что
+     * поставленного здания тем строителям, что были выделены в момент
+     * подтверждения (handlePlaceIronMine/handlePlaceBuilding, см. javadoc
+     * PlaceIronMineRequest.builderUnitIds). Молча ничего не делает при
+     * любой проверке владения/типа, которая не проходит — не ваш юнит, не
+     * строитель, чужое или уже достроенное здание.
+     */
+    private void assignBuilderToBuild(int playerId, int builderUnitId, int targetBuildingUnitId) {
+        Entity builder = unitsById.get(builderUnitId);
+        Entity targetBuilding = unitsById.get(targetBuildingUnitId);
         if (builder == null || targetBuilding == null) {
             return;
         }
@@ -724,12 +740,29 @@ public class GameServer {
             order = engine.createComponent(BuildOrderComponent.class);
             builder.add(order);
         }
-        order.targetBuildingUnitId = request.targetBuildingUnitId;
+        order.targetBuildingUnitId = targetBuildingUnitId;
+    }
+
+    /**
+     * Автоматически отправляет строить только что поставленное здание
+     * всех строителей, что были выделены в момент подтверждения его
+     * размещения (см. PlaceIronMineRequest.builderUnitIds) — по одному
+     * assignBuilderToBuild на каждого, та же проверка владения/типа, что
+     * и у ручного приказа, так что чужой или невалидный id в массиве
+     * просто молча пропускается, не ломая ничего.
+     */
+    private void assignBuildersToNewBuilding(int playerId, int newBuildingUnitId, int[] builderUnitIds) {
+        if (builderUnitIds == null) {
+            return;
+        }
+        for (int builderUnitId : builderUnitIds) {
+            assignBuilderToBuild(playerId, builderUnitId, newBuildingUnitId);
+        }
     }
 
     /**
      * Игрок добровольно сносит своё же здание — по кнопке "Demolish" в
-     * панели выделенного здания (см. GameScreen.drawBuildingPanel), для
+     * панели выделенного здания (см. GameScreen.drawBuildingInfoPanel), для
      * любого своего здания, не только производящего. Снос идёт тем же
      * путём, каким CombatSystem убирает юнита/здание, погибшее в бою
      * (engine.removeEntity + unitsById.remove) — специально, а не

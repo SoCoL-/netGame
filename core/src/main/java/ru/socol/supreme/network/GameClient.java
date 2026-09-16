@@ -148,18 +148,21 @@ public class GameClient implements Disposable {
         client.sendTCP(request);
     }
 
-    public void requestPlaceIronMine(int depositIndex) {
+    /** builderUnitIds — строители, выделенные в момент подтверждения, автоматически пойдут строить это здание (см. javadoc PlaceIronMineRequest.builderUnitIds). */
+    public void requestPlaceIronMine(int depositIndex, int[] builderUnitIds) {
         PlaceIronMineRequest request = new PlaceIronMineRequest();
         request.depositIndex = depositIndex;
+        request.builderUnitIds = builderUnitIds;
         client.sendTCP(request);
     }
 
-    /** Для любого свободно размещаемого здания — сейчас казарма стрелков и электростанция (не дом, не шахта — у неё отдельный requestPlaceIronMine). */
-    public void requestPlaceBuilding(BuildingType type, float x, float y) {
+    /** Для любого свободно размещаемого здания — сейчас казарма стрелков и электростанция (не дом, не шахта — у неё отдельный requestPlaceIronMine). builderUnitIds — см. её же javadoc. */
+    public void requestPlaceBuilding(BuildingType type, float x, float y, int[] builderUnitIds) {
         PlaceBuildingRequest request = new PlaceBuildingRequest();
         request.buildingType = type.ordinal();
         request.x = x;
         request.y = y;
+        request.builderUnitIds = builderUnitIds;
         client.sendTCP(request);
     }
 

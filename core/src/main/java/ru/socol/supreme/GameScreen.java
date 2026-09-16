@@ -872,11 +872,38 @@ public class GameScreen extends InputAdapter implements Screen {
     private void drawInfoPanel() {
         if (selectedBuildingId != null) {
             drawBuildingInfoPanel();
+        } else if (allSelectedAreBuilders()) {
+            drawBuilderInfoPanel();
         } else if (selectedUnitIds.size() == 1) {
             drawUnitInfoPanel(selectedUnitIds.iterator().next());
         } else if (selectedUnitIds.size() > 1) {
             drawMultiSelectionPanel();
         }
+    }
+
+    /** Множество id в массив — нужен только для отправки в PlaceIronMineRequest/PlaceBuildingRequest.builderUnitIds, Kryo сеты не шлёт так же просто, как примитивные массивы. */
+    private int[] toIntArray(Set<Integer> ids) {
+        int[] array = new int[ids.size()];
+        int i = 0;
+        for (int id : ids) {
+            array[i++] = id;
+        }
+        return array;
+    }
+
+    /** Выделен ли хотя бы один юнит, и все выделенные — строители (не смешанное выделение). Пустое выделение — тоже false, "все" из пустого множества было бы формально true, но бессмысленно тут. */
+    private boolean allSelectedAreBuilders() {
+        if (selectedUnitIds.isEmpty()) {
+            return false;
+        }
+        for (int unitId : selectedUnitIds) {
+            Entity unit = entityFactory.getEntity(unitId);
+            UnitTypeComponent unitType = unit != null ? unit.getComponent(UnitTypeComponent.class) : null;
+            if (unitType == null || unitType.type != UnitType.BUILDER) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Тёмный прямоугольник плашки — общий для всех режимов, вызывается уже внутри открытого ShapeType.Filled. */
@@ -940,6 +967,7 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     /** Один юнит: имя, HP — и для строителя ещё ряд кнопок построек вместо очереди (строить может только он). */
+    /** Один невыделенный-как-группа-строителей юнит: просто имя и HP — для строителя (одного, не группы) см. drawBuilderInfoPanel, у него ещё и кнопки построек. */
     private void drawUnitInfoPanel(int unitId) {
         Entity unit = entityFactory.getEntity(unitId);
         if (unit == null) {
@@ -948,17 +976,10 @@ public class GameScreen extends InputAdapter implements Screen {
         HealthComponent health = unit.getComponent(HealthComponent.class);
         UnitTypeComponent unitTypeComponent = unit.getComponent(UnitTypeComponent.class);
         UnitType unitType = unitTypeComponent != null ? unitTypeComponent.type : UnitType.WARRIOR;
-        boolean isBuilder = unitType == UnitType.BUILDER;
 
         shapeRenderer.setProjectionMatrix(hudCamera.combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         drawPanelBackground();
-        if (isBuilder) {
-            shapeRenderer.setColor(Color.LIGHT_GRAY);
-            for (int i = 0; i < BUILDABLE_TYPES.length; i++) {
-                shapeRenderer.rect(actionButtonX(i), ACTION_BUTTON_Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT);
-            }
-        }
         shapeRenderer.end();
 
         spriteBatch.setProjectionMatrix(hudCamera.combined);
@@ -966,10 +987,44 @@ public class GameScreen extends InputAdapter implements Screen {
         uiFont.setColor(Color.WHITE);
         uiFont.draw(spriteBatch, unitTypeLabel(unitType), PANEL_X + 15f, NAME_TEXT_Y);
         uiFont.draw(spriteBatch, "HP: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
-        if (isBuilder) {
-            for (int i = 0; i < BUILDABLE_TYPES.length; i++) {
-                uiFont.draw(spriteBatch, buildingTypeLabel(BUILDABLE_TYPES[i]), actionButtonX(i) + 10f, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 14f);
+        spriteBatch.end();
+
+        shapeRenderer.setProjectionMatrix(camera.combined);
+        spriteBatch.setProjectionMatrix(camera.combined);
+    }
+
+    /**
+     * Один строитель или целая группа строителей (allSelectedAreBuilders
+     * — единственное, из-за чего этот метод вообще вызывается, см.
+     * drawInfoPanel) — кнопки построек вместо очереди производства, ведь
+     * строить может только строитель. При ровно одном строителе ещё и его
+     * HP (у группы одного числа на всех нет — просто счётчик вместо имени).
+     */
+    private void drawBuilderInfoPanel() {
+        shapeRenderer.setProjectionMatrix(hudCamera.combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        drawPanelBackground();
+        shapeRenderer.setColor(Color.LIGHT_GRAY);
+        for (int i = 0; i < BUILDABLE_TYPES.length; i++) {
+            shapeRenderer.rect(actionButtonX(i), ACTION_BUTTON_Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT);
+        }
+        shapeRenderer.end();
+
+        spriteBatch.setProjectionMatrix(hudCamera.combined);
+        spriteBatch.begin();
+        uiFont.setColor(Color.WHITE);
+        if (selectedUnitIds.size() == 1) {
+            uiFont.draw(spriteBatch, "Builder", PANEL_X + 15f, NAME_TEXT_Y);
+            Entity builder = entityFactory.getEntity(selectedUnitIds.iterator().next());
+            HealthComponent health = builder != null ? builder.getComponent(HealthComponent.class) : null;
+            if (health != null) {
+                uiFont.draw(spriteBatch, "HP: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
             }
+        } else {
+            uiFont.draw(spriteBatch, selectedUnitIds.size() + " Builders", PANEL_X + 15f, NAME_TEXT_Y);
+        }
+        for (int i = 0; i < BUILDABLE_TYPES.length; i++) {
+            uiFont.draw(spriteBatch, buildingTypeLabel(BUILDABLE_TYPES[i]), actionButtonX(i) + 10f, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 14f);
         }
         spriteBatch.end();
 
@@ -1036,32 +1091,35 @@ public class GameScreen extends InputAdapter implements Screen {
         }
 
         if (button == Input.Buttons.LEFT) {
-            // Клик по кнопке постройки в панели выделенного строителя —
-            // проверяем ПЕРВЫМ, ещё до проверки "уже что-то размещаем":
-            // так можно переключить тип здания на лету во время
-            // размещения, потому что панель строителя остаётся видна и
-            // кликабельна всё это время (мы не снимаем с него выделение
-            // ниже, когда начинаем размещение).
-            if (selectedBuildingId == null && selectedUnitIds.size() == 1) {
-                Entity selectedUnit = entityFactory.getEntity(selectedUnitIds.iterator().next());
-                UnitTypeComponent unitType = selectedUnit != null ? selectedUnit.getComponent(UnitTypeComponent.class) : null;
-                if (unitType != null && unitType.type == UnitType.BUILDER) {
-                    Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
-                    BuildingType clickedBuildingType = buildButtonAt(hudPoint.x, hudPoint.y);
-                    if (clickedBuildingType != null) {
-                        placingBuildingType = clickedBuildingType;
-                        return true;
-                    }
+            // Клик по кнопке постройки в панели выделенного строителя (или
+            // группы строителей) — проверяем ПЕРВЫМ, ещё до проверки "уже
+            // что-то размещаем": так можно переключить тип здания на лету
+            // во время размещения, потому что панель строителя остаётся
+            // видна и кликабельна всё это время (мы не снимаем с него
+            // выделение ниже, когда начинаем размещение).
+            if (selectedBuildingId == null && allSelectedAreBuilders()) {
+                Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
+                BuildingType clickedBuildingType = buildButtonAt(hudPoint.x, hudPoint.y);
+                if (clickedBuildingType != null) {
+                    placingBuildingType = clickedBuildingType;
+                    return true;
                 }
             }
         }
 
         if (placingBuildingType != null) {
             if (button == Input.Buttons.LEFT && buildGhostValid) {
+                // Строители, выделенные сейчас (те же самые, чьей панелью
+                // выбирали тип здания — выделение не менялось всё это
+                // время, см. комментарий выше), автоматически пойдут
+                // строить то, что вот-вот появится — см. javadoc
+                // PlaceIronMineRequest.builderUnitIds, почему список едет
+                // прямо с этой заявкой, а не отдельным запросом следом.
+                int[] builderUnitIds = toIntArray(selectedUnitIds);
                 if (placingBuildingType == BuildingType.IRON_MINE) {
-                    client.requestPlaceIronMine(ironMineSnapDepositIndex);
+                    client.requestPlaceIronMine(ironMineSnapDepositIndex, builderUnitIds);
                 } else {
-                    client.requestPlaceBuilding(placingBuildingType, buildGhostX, buildGhostY);
+                    client.requestPlaceBuilding(placingBuildingType, buildGhostX, buildGhostY, builderUnitIds);
                 }
                 placingBuildingType = null;
             }

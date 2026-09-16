@@ -9,6 +9,10 @@ package ru.socol.supreme.shared.network.messages;
  * проверка — на сервере (GameServer.handlePlaceBuilding через
  * BuildingPlacement.canPlaceBuilding), клиент лишь заранее не даёт
  * подтвердить явно невалидную точку.
+ *
+ * builderUnitIds — см. её же смысл в PlaceIronMineRequest: строители,
+ * выделенные в момент подтверждения размещения, автоматически получат
+ * приказ строить только что поставленное здание.
  */
 public class PlaceBuildingRequest {
 
@@ -16,6 +20,7 @@ public class PlaceBuildingRequest {
     public int buildingType;
     public float x;
     public float y;
+    public int[] builderUnitIds;
 
     public PlaceBuildingRequest() {
     }
