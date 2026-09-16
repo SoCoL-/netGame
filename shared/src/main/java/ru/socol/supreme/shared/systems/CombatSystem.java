@@ -9,6 +9,7 @@ import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AttackComponent;
+import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -148,6 +149,9 @@ public class CombatSystem extends IteratingSystem {
         if (targetHealth.currentHealth <= 0) {
             engine.removeEntity(target);
             unitsById.remove(attack.targetUnitId);
+            if (target.getComponent(BuildingComponent.class) != null) {
+                Pathfinding.removeBuildingObstacle(attack.targetUnitId);
+            }
             attacker.remove(AttackComponent.class);
         }
     }

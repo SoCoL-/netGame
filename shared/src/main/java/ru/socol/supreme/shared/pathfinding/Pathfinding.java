@@ -19,15 +19,26 @@ import java.util.Set;
 
 /**
  * Поиск пути по сетке в обход препятствий: прямоугольник воды посередине
- * карты (GameConstants.WATER_*) и дом каждого игрока — единственное
- * здание с фиксированной, известной заранее позицией (сервер спавнит
- * его сам при входе игрока — см. BuildingDefinitions.homeSpawnPoint).
+ * карты (GameConstants.WATER_*, никогда не меняется) и footprint каждого
+ * СЕЙЧАС существующего здания — динамический список, а не что-то,
+ * зафиксированное раз и навсегда. GameServer вызывает
+ * addBuildingObstacle при появлении любого здания (в том числе ещё
+ * строящегося — CollisionSystem и так не пускает юнитов сквозь него
+ * реактивно в любом состоянии, тут для консистентности так же) и
+ * removeBuildingObstacle, когда здание пропадает из игры (гибель в бою,
+ * снос, отключение игрока) — так A* реально огибает ЛЮБОЕ здание на
+ * карте, не только дом, как было раньше.
  *
  * Работает только на сервере — как и MovementSystem/CombatSystem, живёт в
  * shared, но реально используется только GameServer.handleMoveUnit и
  * CombatSystem при погоне. Клиент ничего об этом не знает: он просто видит
  * результат — позицию юнита в очередном снапшоте, которая естественным
  * образом обходит препятствия, потому что сервер туда юнита никогда не ведёт.
+ * add/removeBuildingObstacle клиент тоже никогда не вызывает — у него свой
+ * собственный, всегда пустой список зданий-препятствий (статические поля
+ * этого класса не расшарены между клиентом и сервером, это разные
+ * процессы), так что отладочная сетка (isWaterCell) остаётся какой и
+ * была — только про воду, никак не про здания.
  *
  * Дешёвый случай (прямая видимость до цели свободна) вообще не запускает
  * A* — вызывающий код как и раньше просто идёт по прямой. Сетка 40x40
@@ -35,14 +46,12 @@ import java.util.Set;
  * прямая линия реально пересекает препятствие, так что даже наивный A* без
  * оптимизаций тут более чем достаточно быстрый.
  *
- * Сетка препятствий строится один раз статически при загрузке класса —
- * упрощение, оправданное тем, что дом стоит на фиксированном, заранее
- * известном месте (см. BuildingDefinitions.homeSpawnPoint). ВСЕ остальные
- * здания (казарма стрелков, шахта железа, электростанция) сюда
- * СОЗНАТЕЛЬНО не входят — их строит сам игрок в рантайме, в произвольной
- * точке; пересчитывать статическую сетку при их появлении не стали (см.
- * README, "Известное ограничение" у зданий добычи) —
- * CollisionSystem всё равно не даёт сквозь них пройти, просто не по A*.
+ * Про потокобезопасность: BLOCKED и activeBuildings — мутабельное
+ * статическое состояние без собственной синхронизации внутри этого
+ * класса, потому что она тут не нужна — единственный вызывающий,
+ * GameServer, уже всё делает под одним и тем же synchronized-монитором
+ * (сетевые обработчики и основной игровой цикл), так же, как и с
+ * unitsById/resourcesByPlayer.
  */
 public final class Pathfinding {
 
@@ -52,23 +61,87 @@ public final class Pathfinding {
     private static final int GRID_WIDTH = (int) Math.ceil(GameConstants.MAP_WIDTH / GameConstants.PATH_GRID_CELL_SIZE);
     private static final int GRID_HEIGHT = (int) Math.ceil(GameConstants.MAP_HEIGHT / GameConstants.PATH_GRID_CELL_SIZE);
 
-    /** Посчитано один раз при загрузке класса — препятствия на карте статичны, пересчитывать нечего. */
-    private static final boolean[][] BLOCKED = buildBlockedGrid();
+    /** unitId здания -> его footprint (уже раздутый на PATH_CLEARANCE) — нужен, чтобы знать, какие клетки пересчитать при removeBuildingObstacle. */
+    private static final Map<Integer, Footprint> activeBuildings = new HashMap<>();
 
-    private static boolean[][] buildBlockedGrid() {
+    /**
+     * Кэш препятствий по клеткам для A* (см. findPath) — вода плюс
+     * footprint каждого здания из activeBuildings, но НЕ обновляется
+     * целиком при каждом изменении: addBuildingObstacle/
+     * removeBuildingObstacle пересчитывают только клетки, которые
+     * затрагивает конкретное здание, остальная сетка не трогается.
+     * Для точечных запросов (hasLineOfSight, начальная проверка цели)
+     * используется не эта сетка, а isBlocked — она считает по точным
+     * координатам, не огрубляя до клетки.
+     */
+    private static final boolean[][] BLOCKED = buildWaterOnlyGrid();
+
+    private static boolean[][] buildWaterOnlyGrid() {
         boolean[][] blocked = new boolean[GRID_WIDTH][GRID_HEIGHT];
         for (int cx = 0; cx < GRID_WIDTH; cx++) {
             for (int cy = 0; cy < GRID_HEIGHT; cy++) {
-                blocked[cx][cy] = isBlocked(cellCenterX(cx), cellCenterY(cy));
+                blocked[cx][cy] = isInsideWater(cellCenterX(cx), cellCenterY(cy));
             }
         }
         return blocked;
     }
 
     /**
-     * Прямоугольник воды ИЛИ footprint одного из домов — то, что нельзя ни
-     * пройти, ни в чём заспавниться. Раздут на PATH_CLEARANCE сверх
-     * реального размера — см. её javadoc, почему без этого юниты
+     * Регистрирует здание как препятствие — GameServer вызывает сразу при
+     * создании сущности здания, любого типа и в любом состоянии (в том
+     * числе ещё строящегося). unitId — чтобы потом можно было снять
+     * именно это здание через removeBuildingObstacle, не трогая остальные
+     * (несколько зданий рядом не должны мешать друг другу при сносе
+     * одного из них — см. её javadoc).
+     */
+    public static void addBuildingObstacle(int unitId, float centerX, float centerY, BuildingType type) {
+        Footprint footprint = new Footprint(centerX, centerY, type);
+        activeBuildings.put(unitId, footprint);
+        recomputeCellsFor(footprint);
+    }
+
+    /**
+     * Снимает здание с препятствий — GameServer вызывает, когда здание
+     * пропадает из игры (гибель в бою, добровольный снос, отключение
+     * игрока — везде, где вызывается engine.removeEntity для сущности с
+     * BuildingComponent). Молча ничего не делает, если unitId не был
+     * зарегистрирован (защита на случай двойного вызова — не должно
+     * происходить, но и не страшно, если произойдёт).
+     */
+    public static void removeBuildingObstacle(int unitId) {
+        Footprint footprint = activeBuildings.remove(unitId);
+        if (footprint != null) {
+            recomputeCellsFor(footprint);
+        }
+    }
+
+    /**
+     * Пересчитывает клетки, накрытые этим footprint — не просто
+     * "поставить true"/"поставить false" напрямую: вода или другое
+     * (СОСЕДНЕЕ, ещё живое) здание могли частично накрывать те же самые
+     * клетки, снос одного не должен по ошибке открыть проход через
+     * границу с другим. Общая логика для добавления и снятия — после
+     * put/remove в activeBuildings единственная разница уже выражена
+     * тем, что сейчас лежит в карте, отдельно её дублировать не нужно.
+     */
+    private static void recomputeCellsFor(Footprint footprint) {
+        int minX = cellX(footprint.centerX - footprint.halfWidth);
+        int maxX = cellX(footprint.centerX + footprint.halfWidth);
+        int minY = cellY(footprint.centerY - footprint.halfHeight);
+        int maxY = cellY(footprint.centerY + footprint.halfHeight);
+        for (int cx = minX; cx <= maxX; cx++) {
+            for (int cy = minY; cy <= maxY; cy++) {
+                BLOCKED[cx][cy] = isBlocked(cellCenterX(cx), cellCenterY(cy));
+            }
+        }
+    }
+
+    /**
+     * Прямоугольник воды ИЛИ footprint любого сейчас живого здания — то,
+     * что нельзя ни пройти, ни в чём заспавниться. Считает по ТОЧНЫМ
+     * координатам (x, y), не по клетке — в отличие от сетки BLOCKED,
+     * которая используется только внутри A*. Раздут на PATH_CLEARANCE
+     * сверх реального размера — см. её javadoc, почему без этого юниты
      * зависали, топчась у самого края препятствия. Используется и
      * GameServer'ом, чтобы не создавать юнит посреди воды/здания.
      */
@@ -80,7 +153,10 @@ public final class Pathfinding {
      * Вода ли клетка (cellX, cellY) — публичный запрос для клиента, чтобы
      * отладочная сетка (GameScreen) красила клетки в точности так же, как
      * их видит сам A* (та же PATH_CLEARANCE-инфляция, тот же расчёт центра
-     * клетки), а не приблизительно повторяла логику независимо.
+     * клетки), а не приблизительно повторяла логику независимо. Намеренно
+     * только про воду, не про здания — у клиента список зданий-препятствий
+     * всегда пуст (см. javadoc класса), так что для них это было бы
+     * бессмысленно.
      */
     public static boolean isWaterCell(int cellX, int cellY) {
         return isInsideWater(cellCenterX(cellX), cellCenterY(cellY));
@@ -92,30 +168,29 @@ public final class Pathfinding {
                 && y >= GameConstants.WATER_MIN_Y - margin && y <= GameConstants.WATER_MAX_Y + margin;
     }
 
-    /**
-     * Дом — единственное здание с фиксированной, известной заранее
-     * позицией (сервер спавнит его сам при входе игрока). Казарма
-     * стрелков, шахта железа и электростанция теперь тоже строит сам
-     * игрок в произвольной точке — как и шахта/станция, казарма
-     * СОЗНАТЕЛЬНО не входит в эту статическую сетку (см. javadoc класса
-     * выше); было бы неверно закладывать для неё какую-то одну позицию.
-     */
     private static boolean isInsideAnyBuilding(float x, float y) {
-        for (int playerId = 0; playerId < GameConstants.MAX_PLAYERS; playerId++) {
-            float[] home = BuildingDefinitions.homeSpawnPoint(playerId);
-            if (isInsideBuildingFootprint(x, y, home[0], home[1], BuildingType.HOME)) {
+        for (Footprint footprint : activeBuildings.values()) {
+            if (x >= footprint.centerX - footprint.halfWidth && x <= footprint.centerX + footprint.halfWidth
+                    && y >= footprint.centerY - footprint.halfHeight && y <= footprint.centerY + footprint.halfHeight) {
                 return true;
             }
         }
         return false;
     }
 
-    /** Дом и казарма стрелков — разной формы (2x2 и 1x2 клетки), поэтому ширина/высота раздельно и по типу. */
-    private static boolean isInsideBuildingFootprint(float x, float y, float centerX, float centerY, BuildingType type) {
-        float halfWidth = BuildingDefinitions.halfWidthFor(type) + GameConstants.PATH_CLEARANCE;
-        float halfHeight = BuildingDefinitions.halfHeightFor(type) + GameConstants.PATH_CLEARANCE;
-        return x >= centerX - halfWidth && x <= centerX + halfWidth
-                && y >= centerY - halfHeight && y <= centerY + halfHeight;
+    /** Раздутый (на PATH_CLEARANCE) прямоугольник одного здания — считается один раз при регистрации, не на каждый запрос. */
+    private static final class Footprint {
+        final float centerX;
+        final float centerY;
+        final float halfWidth;
+        final float halfHeight;
+
+        Footprint(float centerX, float centerY, BuildingType type) {
+            this.centerX = centerX;
+            this.centerY = centerY;
+            this.halfWidth = BuildingDefinitions.halfWidthFor(type) + GameConstants.PATH_CLEARANCE;
+            this.halfHeight = BuildingDefinitions.halfHeightFor(type) + GameConstants.PATH_CLEARANCE;
+        }
     }
 
     /**

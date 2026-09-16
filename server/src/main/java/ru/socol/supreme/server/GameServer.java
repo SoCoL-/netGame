@@ -26,6 +26,7 @@ import ru.socol.supreme.shared.components.ProductionComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.network.NetworkRegistration;
+import ru.socol.supreme.shared.pathfinding.Pathfinding;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
@@ -256,6 +257,9 @@ public class GameServer {
             boolean owned = owner != null && owner.playerId == finalPlayerId;
             if (owned) {
                 engine.removeEntity(unit);
+                if (unit.getComponent(BuildingComponent.class) != null) {
+                    Pathfinding.removeBuildingObstacle(unit.getComponent(UnitComponent.class).unitId);
+                }
             }
             return owned;
         });
@@ -292,6 +296,9 @@ public class GameServer {
      * строящимся, с ConstructionComponent — ConstructionSystem сама
      * доведёт его до рабочего состояния. Иначе (дом, казарма) — сразу
      * готовым, с ProductionComponent, если это здание производит юнитов.
+     * Регистрирует здание как препятствие для A* (Pathfinding
+     * .addBuildingObstacle) сразу, ещё до завершения стройки — см. её
+     * javadoc, почему это верно и для строящихся зданий тоже.
      * Возвращает unitId созданного здания.
      */
     private int spawnBuilding(int playerId, BuildingType type, float x, float y) {
@@ -333,6 +340,7 @@ public class GameServer {
 
         engine.addEntity(building);
         unitsById.put(unitId, building);
+        Pathfinding.addBuildingObstacle(unitId, x, y, type);
         return unitId;
     }
 
@@ -735,6 +743,7 @@ public class GameServer {
 
         engine.removeEntity(building);
         unitsById.remove(request.buildingUnitId);
+        Pathfinding.removeBuildingObstacle(request.buildingUnitId);
     }
 
     // ---- Визуальный эффект полёта стрелы (см. CombatSystem.ShotFiredListener) ----
