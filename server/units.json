@@ -30,6 +30,6 @@
     "attackRadius": 70,
     "ironCost": 100,
     "electricityCost": 150,
-    "buildRadius": 70
+    "buildRadius": 210
   }
 ]
