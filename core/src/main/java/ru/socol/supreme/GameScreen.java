@@ -22,6 +22,7 @@ import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitType;
+import ru.socol.supreme.components.BuildBeamComponent;
 import ru.socol.supreme.components.DebugPathComponent;
 import ru.socol.supreme.components.SelectedComponent;
 import ru.socol.supreme.network.GameClient;
@@ -84,6 +85,19 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float RALLY_POINT_RADIUS = 10f;
     private static final float RALLY_DASH_LENGTH = 15f;
     private static final float RALLY_GAP_LENGTH = 10f;
+
+    // Голографический луч стройки — три слоя одного отрезка (см.
+    // drawSingleBuildBeam) плюс "бегущие" сегменты вдоль него. Цвета —
+    // свои Color-объекты, не общие константы вроде Color.CYAN: alpha у
+    // них перезаписывается каждый кадр под пульсацию, а мутировать
+    // библиотечный синглтон было бы небезопасно (его используют и в
+    // других местах LibGDX/проекта).
+    private static final Color BEAM_OUTER_COLOR = new Color(0.2f, 0.9f, 1f, 1f);
+    private static final Color BEAM_MID_COLOR = new Color(0.4f, 0.95f, 1f, 1f);
+    private static final Color BEAM_CORE_COLOR = new Color(0.85f, 1f, 1f, 1f);
+    private static final float BEAM_PULSE_SPEED = 3f; // рад/сек — период пульсации альфы
+    private static final float BEAM_SEGMENT_LENGTH = 14f; // длина одного "бегущего" сегмента
+    private static final float BEAM_FLOW_SPEED = 220f; // юнитов/сек — скорость движения сегментов вдоль луча
 
     // Панель ресурсов — тоже экранные координаты, сверху слева, всегда видна
     // (в отличие от панели постройки — не только когда что-то выбрано).
@@ -201,6 +215,10 @@ public class GameScreen extends InputAdapter implements Screen {
     private final Vector3 dragCurrentWorld = new Vector3();
 
     private boolean cameraInitialized = false;
+    // Копится с начала экрана каждый кадр в render(), никогда не сбрасывается
+    // и не используется ни для какой игровой логики — только чтобы
+    // анимировать голографический луч стройки (drawBuildBeams).
+    private float elapsedTime = 0f;
     // Переключается клавишей ` (GRAVE) — см. keyDown. Заменяет заливку земли
     // сеткой клеток поиска пути и рисует маршруты движущихся юнитов.
     private boolean debugMode = false;
@@ -374,6 +392,7 @@ public class GameScreen extends InputAdapter implements Screen {
     @Override
     public void render(float delta) {
         updateCamera(delta);
+        elapsedTime += delta; // копится с начала экрана, не сбрасывается — нужен только для анимации (пульс луча стройки), не для геймплейной логики
 
         Gdx.gl.glClearColor(0.1f, 0.1f, 0.12f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
@@ -392,6 +411,7 @@ public class GameScreen extends InputAdapter implements Screen {
         drawOverlayLines();
         drawArrows();
         drawRallyPoints();
+        drawBuildBeams();
         if (debugMode) {
             drawDebugPaths();
         }
@@ -717,6 +737,96 @@ public class GameScreen extends InputAdapter implements Screen {
                     x1 + dirX * traveled, y1 + dirY * traveled,
                     x1 + dirX * dashEnd, y1 + dirY * dashEnd,
                     2f);
+        }
+    }
+
+    /**
+     * "Голографический луч" от строителя к зданию, которое он СЕЙЧАС
+     * реально строит (не просто идёт туда — см. BuildBeamComponent,
+     * заполняет EntityFactory по UnitSnapshot.buildTargetUnitId, который
+     * сервер шлёт только пока BuildOrderComponent.inRange). Без него
+     * работающая стройка была бы почти незаметна на глаз — разве что по
+     * чуть двигающемуся прогресс-бару под зданием.
+     *
+     * ShapeRenderer не поддерживает шейдеры/свечение сам по себе — имитация
+     * простая: три слоя ОДНОГО и того же отрезка разной толщины и яркости
+     * (широкий тусклый "ореол", средний, яркая тонкая "сердцевина"),
+     * плюс пульсация альфы по elapsedTime и несколько ярких сегментов,
+     * "бегущих" вдоль луча от строителя к зданию — впечатление потока
+     * энергии без реальной анимации текстуры.
+     */
+    private void drawBuildBeams() {
+        boolean anyBeam = false;
+        for (Entity entity : engine.getEntities()) {
+            if (entity.getComponent(BuildBeamComponent.class) != null) {
+                anyBeam = true;
+                break;
+            }
+        }
+        if (!anyBeam) {
+            return; // не трогаем GL_BLEND зря, если прямо сейчас никто не строит
+        }
+
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+
+        float pulse = 0.5f + 0.5f * MathUtils.sin(elapsedTime * BEAM_PULSE_SPEED);
+
+        for (Entity entity : engine.getEntities()) {
+            BuildBeamComponent beam = entity.getComponent(BuildBeamComponent.class);
+            if (beam == null) {
+                continue;
+            }
+            Entity target = entityFactory.getEntity(beam.targetBuildingUnitId);
+            if (target == null) {
+                continue;
+            }
+            PositionComponent builderPosition = entity.getComponent(PositionComponent.class);
+            PositionComponent targetPosition = target.getComponent(PositionComponent.class);
+            drawSingleBuildBeam(builderPosition.position.x, builderPosition.position.y,
+                    targetPosition.position.x, targetPosition.position.y, pulse);
+        }
+
+        shapeRenderer.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+    }
+
+    private void drawSingleBuildBeam(float x1, float y1, float x2, float y2, float pulse) {
+        BEAM_OUTER_COLOR.a = 0.12f + 0.1f * pulse;
+        shapeRenderer.setColor(BEAM_OUTER_COLOR);
+        shapeRenderer.rectLine(x1, y1, x2, y2, 10f);
+
+        BEAM_MID_COLOR.a = 0.3f + 0.2f * pulse;
+        shapeRenderer.setColor(BEAM_MID_COLOR);
+        shapeRenderer.rectLine(x1, y1, x2, y2, 5f);
+
+        BEAM_CORE_COLOR.a = 0.55f + 0.35f * pulse;
+        shapeRenderer.setColor(BEAM_CORE_COLOR);
+        shapeRenderer.rectLine(x1, y1, x2, y2, 2f);
+
+        // "Бегущие" яркие сегменты вдоль луча, от строителя (x1,y1) к
+        // зданию (x2,y2) — offset растёт со временем, сегменты едут в ту
+        // же сторону, что и сам поток "энергии" в стройку.
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float length = (float) Math.sqrt(dx * dx + dy * dy);
+        if (length < 1f) {
+            return;
+        }
+        float dirX = dx / length;
+        float dirY = dy / length;
+        float period = BEAM_SEGMENT_LENGTH * 3f;
+        float offset = (elapsedTime * BEAM_FLOW_SPEED) % period;
+
+        BEAM_CORE_COLOR.a = 0.9f;
+        shapeRenderer.setColor(BEAM_CORE_COLOR);
+        for (float traveled = offset; traveled < length; traveled += period) {
+            float segmentEnd = Math.min(traveled + BEAM_SEGMENT_LENGTH, length);
+            shapeRenderer.rectLine(
+                    x1 + dirX * traveled, y1 + dirY * traveled,
+                    x1 + dirX * segmentEnd, y1 + dirY * segmentEnd,
+                    4f);
         }
     }
 

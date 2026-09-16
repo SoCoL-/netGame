@@ -26,6 +26,17 @@ public class UnitSnapshot {
     public float rallyX;
     public float rallyY;
 
+    /**
+     * Актуально только для юнита-строителя (building=false, unitType ==
+     * BUILDER.ordinal()) — unitId здания, которое он СЕЙЧАС реально
+     * строит (не просто идёт к нему — см. BuildOrderComponent.inRange).
+     * 0, если строитель бездействует или ещё в пути. Нужен клиенту
+     * только для голографического луча стройки (GameScreen
+     * .drawBuildBeams) — координаты самого здания клиент уже знает из
+     * его собственного UnitSnapshot, тут только id, чтобы их связать.
+     */
+    public int buildTargetUnitId;
+
     /** Актуально только для юнита (building=false) — его собственный тип (воин/стрелок), ordinal() значения UnitType. */
     public int unitType;
 

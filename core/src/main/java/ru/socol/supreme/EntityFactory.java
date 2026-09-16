@@ -8,6 +8,7 @@ import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.ResourceType;
 import ru.socol.supreme.shared.UnitType;
+import ru.socol.supreme.components.BuildBeamComponent;
 import ru.socol.supreme.components.DebugPathComponent;
 import ru.socol.supreme.components.InterpolationComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
@@ -84,6 +85,8 @@ public class EntityFactory {
 
             if (snapshot.building) {
                 updateBuildingConstructionState(entity, snapshot);
+            } else {
+                updateBuildBeam(entity, snapshot);
             }
 
             InterpolationComponent interpolation = entity.getComponent(InterpolationComponent.class);
@@ -158,6 +161,10 @@ public class EntityFactory {
                 debugPath.points.add(new Vector2(point.x, point.y));
             }
             entity.add(debugPath);
+
+            if (snapshot.buildTargetUnitId != 0) {
+                entity.add(new BuildBeamComponent(snapshot.buildTargetUnitId));
+            }
         }
 
         return entity;
@@ -192,6 +199,22 @@ public class EntityFactory {
         ResourceType resourceType = BuildingDefinitions.resourceTypeFor(type);
         if (resourceType != null) {
             entity.add(new ResourceExtractorComponent(resourceType));
+        }
+    }
+
+    /** Добавляет/обновляет/снимает BuildBeamComponent по snapshot.buildTargetUnitId — актуально только для юнитов, только для строителей, которые СЕЙЧАС реально строят (не просто идут к цели). */
+    private void updateBuildBeam(Entity entity, UnitSnapshot snapshot) {
+        BuildBeamComponent beam = entity.getComponent(BuildBeamComponent.class);
+        if (snapshot.buildTargetUnitId == 0) {
+            if (beam != null) {
+                entity.remove(BuildBeamComponent.class);
+            }
+            return;
+        }
+        if (beam == null) {
+            entity.add(new BuildBeamComponent(snapshot.buildTargetUnitId));
+        } else {
+            beam.targetBuildingUnitId = snapshot.buildTargetUnitId;
         }
     }
 

@@ -879,6 +879,10 @@ public class GameServer {
                 if (unitTypeComponent != null) {
                     unitSnapshot.unitType = unitTypeComponent.type.ordinal();
                 }
+                BuildOrderComponent buildOrder = unit.getComponent(BuildOrderComponent.class);
+                if (buildOrder != null && buildOrder.inRange) {
+                    unitSnapshot.buildTargetUnitId = buildOrder.targetBuildingUnitId;
+                }
             }
 
             ProductionComponent production = unit.getComponent(ProductionComponent.class);

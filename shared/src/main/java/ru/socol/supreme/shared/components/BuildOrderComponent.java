@@ -17,6 +17,16 @@ public class BuildOrderComponent implements Component, Pool.Poolable {
 
     public int targetBuildingUnitId;
 
+    /**
+     * Строитель СЕЙЧАС в радиусе цели и реально вносит вклад в стройку —
+     * не просто идёт к ней. Считает и выставляет BuildSystem каждый тик
+     * (первый проход, до расчёта скорости). Нужен отдельно от самого
+     * присутствия BuildOrderComponent — клиенту важно рисовать
+     * голографический луч (GameScreen) только пока строитель РАБОТАЕТ, а
+     * не всё время, что у него есть приказ, включая время в пути.
+     */
+    public boolean inRange;
+
     public BuildOrderComponent() {
     }
 
@@ -27,5 +37,6 @@ public class BuildOrderComponent implements Component, Pool.Poolable {
     @Override
     public void reset() {
         targetBuildingUnitId = 0;
+        inRange = false;
     }
 }

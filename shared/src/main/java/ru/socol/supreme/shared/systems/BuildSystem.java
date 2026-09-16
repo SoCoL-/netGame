@@ -1,9 +1,11 @@
 package ru.socol.supreme.shared.systems;
 
 import com.badlogic.ashley.core.ComponentMapper;
+import com.badlogic.ashley.core.Engine;
 import com.badlogic.ashley.core.Entity;
+import com.badlogic.ashley.core.EntitySystem;
 import com.badlogic.ashley.core.Family;
-import com.badlogic.ashley.systems.IteratingSystem;
+import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
@@ -14,6 +16,7 @@ import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -21,10 +24,10 @@ import java.util.Map;
  * buildRadius строителя (UnitDefinitions.buildRadiusFor) — юнит идёт к
  * ней (перезаписывая DirectionComponent, тем же приёмом, что и
  * CombatSystem при погоне за целью атаки); как только в радиусе —
- * останавливается и уменьшает ConstructionComponent.remaining цели на
- * deltaTime каждый тик, пока приказ действует. Если цель разрушена, или
- * стройка уже завершилась как-то иначе (ConstructionComponent снят) —
- * приказ снимается сам, юнит останавливается.
+ * останавливается (BuildOrderComponent.inRange = true) и реально вносит
+ * вклад в стройку. Если цель разрушена, или стройка уже завершилась
+ * как-то иначе (ConstructionComponent снят) — приказ снимается сам, юнит
+ * останавливается.
  *
  * Именно поэтому здание "не достраивается само": remaining уменьшает
  * ТОЛЬКО эта система, и только пока у какого-то строителя есть активный
@@ -34,10 +37,15 @@ import java.util.Map;
  * старый), время просто перестаёт идти, никакая другая система его не
  * подхватывает.
  *
- * Если строителей на одно здание несколько и все в радиусе одновременно —
- * каждый вносит свой вклад отдельно за тот же тик, стройка идёт быстрее
- * пропорционально их числу. Не мешает намеренно — это разумное поведение
- * для RTS, а не то, о чём отдельно просили ограничить.
+ * Несколько строителей на одно здание работают НЕ линейно: не extends
+ * IteratingSystem с независимым processEntity на каждого (так было бы
+ * по 100% скорости с каждого — вместо этого явный update() в два прохода:
+ * первый решает у КАЖДОГО строителя "в пути или на месте" и, если на
+ * месте, добавляет его в подсчёт buildersInRangeByTarget; второй, уже
+ * зная итоговое число строителей на каждую цель, применяет к ней ОДИН
+ * общий множитель скорости разом — первый строитель даёт 100% (обычная
+ * скорость), КАЖДЫЙ следующий добавляет ещё EXTRA_BUILDER_SPEED_BONUS
+ * (10%), а не ещё 100%.
  *
  * Приоритет 1 — сразу после CombatSystem (0), до ProductionSystem (2) и
  * ConstructionSystem (3): направление погони, выставленное здесь, должно
@@ -48,7 +56,13 @@ import java.util.Map;
  * Живёт в shared (как и CombatSystem), но реально используется только
  * сервером.
  */
-public class BuildSystem extends IteratingSystem {
+public class BuildSystem extends EntitySystem {
+
+    private static final Family FAMILY =
+            Family.all(BuildOrderComponent.class, PositionComponent.class, DirectionComponent.class).get();
+
+    /** Первый строитель на здании — 100% (обычная скорость, множитель 1.0). Каждый следующий добавляет ещё столько. */
+    private static final float EXTRA_BUILDER_SPEED_BONUS = 0.1f;
 
     private static final ComponentMapper<PositionComponent> POSITION =
             ComponentMapper.getFor(PositionComponent.class);
@@ -65,13 +79,46 @@ public class BuildSystem extends IteratingSystem {
     /** Переиспользуемый вектор для точки подхода — не аллоцируем новый каждый тик на каждого строителя. */
     private final Vector2 approachPoint = new Vector2();
 
+    /** targetBuildingUnitId -> сколько строителей сейчас в радиусе этой цели — пересчитывается заново в начале каждого update(), не накапливается между тиками. */
+    private final Map<Integer, Integer> buildersInRangeByTarget = new HashMap<>();
+
+    private ImmutableArray<Entity> builders;
+
     public BuildSystem(Map<Integer, Entity> unitsById) {
-        super(Family.all(BuildOrderComponent.class, PositionComponent.class, DirectionComponent.class).get(), 1);
+        super(1);
         this.unitsById = unitsById;
     }
 
     @Override
-    protected void processEntity(Entity builder, float deltaTime) {
+    public void addedToEngine(Engine engine) {
+        builders = engine.getEntitiesFor(FAMILY);
+    }
+
+    @Override
+    public void update(float deltaTime) {
+        buildersInRangeByTarget.clear();
+
+        // Первый проход — у каждого строителя решаем "в пути или на месте".
+        for (Entity builder : builders) {
+            updateBuilder(builder);
+        }
+
+        // Второй проход — зная итоговое число строителей на каждую цель,
+        // применяем к ней ОДИН общий множитель скорости разом.
+        for (Map.Entry<Integer, Integer> entry : buildersInRangeByTarget.entrySet()) {
+            Entity target = unitsById.get(entry.getKey());
+            ConstructionComponent construction = target != null ? target.getComponent(ConstructionComponent.class) : null;
+            if (construction == null) {
+                continue; // не должно происходить — цель уже проверена в updateBuilder — но на всякий случай не падаем
+            }
+            int builderCount = entry.getValue();
+            float speedMultiplier = 1f + (builderCount - 1) * EXTRA_BUILDER_SPEED_BONUS;
+            construction.remaining -= deltaTime * speedMultiplier;
+        }
+    }
+
+    /** Решает для одного строителя: цель ещё актуальна? Идти к ней или уже на месте? Если на месте — засчитывает его в buildersInRangeByTarget, саму скорость стройки тут не трогает. */
+    private void updateBuilder(Entity builder) {
         BuildOrderComponent order = BUILD_ORDER.get(builder);
         Entity target = unitsById.get(order.targetBuildingUnitId);
         ConstructionComponent construction = target != null ? target.getComponent(ConstructionComponent.class) : null;
@@ -96,6 +143,7 @@ public class BuildSystem extends IteratingSystem {
         float distance = myPosition.position.dst(targetPosition.position);
 
         if (distance > buildRange) {
+            order.inRange = false;
             // Та же логика точки подхода, что и в CombatSystem — см. её
             // комментарий про PATH_CLEARANCE/BUILDING_HALF_SIZE, почему
             // buildRadius обязан быть больше самой раздутой половины
@@ -107,8 +155,9 @@ public class BuildSystem extends IteratingSystem {
             return;
         }
 
-        // В радиусе — останавливаемся и строим.
+        // В радиусе — останавливаемся и засчитываемся в подсчёт для второго прохода.
         direction.moving = false;
-        construction.remaining -= deltaTime;
+        order.inRange = true;
+        buildersInRangeByTarget.merge(order.targetBuildingUnitId, 1, Integer::sum);
     }
 }
