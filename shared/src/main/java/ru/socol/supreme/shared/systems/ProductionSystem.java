@@ -117,16 +117,25 @@ public class ProductionSystem extends IteratingSystem {
 
         UnitType buildingUnitType = production.queue.get(0); // первый в очереди — тот, что строится сейчас
 
-        float tickIron = UnitDefinitions.ironCostFor(buildingUnitType) * deltaTime / GameConstants.UNIT_BUILD_TIME;
-        float tickElectricity = UnitDefinitions.electricityCostFor(buildingUnitType) * deltaTime / GameConstants.UNIT_BUILD_TIME;
+        // Зажимаем оставшимся временем постройки, а не просто deltaTime —
+        // та же причина, что и в BuildSystem у стоимости здания (см. её
+        // комментарий): иначе на последнем тике списывалась бы стоимость
+        // ЦЕЛОГО тика, даже если доделать осталось меньше, и при впритык
+        // хватающих ресурсах постройка юнита зависала бы на этом самом
+        // тике навсегда.
+        float progressThisTick = Math.min(deltaTime, GameConstants.UNIT_BUILD_TIME - production.progress);
 
-        if (resources == null || resources.iron < tickIron || resources.electricity < tickElectricity) {
+        float tickIron = UnitDefinitions.ironCostFor(buildingUnitType) * progressThisTick / GameConstants.UNIT_BUILD_TIME;
+        float tickElectricity = UnitDefinitions.electricityCostFor(buildingUnitType) * progressThisTick / GameConstants.UNIT_BUILD_TIME;
+
+        if (resources == null || resources.iron < tickIron - GameConstants.RESOURCE_EPSILON
+                || resources.electricity < tickElectricity - GameConstants.RESOURCE_EPSILON) {
             return; // не хватает ресурсов на этот тик — ждём, прогресс не растёт, но и не теряется
         }
         resources.iron -= tickIron;
         resources.electricity -= tickElectricity;
 
-        production.progress += deltaTime;
+        production.progress += progressThisTick;
         if (production.progress < GameConstants.UNIT_BUILD_TIME) {
             return;
         }

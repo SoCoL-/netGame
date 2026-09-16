@@ -9,6 +9,7 @@ import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingType;
+import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.BuildOrderComponent;
@@ -146,7 +147,16 @@ public class BuildSystem extends EntitySystem {
         }
 
         float speedMultiplier = 1f + (builderCount - 1) * EXTRA_BUILDER_SPEED_BONUS;
-        float progressThisTick = deltaTime * speedMultiplier;
+        // Зажимаем оставшимся временем стройки, а не просто deltaTime *
+        // speedMultiplier — иначе на последнем тике списывалась бы
+        // стоимость ЦЕЛОГО тика, даже если реально доделать осталось
+        // меньше. При впритык хватающих ресурсах (например, стартовый
+        // запас — ровно на одну шахту) это могло попросить чуть больше,
+        // чем нужно было для завершения, и стройка зависала на этом самом
+        // последнем тике навсегда — resources и remaining оба чуть-чуть не
+        // дотягивали, но и не двигались с места ни на следующем тике,
+        // ни через тик после него.
+        float progressThisTick = Math.min(deltaTime * speedMultiplier, construction.remaining);
 
         BuildingComponent buildingMarker = target.getComponent(BuildingComponent.class);
         BuildingType buildingType = buildingMarker != null ? buildingMarker.type : BuildingType.HOME;
@@ -160,7 +170,8 @@ public class BuildSystem extends EntitySystem {
             float tickIron = totalIronCost * progressThisTick / construction.totalTime;
             float tickElectricity = totalElectricityCost * progressThisTick / construction.totalTime;
 
-            if (resources == null || resources.iron < tickIron || resources.electricity < tickElectricity) {
+            if (resources == null || resources.iron < tickIron - GameConstants.RESOURCE_EPSILON
+                    || resources.electricity < tickElectricity - GameConstants.RESOURCE_EPSILON) {
                 return; // не хватает ресурсов на этот тик — ждём, прогресс не растёт, но и не теряется
             }
             resources.iron -= tickIron;
