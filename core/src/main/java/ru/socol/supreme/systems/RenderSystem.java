@@ -13,6 +13,7 @@ import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
@@ -39,6 +40,8 @@ public class RenderSystem extends IteratingSystem {
 
     private static final ComponentMapper<PositionComponent> POSITION =
             ComponentMapper.getFor(PositionComponent.class);
+    private static final ComponentMapper<DirectionComponent> DIRECTION =
+            ComponentMapper.getFor(DirectionComponent.class);
     private static final ComponentMapper<OwnerComponent> OWNER =
             ComponentMapper.getFor(OwnerComponent.class);
     private static final ComponentMapper<HealthComponent> HEALTH =
@@ -58,6 +61,12 @@ public class RenderSystem extends IteratingSystem {
     private static final float ARCHER_MARKER_RADIUS = GameConstants.UNIT_RADIUS * 0.4f;
     private static final Color BUILDER_MARKER_COLOR = Color.LIGHT_GRAY; // тот же цвет, что у "стройки" (UNDER_CONSTRUCTION_COLOR) — тематическая связь
     private static final float BUILDER_MARKER_HALF_SIZE = GameConstants.UNIT_RADIUS * 0.35f;
+    // Разведчик — единственный юнит с настоящим курсом (см.
+    // AircraftMovementSystem), поэтому метка не просто цветная точка, а
+    // треугольник по направлению полёта — жёлтый, авиационный цвет.
+    private static final Color SCOUT_MARKER_COLOR = Color.YELLOW;
+    private static final float SCOUT_MARKER_LENGTH = GameConstants.UNIT_RADIUS * 0.9f;
+    private static final float SCOUT_MARKER_WIDTH = GameConstants.UNIT_RADIUS * 0.6f;
 
     private static final float SELECTION_RING_RADIUS = GameConstants.UNIT_RADIUS + 3f;
 
@@ -110,11 +119,13 @@ public class RenderSystem extends IteratingSystem {
         shapeRenderer.setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
         shapeRenderer.circle(position.position.x, position.position.y, GameConstants.UNIT_RADIUS);
 
-        // Маленькая метка внутри — единственное, что отличает стрелка и
-        // строителя от воина (и друг от друга) на глаз: у всех троих
-        // одинаковый размер и цвет круга иначе. Стрелок — белая точка,
-        // строитель — серый квадратик (тот же цвет, что у "стройки" на
-        // зданиях — тематическая связь), у воина метки нет вовсе.
+        // Маленькая метка внутри (или, у разведчика, треугольник по
+        // направлению полёта) — единственное, что отличает остальные
+        // типы от воина (и друг от друга) на глаз: у всех одинаковый
+        // размер и цвет круга иначе. Стрелок — белая точка, строитель —
+        // серый квадратик (тот же цвет, что у "стройки" на зданиях —
+        // тематическая связь), разведчик — жёлтый треугольник по курсу,
+        // у воина метки нет вовсе.
         UnitTypeComponent unitType = UNIT_TYPE.get(entity);
         if (unitType != null && unitType.type == UnitType.ARCHER) {
             shapeRenderer.setColor(ARCHER_MARKER_COLOR);
@@ -123,6 +134,24 @@ public class RenderSystem extends IteratingSystem {
             shapeRenderer.setColor(BUILDER_MARKER_COLOR);
             float half = BUILDER_MARKER_HALF_SIZE;
             shapeRenderer.rect(position.position.x - half, position.position.y - half, half * 2f, half * 2f);
+        } else if (unitType != null && unitType.type == UnitType.SCOUT) {
+            DirectionComponent scoutDirection = DIRECTION.get(entity);
+            float dx = scoutDirection != null ? scoutDirection.direction.x : 1f;
+            float dy = scoutDirection != null ? scoutDirection.direction.y : 0f;
+            if (dx == 0f && dy == 0f) {
+                dx = 1f; // ещё ни разу не летал — направление не определено, берём любое
+            }
+            float perpX = -dy;
+            float perpY = dx;
+            float noseX = position.position.x + dx * SCOUT_MARKER_LENGTH;
+            float noseY = position.position.y + dy * SCOUT_MARKER_LENGTH;
+            float tailX = position.position.x - dx * SCOUT_MARKER_LENGTH * 0.5f;
+            float tailY = position.position.y - dy * SCOUT_MARKER_LENGTH * 0.5f;
+            shapeRenderer.setColor(SCOUT_MARKER_COLOR);
+            shapeRenderer.triangle(
+                    noseX, noseY,
+                    tailX + perpX * SCOUT_MARKER_WIDTH, tailY + perpY * SCOUT_MARKER_WIDTH,
+                    tailX - perpX * SCOUT_MARKER_WIDTH, tailY - perpY * SCOUT_MARKER_WIDTH);
         }
 
         drawHealthBar(position, health, UNIT_HEALTH_BAR_Y_OFFSET, UNIT_HEALTH_BAR_WIDTH);

@@ -49,12 +49,29 @@ public class UnitDefinition {
      */
     public float buildRadius;
 
+    /**
+     * Дальность обзора — насколько далеко юнит видит (задел под будущий
+     * туман войны, сама механика тумана войны ещё не реализована, это
+     * только данные). Есть у ЛЮБОГО типа, в отличие от buildRadius —
+     * видеть умеют все, строить только строитель.
+     */
+    public float sightRadius;
+
+    /**
+     * Радиус разворота — актуально только для авиации (см.
+     * AircraftComponent/AircraftMovementSystem): самолёт не может
+     * повернуть мгновенно, как наземный юнит, разворачивается по дуге
+     * этого радиуса. 0 у наземных типов — не используется, у них
+     * повороты мгновенные, как и было всегда.
+     */
+    public float turnRadius;
+
     public UnitDefinition() {
         // требуется Json для десериализации
     }
 
     public UnitDefinition(UnitType type, float speed, int health, float fireRate, int damage, float attackRadius,
-                           int ironCost, int electricityCost, float buildRadius) {
+                           int ironCost, int electricityCost, float buildRadius, float sightRadius, float turnRadius) {
         this.type = type;
         this.speed = speed;
         this.health = health;
@@ -64,5 +81,7 @@ public class UnitDefinition {
         this.ironCost = ironCost;
         this.electricityCost = electricityCost;
         this.buildRadius = buildRadius;
+        this.sightRadius = sightRadius;
+        this.turnRadius = turnRadius;
     }
 }

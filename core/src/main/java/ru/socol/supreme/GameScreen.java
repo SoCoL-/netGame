@@ -1160,6 +1160,8 @@ public class GameScreen extends InputAdapter implements Screen {
                 return "Archer";
             case BUILDER:
                 return "Builder";
+            case SCOUT:
+                return "Scout";
             default:
                 return "";
         }

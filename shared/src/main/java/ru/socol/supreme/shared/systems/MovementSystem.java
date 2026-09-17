@@ -6,18 +6,23 @@ import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PathComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 
 /**
- * Двигает каждый юнит к цели на скорость * deltaTime, каждый тик заново
- * прицеливаясь на direction.target от текущей позиции (а не идя по
+ * Двигает каждый наземный юнит к цели на скорость * deltaTime, каждый тик
+ * заново прицеливаясь на direction.target от текущей позиции (а не идя по
  * зафиксированному один раз направлению) — это и не даёт юниту, которого
  * CollisionSystem слегка оттолкнул от соседей, промахнуться мимо цели и
  * улететь по старому курсу навсегда. Это единственное место, где реально
- * меняется позиция юнита — система выполняется на сервере (авторитетная
- * симуляция), клиент лишь показывает то, что прислал сервер.
+ * меняется позиция наземного юнита — система выполняется на сервере
+ * (авторитетная симуляция), клиент лишь показывает то, что прислал
+ * сервер. Family исключает AircraftComponent — у авиации мгновенный
+ * поворот на цель физически не подходит, ей занимается отдельная
+ * AircraftMovementSystem (ограниченная скорость разворота, кружение
+ * вместо остановки).
  *
  * Если у юнита есть PathComponent (обходной путь вокруг препятствия — см.
  * Pathfinding) — по достижении текущей точки цели берётся следующая точка
@@ -40,7 +45,8 @@ public class MovementSystem extends IteratingSystem {
      * приоритета в Ashley выполняется раньше.
      */
     public MovementSystem() {
-        super(Family.all(PositionComponent.class, DirectionComponent.class).get(), 10);
+        super(Family.all(PositionComponent.class, DirectionComponent.class)
+                .exclude(AircraftComponent.class).get(), 10);
     }
 
     @Override

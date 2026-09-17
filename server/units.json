@@ -8,7 +8,9 @@
     "attackRadius": 70,
     "ironCost": 0,
     "electricityCost": 0,
-    "buildRadius": 0
+    "buildRadius": 0,
+    "sightRadius": 150,
+    "turnRadius": 0
   },
   {
     "type": "ARCHER",
@@ -19,7 +21,9 @@
     "attackRadius": 210,
     "ironCost": 300,
     "electricityCost": 300,
-    "buildRadius": 0
+    "buildRadius": 0,
+    "sightRadius": 250,
+    "turnRadius": 0
   },
   {
     "type": "BUILDER",
@@ -30,6 +34,21 @@
     "attackRadius": 70,
     "ironCost": 100,
     "electricityCost": 150,
-    "buildRadius": 210
+    "buildRadius": 210,
+    "sightRadius": 120,
+    "turnRadius": 0
+  },
+  {
+    "type": "SCOUT",
+    "speed": 20,
+    "health": 65,
+    "fireRate": 4,
+    "damage": 4,
+    "attackRadius": 100,
+    "ironCost": 150,
+    "electricityCost": 200,
+    "buildRadius": 0,
+    "sightRadius": 100,
+    "turnRadius": 100
   }
 ]

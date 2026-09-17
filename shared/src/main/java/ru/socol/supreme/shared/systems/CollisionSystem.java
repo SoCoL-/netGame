@@ -10,6 +10,7 @@ import com.badlogic.gdx.utils.Array;
 import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -18,7 +19,7 @@ import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 import java.util.Map;
 
 /**
- * Не даёт юнитам скапливаться в одной точке, залезать внутрь зданий (или
+ * Не даёт наземным юнитам скапливаться в одной точке, залезать внутрь зданий (или
  * воды — на случай, если взаимное расталкивание юнитов кого-то туда
  * протолкнёт) и выходить за границы карты. Простая локальная коррекция
  * позиции постфактум — юниты "мягко" отталкиваются друг от друга и
@@ -37,6 +38,10 @@ import java.util.Map;
  * уже снаружи). Радиус запроса — BuildingDefinitions.maxInteractionRadius()
  * — с запасом покрывает и столкновение юнит-юнит (2×UNIT_RADIUS), и
  * выталкивание из САМОГО крупного из существующих типов здания.
+ *
+ * Family исключает AircraftComponent — авиация летает поверх зданий/воды
+ * и не должна выталкиваться из них или расталкиваться с наземными
+ * юнитами, эта система её вовсе не касается.
  *
  * Приоритет 20 — после MovementSystem (10): корректирует уже случившееся
  * за этот тик перемещение, а не решает, куда юнит хочет идти (этим
@@ -71,7 +76,8 @@ public class CollisionSystem extends IteratingSystem {
     private final float queryRadius = BuildingDefinitions.maxInteractionRadius();
 
     public CollisionSystem(Map<Integer, Entity> unitsById, SpatialHashGrid grid) {
-        super(Family.all(PositionComponent.class, DirectionComponent.class).get(), 20);
+        super(Family.all(PositionComponent.class, DirectionComponent.class)
+                .exclude(AircraftComponent.class).get(), 20);
         this.unitsById = unitsById;
         this.grid = grid;
     }

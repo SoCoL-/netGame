@@ -5,7 +5,7 @@
     "halfHeight": 50,
     "maxHealth": 500,
     "buildTime": 0,
-    "producesUnitTypes": ["WARRIOR", "BUILDER"],
+    "producesUnitTypes": ["WARRIOR", "BUILDER", "SCOUT"],
     "spawnMargin": 200
   },
   {

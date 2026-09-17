@@ -99,6 +99,16 @@ public final class UnitDefinitions {
         return DEFINITIONS.get(type).buildRadius;
     }
 
+    /** Задел под будущий туман войны — сама механика ещё не сделана, это только данные. Есть у любого типа. */
+    public static float sightRadiusFor(UnitType type) {
+        return DEFINITIONS.get(type).sightRadius;
+    }
+
+    /** Актуально только для авиации — 0 у наземных типов, не используется (мгновенный поворот, как и раньше). */
+    public static float turnRadiusFor(UnitType type) {
+        return DEFINITIONS.get(type).turnRadius;
+    }
+
     private static Map<UnitType, UnitDefinition> load() {
         Map<UnitType, UnitDefinition> definitions = defaultDefinitions();
 
@@ -122,9 +132,10 @@ public final class UnitDefinitions {
     /** Встроенные значения — то, чем баланс был до вынесения в JSON. Подстраховка на случай отсутствия/поломки файла. */
     private static Map<UnitType, UnitDefinition> defaultDefinitions() {
         Map<UnitType, UnitDefinition> definitions = new EnumMap<>(UnitType.class);
-        definitions.put(UnitType.WARRIOR, new UnitDefinition(UnitType.WARRIOR, 80f, 20, 4f, 2, 70f, 0, 0, 0f));
-        definitions.put(UnitType.ARCHER, new UnitDefinition(UnitType.ARCHER, 80f, 20, 4f, 2, 210f, 300, 300, 0f));
-        definitions.put(UnitType.BUILDER, new UnitDefinition(UnitType.BUILDER, 80f, 65, 4f, 1, 70f, 100, 150, 210f));
+        definitions.put(UnitType.WARRIOR, new UnitDefinition(UnitType.WARRIOR, 80f, 20, 4f, 2, 70f, 0, 0, 0f, 150f, 0f));
+        definitions.put(UnitType.ARCHER, new UnitDefinition(UnitType.ARCHER, 80f, 20, 4f, 2, 210f, 300, 300, 0f, 250f, 0f));
+        definitions.put(UnitType.BUILDER, new UnitDefinition(UnitType.BUILDER, 80f, 65, 4f, 1, 70f, 100, 150, 210f, 120f, 0f));
+        definitions.put(UnitType.SCOUT, new UnitDefinition(UnitType.SCOUT, 20f, 65, 4f, 4, 100f, 150, 200, 0f, 100f, 100f));
         return definitions;
     }
 }

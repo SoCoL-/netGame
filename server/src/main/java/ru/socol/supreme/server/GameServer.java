@@ -14,6 +14,7 @@ import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.QueuedOrder;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
+import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.BuildOrderComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
@@ -50,6 +51,7 @@ import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 import ru.socol.supreme.shared.systems.AggroSystem;
+import ru.socol.supreme.shared.systems.AircraftMovementSystem;
 import ru.socol.supreme.shared.systems.BuildSystem;
 import ru.socol.supreme.shared.systems.CollisionSystem;
 import ru.socol.supreme.shared.systems.CombatSystem;
@@ -160,6 +162,7 @@ public class GameServer {
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new MovementSystem());
+        engine.addSystem(new AircraftMovementSystem());
         engine.addSystem(new OrderQueueSystem(this::startAttackOrder, this::assignBuilderToBuild));
         engine.addSystem(new CollisionSystem(unitsById, collisionGrid));
     }
@@ -410,6 +413,17 @@ public class GameServer {
         unitType.type = type;
 
         unit.add(position).add(direction).add(unitComponent).add(owner).add(health).add(unitType);
+
+        float turnRadius = UnitDefinitions.turnRadiusFor(type);
+        if (turnRadius > 0f) {
+            // Авиация — physical поворот ограничен, см. AircraftMovementSystem.
+            // turnRate = speed/turnRadius (угловая скорость кругового
+            // движения) считается один раз тут, не каждый тик.
+            AircraftComponent aircraft = engine.createComponent(AircraftComponent.class);
+            aircraft.turnRate = direction.speed / turnRadius;
+            unit.add(aircraft);
+        }
+
         engine.addEntity(unit);
 
         unitsById.put(unitId, unit);

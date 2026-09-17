@@ -196,7 +196,7 @@ public final class BuildingDefinitions {
         home.halfHeight = 50f;
         home.maxHealth = 500;
         home.buildTime = 0f;
-        home.producesUnitTypes = new UnitType[]{UnitType.WARRIOR, UnitType.BUILDER};
+        home.producesUnitTypes = new UnitType[]{UnitType.WARRIOR, UnitType.BUILDER, UnitType.SCOUT};
         home.spawnMargin = 200f;
         definitions.put(BuildingType.HOME, home);
 

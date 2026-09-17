@@ -5,6 +5,7 @@ import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PathComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -200,9 +201,24 @@ public final class Pathfinding {
      * (MovementSystem сама подхватывает следующую точку при достижении
      * текущей). Если юнит уже идёт обходным путём к той же клетке цели —
      * путь не пересчитывается.
+     *
+     * Авиация (AircraftComponent) — особый случай: весь наземный обход
+     * препятствий (вода, здания) её не касается вовсе, она летает поверх
+     * всего этого. Для неё просто выставляется direction.target/moving,
+     * а фактическим полётом — с ограниченной скоростью разворота, не
+     * мгновенным довортом — занимается AircraftMovementSystem, а не эта
+     * функция.
      */
     public static void setDestination(Entity entity, PositionComponent position, DirectionComponent direction,
                                        float destX, float destY) {
+        if (entity.getComponent(AircraftComponent.class) != null) {
+            AircraftComponent aircraft = entity.getComponent(AircraftComponent.class);
+            aircraft.loitering = false; // новая цель — прекращаем кружение, летим к ней
+            direction.target.set(destX, destY);
+            direction.moving = true;
+            return;
+        }
+
         if (isBlocked(destX, destY)) {
             return; // нельзя дойти ДО воды/здания — цель недостижима, приказ просто игнорируем
         }
