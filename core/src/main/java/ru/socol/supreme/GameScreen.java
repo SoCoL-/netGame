@@ -74,6 +74,17 @@ import java.util.Set;
  */
 public class GameScreen extends InputAdapter implements Screen {
 
+    // Виртуальный размер вьюпорта (HUD- и мировой камеры, см. конструктор) —
+    // всё HUD-расположение ниже считается относительно этих чисел, а не
+    // зашито само по себе, чтобы при следующей смене разрешения нужно было
+    // поменять только тут. Реальный размер окна (Lwjgl3Launcher) — тоже
+    // 1024x768, то же соотношение сторон 4:3, что было и раньше у 800x600,
+    // так что сам движок камеры (FitViewport-подобный setToOrtho) не
+    // искажает картинку независимо от того, совпадают ли числа тут с
+    // размером окна физически.
+    private static final float HUD_WIDTH = 1024f;
+    private static final float HUD_HEIGHT = 768f;
+
     private static final float DRAG_THRESHOLD = 6f; // world units — отличает клик от протяжки рамки
     private static final float MOVE_ORDER_SPACING = 24f; // world units между юнитами в сетке при групповом приказе
     private static final float UNIT_CLICK_RADIUS = 12f;
@@ -114,10 +125,13 @@ public class GameScreen extends InputAdapter implements Screen {
 
     // Панель ресурсов — тоже экранные координаты, сверху слева, всегда видна
     // (в отличие от панели постройки — не только когда что-то выбрано).
+    // Y считается от HUD_HEIGHT (верх экрана), а не зашит числом само по
+    // себе — иначе при следующей смене высоты вьюпорта панель осталась бы
+    // на старом месте, а не у верха, где ей и положено быть.
     private static final float RESOURCE_PANEL_X = 20f;
-    private static final float RESOURCE_PANEL_Y = 550f;
     private static final float RESOURCE_PANEL_WIDTH = 280f; // расширено под ставку изменения справа от количества
     private static final float RESOURCE_PANEL_HEIGHT = 40f;
+    private static final float RESOURCE_PANEL_Y = HUD_HEIGHT - RESOURCE_PANEL_HEIGHT - 10f;
     // Где начинается текст ставки — фиксированный отступ от правого края
     // панели, не "после текста количества": разная ширина цифр количества
     // (1 против 4 разрядов) иначе сдвигала бы ставку то туда, то сюда.
@@ -142,12 +156,15 @@ public class GameScreen extends InputAdapter implements Screen {
     // здания, см. drawBuildingInfoPanel/touchDown.
     private static final UnitType[] NO_PRODUCIBLE_TYPES = new UnitType[0];
 
-    private static final float PANEL_X = 20f;
-    private static final float PANEL_Y = 5f;
-    // Достаточно широкая, чтобы вместить все пять кнопок построек в ряд —
-    // раньше это было заботой отдельного полноширинного бара, теперь той
-    // же ширины должна быть сама плашка.
-    private static final float PANEL_WIDTH = 770f;
+    private static final float PANEL_X = 0f;
+    private static final float PANEL_Y = 0f;
+    // Во всю ширину экрана (HUD_WIDTH), без отступов по бокам и до самого
+    // низа — раньше была уже панели постройки (770 из 800 при старом
+    // вьюпорте) с полями со всех сторон; теперь полей нет вовсе, только
+    // внутренний отступ текста/кнопок от края плашки (те самые "+ 15f"
+    // ниже — это отступ КОНТЕНТА от края плашки, не отступ самой плашки
+    // от края экрана, их не стоит путать).
+    private static final float PANEL_WIDTH = HUD_WIDTH;
     private static final float PANEL_HEIGHT = 160f;
 
     // Имя и HP — верхняя строка плашки, слева.
@@ -274,8 +291,8 @@ public class GameScreen extends InputAdapter implements Screen {
     private String connectionStatusText = "Connecting...";
 
     public GameScreen(String serverHost) {
-        camera.setToOrtho(false, 800, 600);
-        hudCamera.setToOrtho(false, 800, 600);
+        camera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
+        hudCamera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
         font.getData().setScale(3f);
         uiFont.getData().setScale(1.3f);
 
