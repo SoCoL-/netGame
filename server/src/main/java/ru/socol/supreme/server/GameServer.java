@@ -11,6 +11,7 @@ import ru.socol.supreme.shared.BuildingPlacement;
 import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.QueuedOrder;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AttackComponent;
@@ -19,6 +20,7 @@ import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
+import ru.socol.supreme.shared.components.OrderQueueComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PathComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -52,6 +54,7 @@ import ru.socol.supreme.shared.systems.CollisionSystem;
 import ru.socol.supreme.shared.systems.CombatSystem;
 import ru.socol.supreme.shared.systems.ConstructionSystem;
 import ru.socol.supreme.shared.systems.MovementSystem;
+import ru.socol.supreme.shared.systems.OrderQueueSystem;
 import ru.socol.supreme.shared.systems.ProductionSystem;
 import ru.socol.supreme.shared.systems.ResourceExtractionSystem;
 
@@ -156,6 +159,7 @@ public class GameServer {
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new MovementSystem());
+        engine.addSystem(new OrderQueueSystem(this::startAttackOrder, this::assignBuilderToBuild));
         engine.addSystem(new CollisionSystem(unitsById, collisionGrid));
     }
 
@@ -586,6 +590,12 @@ public class GameServer {
         return false;
     }
 
+    /**
+     * Обычный (не-queue) приказ — очередь целиком очищает и заменяет
+     * текущее действие; queue=true (shift-клик, см. GameScreen) —
+     * добавляет в конец очереди отложенных приказов, не трогая то, что
+     * юнит делает прямо сейчас (см. enqueueOrder/OrderQueueComponent).
+     */
     synchronized void handleMoveUnit(Connection connection, MoveUnitRequest request) {
         if (gameOver) {
             return;
@@ -611,6 +621,20 @@ public class GameServer {
             return; // здание — двигаться не может
         }
 
+        float targetX = clamp(request.targetX, 0f, GameConstants.MAP_WIDTH);
+        float targetY = clamp(request.targetY, 0f, GameConstants.MAP_HEIGHT);
+
+        if (request.queue) {
+            QueuedOrder order = new QueuedOrder();
+            order.type = QueuedOrder.Type.MOVE;
+            order.x = targetX;
+            order.y = targetY;
+            enqueueOrder(unit, order);
+            return;
+        }
+
+        clearOrderQueue(unit);
+
         // Ручной приказ на движение отменяет текущую атаку, как в большинстве RTS.
         if (unit.getComponent(AttackComponent.class) != null) {
             unit.remove(AttackComponent.class);
@@ -621,14 +645,35 @@ public class GameServer {
         }
 
         PositionComponent position = unit.getComponent(PositionComponent.class);
-        float targetX = clamp(request.targetX, 0f, GameConstants.MAP_WIDTH);
-        float targetY = clamp(request.targetY, 0f, GameConstants.MAP_HEIGHT);
 
         // Pathfinding сама решает: прямая линия свободна — идём напрямую,
         // как раньше; если по пути препятствие (вода/здание) — обойдёт его.
         Pathfinding.setDestination(unit, position, direction, targetX, targetY);
     }
 
+    /** Добавляет приказ в конец очереди юнита, создавая OrderQueueComponent при первом обращении — см. её javadoc. */
+    private void enqueueOrder(Entity unit, QueuedOrder order) {
+        OrderQueueComponent orderQueue = unit.getComponent(OrderQueueComponent.class);
+        if (orderQueue == null) {
+            orderQueue = engine.createComponent(OrderQueueComponent.class);
+            unit.add(orderQueue);
+        }
+        orderQueue.queue.add(order);
+    }
+
+    /** Любой немедленный (не-queue) приказ отменяет всё, что было отложено — так и ожидается от "замены" приказа. */
+    private void clearOrderQueue(Entity unit) {
+        OrderQueueComponent orderQueue = unit.getComponent(OrderQueueComponent.class);
+        if (orderQueue != null) {
+            orderQueue.queue.clear();
+        }
+    }
+
+    /**
+     * Обычный (не-queue) приказ — очередь целиком очищает и заменяет
+     * текущее действие; queue=true — добавляет в конец очереди, см.
+     * javadoc handleMoveUnit про то же самое.
+     */
     synchronized void handleAttackUnit(Connection connection, AttackUnitRequest request) {
         if (gameOver) {
             return;
@@ -639,24 +684,61 @@ public class GameServer {
             return;
         }
 
-        Entity attacker = unitsById.get(request.unitId);
-        Entity target = unitsById.get(request.targetUnitId);
-        if (attacker == null || target == null) {
+        if (request.queue) {
+            Entity attacker = unitsById.get(request.unitId);
+            if (attacker == null) {
+                return;
+            }
+            OwnerComponent owner = attacker.getComponent(OwnerComponent.class);
+            if (owner == null || owner.playerId != playerId) {
+                return; // не ваш юнит
+            }
+            if (attacker.getComponent(DirectionComponent.class) == null) {
+                return; // здание атаковать не может
+            }
+
+            QueuedOrder order = new QueuedOrder();
+            order.type = QueuedOrder.Type.ATTACK;
+            order.targetUnitId = request.targetUnitId;
+            enqueueOrder(attacker, order);
             return;
+        }
+
+        Entity attacker = unitsById.get(request.unitId);
+        if (attacker != null) {
+            clearOrderQueue(attacker);
+        }
+        startAttackOrder(playerId, request.unitId, request.targetUnitId);
+    }
+
+    /**
+     * Запускает атаку прямо сейчас — общая логика для немедленного
+     * приказа (handleAttackUnit) и для разбора очереди (OrderQueueSystem,
+     * куда передаётся как OrderExecutor через метод-ссылку). Возвращает
+     * false, если приказ невалиден прямо сейчас (атакующий/цель пропали,
+     * цель своя, атакующий — здание) — вызывающий код очереди просто
+     * отбрасывает этот результат: юнит останется бездействовать до
+     * следующего тика и попробует взять уже СЛЕДУЮЩИЙ элемент очереди.
+     */
+    private boolean startAttackOrder(int playerId, int attackerUnitId, int targetUnitId) {
+        Entity attacker = unitsById.get(attackerUnitId);
+        Entity target = unitsById.get(targetUnitId);
+        if (attacker == null || target == null) {
+            return false;
         }
 
         OwnerComponent attackerOwner = attacker.getComponent(OwnerComponent.class);
         if (attackerOwner == null || attackerOwner.playerId != playerId) {
-            return; // не ваш юнит
+            return false; // не ваш юнит
         }
 
         if (attacker.getComponent(DirectionComponent.class) == null) {
-            return; // здание атаковать не может
+            return false; // здание атаковать не может
         }
 
         OwnerComponent targetOwner = target.getComponent(OwnerComponent.class);
         if (targetOwner == null || targetOwner.playerId == playerId) {
-            return; // нельзя атаковать своих (свои здания — тоже)
+            return false; // нельзя атаковать своих (свои здания — тоже)
         }
 
         // Ручной приказ на атаку отменяет текущую стройку — как и обычный приказ на движение.
@@ -675,7 +757,8 @@ public class GameServer {
         // Если AttackComponent уже был (юнит переключает цель на лету) —
         // cooldown намеренно не трогаем: юнит не должен получать
         // "бесплатный" мгновенный выстрел просто от смены цели.
-        attack.targetUnitId = request.targetUnitId;
+        attack.targetUnitId = targetUnitId;
+        return true;
     }
 
     /**
@@ -685,6 +768,11 @@ public class GameServer {
      * зеркальна handleAttackUnit: та же проверка владения, тот же приём
      * "если компонент уже был — не сбрасываем его состояние зря", только
      * цель не убить, а достроить.
+     */
+    /**
+     * Обычный (не-queue) приказ — очередь целиком очищает и заменяет
+     * текущее действие; queue=true — добавляет в конец очереди, см.
+     * javadoc handleMoveUnit про то же самое.
      */
     synchronized void handleBuildOrder(Connection connection, BuildOrderRequest request) {
         if (gameOver) {
@@ -696,6 +784,27 @@ public class GameServer {
             return;
         }
 
+        if (request.queue) {
+            Entity builder = unitsById.get(request.builderUnitId);
+            if (builder == null) {
+                return;
+            }
+            OwnerComponent owner = builder.getComponent(OwnerComponent.class);
+            if (owner == null || owner.playerId != playerId) {
+                return; // не ваш юнит
+            }
+
+            QueuedOrder order = new QueuedOrder();
+            order.type = QueuedOrder.Type.BUILD;
+            order.targetBuildingUnitId = request.targetBuildingUnitId;
+            enqueueOrder(builder, order);
+            return;
+        }
+
+        Entity builder = unitsById.get(request.builderUnitId);
+        if (builder != null) {
+            clearOrderQueue(builder);
+        }
         assignBuilderToBuild(playerId, request.builderUnitId, request.targetBuildingUnitId);
     }
 

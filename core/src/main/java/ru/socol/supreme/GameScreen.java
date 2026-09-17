@@ -1178,19 +1178,23 @@ public class GameScreen extends InputAdapter implements Screen {
             dragCurrentWorld.set(dragStartWorld);
             dragging = true;
         } else if (button == Input.Buttons.RIGHT && !selectedUnitIds.isEmpty()) {
+            // Shift — добавить приказ в очередь, а не заменить текущий (см.
+            // javadoc MoveUnitRequest.queue) — тот же модификатор для всех
+            // трёх видов приказа, выдаваемых отсюда.
+            boolean queue = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
             Vector3 world = camera.unproject(new Vector3(screenX, screenY, 0));
             Entity target = findEntityNear(world.x, world.y);
             if (target != null && isEnemy(target)) {
-                issueAttackOrder(target.getComponent(UnitComponent.class).unitId);
+                issueAttackOrder(target.getComponent(UnitComponent.class).unitId, queue);
             } else if (target != null && !isEnemy(target) && target.getComponent(ConstructionComponent.class) != null) {
                 // Своё (не чужое — isEnemy(target) уже false тут исключает и
                 // "ничьё" быть не может, раз ConstructionComponent вообще
                 // есть) недостроенное здание — строители из выделения идут
                 // его достраивать, остальные юниты выделения просто
                 // игнорируют клик (см. javadoc issueBuildOrder).
-                issueBuildOrder(target.getComponent(UnitComponent.class).unitId);
+                issueBuildOrder(target.getComponent(UnitComponent.class).unitId, queue);
             } else {
-                issueMoveOrder(world.x, world.y);
+                issueMoveOrder(world.x, world.y, queue);
             }
         }
         return true;
@@ -1366,12 +1370,12 @@ public class GameScreen extends InputAdapter implements Screen {
 
     // ---- Приказы выделенным юнитам ----
 
-    private void issueMoveOrder(float targetX, float targetY) {
+    private void issueMoveOrder(float targetX, float targetY, boolean queue) {
         List<Integer> ids = new ArrayList<>(selectedUnitIds);
         int count = ids.size();
 
         if (count == 1) {
-            client.requestMoveUnit(ids.get(0), targetX, targetY);
+            client.requestMoveUnit(ids.get(0), targetX, targetY, queue);
             return;
         }
 
@@ -1386,16 +1390,16 @@ public class GameScreen extends InputAdapter implements Screen {
             int row = i / columns;
             float offsetX = (col - (columns - 1) / 2f) * MOVE_ORDER_SPACING;
             float offsetY = (row - (rows - 1) / 2f) * MOVE_ORDER_SPACING;
-            client.requestMoveUnit(ids.get(i), targetX + offsetX, targetY + offsetY);
+            client.requestMoveUnit(ids.get(i), targetX + offsetX, targetY + offsetY, queue);
         }
     }
 
-    private void issueAttackOrder(int targetUnitId) {
+    private void issueAttackOrder(int targetUnitId, boolean queue) {
         // Тут спред не нужен: CombatSystem сама останавливает каждого
         // атакующего на ATTACK_RANGE от цели, и подходя с разных сторон,
         // юниты естественным образом расходятся вокруг цели кольцом.
         for (int unitId : selectedUnitIds) {
-            client.requestAttackUnit(unitId, targetUnitId);
+            client.requestAttackUnit(unitId, targetUnitId, queue);
         }
     }
 
@@ -1407,7 +1411,7 @@ public class GameScreen extends InputAdapter implements Screen {
      * причине, что и в issueAttackOrder — BuildSystem сама останавливает
      * каждого строителя на buildRadius от цели.
      */
-    private void issueBuildOrder(int targetBuildingUnitId) {
+    private void issueBuildOrder(int targetBuildingUnitId, boolean queue) {
         for (int unitId : selectedUnitIds) {
             Entity unit = entityFactory.getEntity(unitId);
             if (unit == null) {
@@ -1415,7 +1419,7 @@ public class GameScreen extends InputAdapter implements Screen {
             }
             UnitTypeComponent unitType = unit.getComponent(UnitTypeComponent.class);
             if (unitType != null && unitType.type == UnitType.BUILDER) {
-                client.requestBuildOrder(unitId, targetBuildingUnitId);
+                client.requestBuildOrder(unitId, targetBuildingUnitId, queue);
             }
         }
     }

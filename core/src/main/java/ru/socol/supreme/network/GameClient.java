@@ -127,10 +127,12 @@ public class GameClient implements Disposable {
         client.sendTCP(request);
     }
 
-    public void requestBuildOrder(int builderUnitId, int targetBuildingUnitId) {
+    /** queue — см. javadoc BuildOrderRequest.queue: shift-клик добавляет в очередь, не прерывая текущий приказ строителя. */
+    public void requestBuildOrder(int builderUnitId, int targetBuildingUnitId, boolean queue) {
         BuildOrderRequest request = new BuildOrderRequest();
         request.builderUnitId = builderUnitId;
         request.targetBuildingUnitId = targetBuildingUnitId;
+        request.queue = queue;
         client.sendTCP(request);
     }
 
@@ -166,18 +168,22 @@ public class GameClient implements Disposable {
         client.sendTCP(request);
     }
 
-    public void requestMoveUnit(int unitId, float targetX, float targetY) {
+    /** queue — см. javadoc MoveUnitRequest.queue: shift-клик добавляет в очередь, не прерывая текущий приказ юнита. */
+    public void requestMoveUnit(int unitId, float targetX, float targetY, boolean queue) {
         MoveUnitRequest request = new MoveUnitRequest();
         request.unitId = unitId;
         request.targetX = targetX;
         request.targetY = targetY;
+        request.queue = queue;
         client.sendTCP(request);
     }
 
-    public void requestAttackUnit(int unitId, int targetUnitId) {
+    /** queue — см. javadoc AttackUnitRequest.queue: shift-клик добавляет в очередь, не прерывая текущий приказ юнита. */
+    public void requestAttackUnit(int unitId, int targetUnitId, boolean queue) {
         AttackUnitRequest request = new AttackUnitRequest();
         request.unitId = unitId;
         request.targetUnitId = targetUnitId;
+        request.queue = queue;
         client.sendTCP(request);
     }
 

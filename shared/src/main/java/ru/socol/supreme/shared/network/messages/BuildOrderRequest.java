@@ -10,11 +10,16 @@ package ru.socol.supreme.shared.network.messages;
  * builderUnitId существует, принадлежит отправителю и правда строитель
  * (UnitType.BUILDER), targetBuildingUnitId существует, тоже принадлежит
  * отправителю и всё ещё недостроено (есть ConstructionComponent).
+ *
+ * queue — см. её же смысл в MoveUnitRequest.queue: shift-клик добавляет
+ * в очередь отложенных приказов строителя, не прерывая то, что он делает
+ * сейчас.
  */
 public class BuildOrderRequest {
 
     public int builderUnitId;
     public int targetBuildingUnitId;
+    public boolean queue;
 
     public BuildOrderRequest() {
     }
