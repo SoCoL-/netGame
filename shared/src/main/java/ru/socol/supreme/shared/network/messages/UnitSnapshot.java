@@ -62,6 +62,9 @@ public class UnitSnapshot {
      */
     public List<PathPoint> pathPoints = new ArrayList<>();
 
+    /** Отложенные приказы юнита (если есть) — только для отрисовки цепочки очереди (GameScreen.drawOrderQueue), см. javadoc QueuedOrderPoint. Пусто, если очередь пуста или её нет вовсе. */
+    public List<QueuedOrderPoint> queuedOrders = new ArrayList<>();
+
     public UnitSnapshot() {
     }
 }

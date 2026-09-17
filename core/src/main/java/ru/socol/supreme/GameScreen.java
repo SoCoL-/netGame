@@ -21,9 +21,11 @@ import ru.socol.supreme.shared.BuildingPlacement;
 import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.QueuedOrder;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.components.BuildBeamComponent;
 import ru.socol.supreme.components.DebugPathComponent;
+import ru.socol.supreme.components.OrderQueueDisplayComponent;
 import ru.socol.supreme.components.SelectedComponent;
 import ru.socol.supreme.network.GameClient;
 import ru.socol.supreme.systems.InterpolationSystem;
@@ -41,6 +43,7 @@ import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
+import ru.socol.supreme.shared.network.messages.QueuedOrderPoint;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
@@ -86,6 +89,15 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float RALLY_POINT_RADIUS = 10f;
     private static final float RALLY_DASH_LENGTH = 15f;
     private static final float RALLY_GAP_LENGTH = 10f;
+
+    // Цепочка очереди приказов выделенного юнита — линия одного цвета
+    // (отличного от точки сбора, чтобы не путать два разных пунктира на
+    // экране), маркеры на каждой точке красятся по типу приказа.
+    private static final Color ORDER_QUEUE_LINE_COLOR = Color.valueOf("FFD966");
+    private static final Color ORDER_QUEUE_MOVE_COLOR = Color.WHITE;
+    private static final Color ORDER_QUEUE_ATTACK_COLOR = Color.valueOf("FF5555");
+    private static final Color ORDER_QUEUE_BUILD_COLOR = Color.valueOf("55DDFF");
+    private static final float ORDER_QUEUE_MARKER_RADIUS = 6f;
 
     // Голографический луч стройки — три слоя одного отрезка (см.
     // drawSingleBuildBeam) плюс "бегущие" сегменты вдоль него. Цвета —
@@ -406,6 +418,7 @@ public class GameScreen extends InputAdapter implements Screen {
         drawGround(); // до engine.update() — юниты должны рисоваться поверх земли/воды, а не под ними
         drawIronDeposits(); // тоже до engine.update() — поверх земли, но под юнитами/зданиями
         drawRallyPoints(); // тоже до engine.update() — под юнитами, не поверх них
+        drawOrderQueue(); // тоже до engine.update() — под юнитами, не поверх них
 
         engine.update(delta);
 
@@ -699,14 +712,66 @@ public class GameScreen extends InputAdapter implements Screen {
 
         PositionComponent position = building.getComponent(PositionComponent.class);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        drawDashedLine(position.position.x, position.position.y, production.rallyX, production.rallyY);
+        drawDashedLine(position.position.x, position.position.y, production.rallyX, production.rallyY, RALLY_POINT_COLOR);
         shapeRenderer.setColor(RALLY_POINT_COLOR);
         shapeRenderer.circle(production.rallyX, production.rallyY, RALLY_POINT_RADIUS);
         shapeRenderer.end();
     }
 
-    /** ShapeRenderer не рисует пунктир сам — чередуем короткие толстые отрезки (rectLine) с промежутками вдоль направления линии. */
-    private void drawDashedLine(float x1, float y1, float x2, float y2) {
+    /**
+     * Цепочка отложенных приказов выделенного юнита — пунктирная линия
+     * через все точки по порядку (юнит -> первая -> вторая -> ...) и
+     * маркер на каждой, цвет маркера зависит от типа приказа
+     * (ORDER_QUEUE_MOVE_COLOR/ATTACK_COLOR/BUILD_COLOR). Только для ОДНОГО
+     * выделенного юнита — как и у здания с точкой сбора: у нескольких
+     * выделенных юнитов очереди почти наверняка разные, единую цепочку
+     * рисовать было бы бессмысленно. Ничего не рисует, если очередь пуста
+     * или юнита сейчас не видно среди своих же сущностей.
+     */
+    private void drawOrderQueue() {
+        if (selectedUnitIds.size() != 1) {
+            return;
+        }
+        Entity unit = entityFactory.getEntity(selectedUnitIds.iterator().next());
+        OrderQueueDisplayComponent display = unit != null ? unit.getComponent(OrderQueueDisplayComponent.class) : null;
+        if (display == null || display.points.isEmpty()) {
+            return;
+        }
+
+        PositionComponent position = unit.getComponent(PositionComponent.class);
+        float fromX = position.position.x;
+        float fromY = position.position.y;
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        for (QueuedOrderPoint point : display.points) {
+            drawDashedLine(fromX, fromY, point.x, point.y, ORDER_QUEUE_LINE_COLOR);
+            fromX = point.x;
+            fromY = point.y;
+        }
+        for (QueuedOrderPoint point : display.points) {
+            shapeRenderer.setColor(orderQueueMarkerColor(point.type));
+            shapeRenderer.circle(point.x, point.y, ORDER_QUEUE_MARKER_RADIUS);
+        }
+        shapeRenderer.end();
+    }
+
+    private Color orderQueueMarkerColor(int typeOrdinal) {
+        QueuedOrder.Type[] types = QueuedOrder.Type.values();
+        if (typeOrdinal < 0 || typeOrdinal >= types.length) {
+            return ORDER_QUEUE_MOVE_COLOR;
+        }
+        switch (types[typeOrdinal]) {
+            case ATTACK:
+                return ORDER_QUEUE_ATTACK_COLOR;
+            case BUILD:
+                return ORDER_QUEUE_BUILD_COLOR;
+            default:
+                return ORDER_QUEUE_MOVE_COLOR;
+        }
+    }
+
+    /** Пунктирная линия — общая для точки сбора (RALLY_POINT_COLOR) и цепочки очереди приказов (см. drawOrderQueue), цвет передаёт вызывающий код, не жёстко зашит внутри. */
+    private void drawDashedLine(float x1, float y1, float x2, float y2, Color color) {
         float dx = x2 - x1;
         float dy = y2 - y1;
         float length = (float) Math.sqrt(dx * dx + dy * dy);
@@ -718,7 +783,7 @@ public class GameScreen extends InputAdapter implements Screen {
         float dirY = dy / length;
         float step = RALLY_DASH_LENGTH + RALLY_GAP_LENGTH;
 
-        shapeRenderer.setColor(RALLY_POINT_COLOR);
+        shapeRenderer.setColor(color);
         for (float traveled = 0f; traveled < length; traveled += step) {
             float dashEnd = Math.min(traveled + RALLY_DASH_LENGTH, length);
             shapeRenderer.rectLine(
@@ -1177,6 +1242,17 @@ public class GameScreen extends InputAdapter implements Screen {
             dragStartWorld.set(camera.unproject(new Vector3(screenX, screenY, 0)));
             dragCurrentWorld.set(dragStartWorld);
             dragging = true;
+        } else if (button == Input.Buttons.RIGHT && selectedBuildingId != null) {
+            // Здание выделено — правый клик по карте ставит точку сбора
+            // (не выделение и не приказ юниту, тех тут просто нет). Только
+            // у производящего здания есть куда собирать — у остальных
+            // (шахта, обе электростанции, оба хранилища) клик просто
+            // ничего не делает.
+            Entity selectedBuilding = entityFactory.getEntity(selectedBuildingId);
+            if (selectedBuilding != null && selectedBuilding.getComponent(ProductionComponent.class) != null) {
+                Vector3 world = camera.unproject(new Vector3(screenX, screenY, 0));
+                client.requestSetRallyPoint(selectedBuildingId, world.x, world.y);
+            }
         } else if (button == Input.Buttons.RIGHT && !selectedUnitIds.isEmpty()) {
             // Shift — добавить приказ в очередь, а не заменить текущий (см.
             // javadoc MoveUnitRequest.queue) — тот же модификатор для всех
@@ -1220,27 +1296,7 @@ public class GameScreen extends InputAdapter implements Screen {
             Vector3 end = camera.unproject(new Vector3(screenX, screenY, 0));
 
             if (dragStartWorld.dst(end) < DRAG_THRESHOLD) {
-                Entity clicked = findEntityNear(end.x, end.y);
-                OwnerComponent clickedOwner = clicked != null ? clicked.getComponent(OwnerComponent.class) : null;
-                boolean clickedOwnEntity = clickedOwner != null && clickedOwner.playerId == client.getPlayerId();
-
-                Entity selectedBuilding = selectedBuildingId != null ? entityFactory.getEntity(selectedBuildingId) : null;
-                boolean selectedIsProducer = selectedBuilding != null && selectedBuilding.getComponent(ProductionComponent.class) != null;
-
-                if (selectedIsProducer && !clickedOwnEntity) {
-                    // Клик мимо своего юнита/здания, пока выделено (своё)
-                    // производящее здание — не выделение, а точка сбора.
-                    // Клик по СВОЕМУ юниту/зданию по-прежнему переключает
-                    // выделение как обычно (иначе нельзя было бы выйти из
-                    // этого режима, не отменив выделение как-то ещё). У
-                    // непроизводящего здания (снова выделяемого — теперь и
-                    // у него есть панель, но с одной кнопкой "Demolish", не
-                    // очередью) точки сбора не бывает вовсе — клик мимо него
-                    // просто выделяет/двигает как обычно.
-                    client.requestSetRallyPoint(selectedBuildingId, end.x, end.y);
-                } else {
-                    handleSingleClickSelect(end.x, end.y);
-                }
+                handleSingleClickSelect(end.x, end.y);
             } else {
                 handleBoxSelect(dragStartWorld.x, dragStartWorld.y, end.x, end.y);
             }

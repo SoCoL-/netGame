@@ -42,6 +42,7 @@ import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
 import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
+import ru.socol.supreme.shared.network.messages.QueuedOrderPoint;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
 import ru.socol.supreme.shared.network.messages.SetRallyPointRequest;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
@@ -469,8 +470,8 @@ public class GameServer {
     /**
      * Точка сбора — куда идёт каждый только что произведённый юнит этого
      * здания (см. ProductionSystem). Клиент присылает её, когда игрок
-     * кликает левой кнопкой по карте при выделенном СВОЁМ здании (см.
-     * GameScreen.touchUp) — координаты не проверяются на валидность
+     * кликает правой кнопкой по карте при выделенном СВОЁМ здании (см.
+     * GameScreen.touchDown) — координаты не проверяются на валидность
      * (не в воде/не в здании) специально: Pathfinding.setDestination сам
      * молча проигнорирует недостижимую точку, как и при обычном ручном
      * приказе на движение — отдельной проверки тут не нужно.
@@ -1024,6 +1025,31 @@ public class GameServer {
                     for (Vector2 waypoint : path.waypoints) {
                         unitSnapshot.pathPoints.add(new PathPoint(waypoint.x, waypoint.y));
                     }
+                }
+            }
+
+            // Только для отрисовки цепочки очереди на клиенте (GameScreen
+            // .drawOrderQueue) — см. javadoc QueuedOrderPoint, почему тут
+            // координаты, а не id цели.
+            OrderQueueComponent orderQueue = unit.getComponent(OrderQueueComponent.class);
+            if (orderQueue != null) {
+                for (QueuedOrder order : orderQueue.queue) {
+                    float px;
+                    float py;
+                    if (order.type == QueuedOrder.Type.MOVE) {
+                        px = order.x;
+                        py = order.y;
+                    } else {
+                        int targetId = order.type == QueuedOrder.Type.ATTACK ? order.targetUnitId : order.targetBuildingUnitId;
+                        Entity orderTarget = unitsById.get(targetId);
+                        PositionComponent targetPosition = orderTarget != null ? orderTarget.getComponent(PositionComponent.class) : null;
+                        if (targetPosition == null) {
+                            continue; // цель уже пропала — эта точка сама скоро отвалится из очереди на сервере, просто не показываем её сейчас
+                        }
+                        px = targetPosition.position.x;
+                        py = targetPosition.position.y;
+                    }
+                    unitSnapshot.queuedOrders.add(new QueuedOrderPoint(px, py, order.type.ordinal()));
                 }
             }
 

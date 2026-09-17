@@ -11,6 +11,7 @@ import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PathPoint;
+import ru.socol.supreme.shared.network.messages.QueuedOrderPoint;
 import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
 import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
@@ -51,6 +52,7 @@ public final class NetworkRegistration {
         kryo.register(GameOverMessage.class);
         kryo.register(ProjectileFiredEvent.class);
         kryo.register(PathPoint.class);
+        kryo.register(QueuedOrderPoint.class);
         kryo.register(PlayerResources.class);
         kryo.register(PlaceIronMineRequest.class);
         kryo.register(PlaceBuildingRequest.class);
