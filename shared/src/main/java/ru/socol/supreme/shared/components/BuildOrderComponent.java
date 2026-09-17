@@ -27,6 +27,19 @@ public class BuildOrderComponent implements Component, Pool.Poolable {
      */
     public boolean inRange;
 
+    /**
+     * Точка подхода к зданию — считается ОДИН раз в BuildSystem (когда
+     * hasApproachPoint ещё false) и переиспользуется, пока строитель не
+     * дойдёт или не получит новый приказ, а НЕ пересчитывается каждый
+     * тик от текущей позиции: здание, в отличие от цели атаки, никогда
+     * не двигается, пересчитывать заново некуда. См. подробный javadoc
+     * BuildSystem.updateBuilder, почему пересчёт каждый тик был реальным
+     * багом (строитель мог застрять при подходе по диагонали).
+     */
+    public boolean hasApproachPoint;
+    public float approachX;
+    public float approachY;
+
     public BuildOrderComponent() {
     }
 
@@ -38,5 +51,8 @@ public class BuildOrderComponent implements Component, Pool.Poolable {
     public void reset() {
         targetBuildingUnitId = 0;
         inRange = false;
+        hasApproachPoint = false;
+        approachX = 0f;
+        approachY = 0f;
     }
 }

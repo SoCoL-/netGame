@@ -221,18 +221,48 @@ public class BuildSystem extends EntitySystem {
 
         if (distance > buildRange) {
             order.inRange = false;
-            // Та же логика точки подхода, что и в CombatSystem — см. её
+            // Точка подхода считается ОДИН раз (пока hasApproachPoint
+            // false — первый тик, когда стало ясно, что строитель ещё не
+            // в радиусе) и дальше переиспользуется, а НЕ пересчитывается
+            // заново каждый тик от текущей (постоянно меняющейся по мере
+            // движения) позиции — здание, в отличие от цели атаки в
+            // CombatSystem, никогда не двигается, пересчитывать некуда.
+            //
+            // Пересчёт каждый тик был реальным багом: направление
+            // "откуда идёт строитель" чуть-чуть меняется на каждом шаге
+            // движения, и пересчитанная от него точка подхода иногда
+            // попадала в СОСЕДНЮЮ клетку сетки A* по сравнению с
+            // предыдущим тиком. Pathfinding.setDestination считает
+            // условием пропустить пересчёт пути именно "цель — та же
+            // клетка, что и раньше"; при таком дрожании между двумя
+            // соседними клетками строитель мог застрять, гоняясь за
+            // постоянно чуть смещающейся точкой и ни разу не попав в ту
+            // же клетку дважды подряд — особенно заметно при подходе по
+            // диагонали (из угла здания), где чувствительность
+            // направления к малейшему смещению позиции выше всего.
+            //
+            // Та же логика самой точки, что и в CombatSystem — см. её
             // комментарий про PATH_CLEARANCE/BUILDING_HALF_SIZE, почему
             // buildRadius обязан быть больше самой раздутой половины
             // здания, иначе точка подхода попадёт в заблокированную зону
             // и Pathfinding её проигнорирует.
-            approachPoint.set(myPosition.position).sub(targetPosition.position).nor()
-                    .scl(buildRange).add(targetPosition.position);
-            Pathfinding.setDestination(builder, myPosition, direction, approachPoint.x, approachPoint.y);
+            if (!order.hasApproachPoint) {
+                approachPoint.set(myPosition.position).sub(targetPosition.position).nor()
+                        .scl(buildRange).add(targetPosition.position);
+                order.hasApproachPoint = true;
+                order.approachX = approachPoint.x;
+                order.approachY = approachPoint.y;
+            }
+            Pathfinding.setDestination(builder, myPosition, direction, order.approachX, order.approachY);
             return;
         }
 
-        // В радиусе — останавливаемся и засчитываемся в подсчёт для второго прохода.
+        // В радиусе — останавливаемся и засчитываемся в подсчёт для
+        // второго прохода. Сбрасываем точку подхода — если строителя
+        // потом что-то отбросит от здания (например, атакующий соседний
+        // юнит случайно задел), подход нужно будет посчитать заново от
+        // новой позиции, а не тащить устаревшую точку с прошлого захода.
+        order.hasApproachPoint = false;
         direction.moving = false;
         order.inRange = true;
         buildersInRangeByTarget.merge(order.targetBuildingUnitId, 1, Integer::sum);
