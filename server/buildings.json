@@ -5,7 +5,10 @@
     "halfHeight": 50,
     "maxHealth": 500,
     "buildTime": 0,
-    "producesUnitTypes": ["WARRIOR", "BUILDER", "SCOUT"],
+    "producesUnitTypes": [
+      "WARRIOR",
+      "BUILDER"
+    ],
     "spawnMargin": 200
   },
   {
@@ -14,7 +17,9 @@
     "halfHeight": 50,
     "maxHealth": 70,
     "buildTime": 10,
-    "producesUnitTypes": ["ARCHER"],
+    "producesUnitTypes": [
+      "ARCHER"
+    ],
     "consumesResourceType": "ELECTRICITY",
     "idleConsumptionRate": 0.5,
     "activeConsumptionRate": 2
@@ -57,5 +62,20 @@
     "buildTime": 10,
     "storesResourceType": "ELECTRICITY",
     "storageCapacity": 3000
+  },
+  {
+    "type": "AIRCRAFT_FACTORY",
+    "halfWidth": 50,
+    "halfHeight": 75,
+    "maxHealth": 50,
+    "buildTime": 10,
+    "producesUnitTypes": [
+      "SCOUT"
+    ],
+    "consumesResourceType": "ELECTRICITY",
+    "idleConsumptionRate": 30,
+    "activeConsumptionRate": 70,
+    "ironCost": 200,
+    "electricityCost": 1000
   }
 ]

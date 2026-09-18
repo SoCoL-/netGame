@@ -196,7 +196,7 @@ public final class BuildingDefinitions {
         home.halfHeight = 50f;
         home.maxHealth = 500;
         home.buildTime = 0f;
-        home.producesUnitTypes = new UnitType[]{UnitType.WARRIOR, UnitType.BUILDER, UnitType.SCOUT};
+        home.producesUnitTypes = new UnitType[]{UnitType.WARRIOR, UnitType.BUILDER};
         home.spawnMargin = 200f;
         definitions.put(BuildingType.HOME, home);
 
@@ -254,6 +254,20 @@ public final class BuildingDefinitions {
         electricityStorage.storesResourceType = ResourceType.ELECTRICITY;
         electricityStorage.storageCapacity = 3000f; // крупнее, чем у IRON_STORAGE — электричество течёт куда быстрее (150/сек против 20/сек у железа)
         definitions.put(BuildingType.ELECTRICITY_STORAGE, electricityStorage);
+
+        BuildingDefinition aircraftFactory = new BuildingDefinition();
+        aircraftFactory.type = BuildingType.AIRCRAFT_FACTORY;
+        aircraftFactory.halfWidth = 50f; // 2 клетки по 50
+        aircraftFactory.halfHeight = 75f; // 3 клетки по 50
+        aircraftFactory.maxHealth = 50;
+        aircraftFactory.buildTime = 10f;
+        aircraftFactory.producesUnitTypes = new UnitType[]{UnitType.SCOUT};
+        aircraftFactory.consumesResourceType = ResourceType.ELECTRICITY;
+        aircraftFactory.idleConsumptionRate = 30f;
+        aircraftFactory.activeConsumptionRate = 70f;
+        aircraftFactory.ironCost = 200;
+        aircraftFactory.electricityCost = 1000;
+        definitions.put(BuildingType.AIRCRAFT_FACTORY, aircraftFactory);
 
         return definitions;
     }

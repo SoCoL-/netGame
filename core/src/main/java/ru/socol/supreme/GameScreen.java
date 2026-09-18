@@ -151,6 +151,7 @@ public class GameScreen extends InputAdapter implements Screen {
             BuildingType.POWER_PLANT,
             BuildingType.IRON_STORAGE,
             BuildingType.ELECTRICITY_STORAGE,
+            BuildingType.AIRCRAFT_FACTORY,
     };
     // Пустой массив вместо null — для ещё строящегося (или непроизводящего)
     // здания, см. drawBuildingInfoPanel/touchDown.
@@ -575,6 +576,8 @@ public class GameScreen extends InputAdapter implements Screen {
                 return "Iron Storage";
             case ELECTRICITY_STORAGE:
                 return "Electricity Storage";
+            case AIRCRAFT_FACTORY:
+                return "Aircraft Factory";
             default:
                 return "";
         }

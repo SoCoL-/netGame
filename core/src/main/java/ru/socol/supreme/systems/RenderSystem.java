@@ -74,6 +74,10 @@ public class RenderSystem extends IteratingSystem {
     private static final Color ARCHER_ROOF_COLOR = Color.WHITE;
     private static final Color IRON_MINE_MARKER_COLOR = new Color(0.55f, 0.35f, 0.2f, 1f); // тот же ржавый цвет, что у месторождений
     private static final Color POWER_PLANT_MARKER_COLOR = Color.YELLOW;
+    // Не жёлтый и не голубой (Color.SKY) — оба уже заняты (станция и
+    // цвет игрока 1 соответственно), маркер на его фоне был бы почти
+    // невидим.
+    private static final Color AIRCRAFT_FACTORY_MARKER_COLOR = Color.CYAN;
     private static final Color UNDER_CONSTRUCTION_COLOR = Color.GRAY;
 
     private static final float HEALTH_BAR_HEIGHT = 4f;
@@ -192,6 +196,9 @@ public class RenderSystem extends IteratingSystem {
             case ELECTRICITY_STORAGE:
                 drawStorageMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight), POWER_PLANT_MARKER_COLOR);
                 break;
+            case AIRCRAFT_FACTORY:
+                drawWaveMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
+                break;
             case HOME:
             default:
                 drawStar(position.position.x, position.position.y, Math.min(halfWidth, halfHeight) * 0.6f);
@@ -241,6 +248,33 @@ public class RenderSystem extends IteratingSystem {
         float markerHalf = halfSize * 0.4f;
         shapeRenderer.setColor(color);
         shapeRenderer.rect(cx - markerHalf, cy - markerHalf, markerHalf * 2f, markerHalf * 2f);
+    }
+
+    /**
+     * Волна "~" — несколько коротких сегментов (rectLine), аппроксимирующих
+     * синусоиду, тем же приёмом, что и пунктирная линия/голографический
+     * луч стройки в GameScreen: ShapeRenderer не умеет кривые сам по себе,
+     * но ломаная из достаточного числа коротких отрезков на глаз читается
+     * как гладкая волна. Один полный период (сначала вверх, потом вниз) —
+     * силуэтом похоже на "~".
+     */
+    private void drawWaveMarker(float cx, float cy, float halfSize) {
+        float amplitude = halfSize * 0.35f;
+        float width = halfSize * 1.6f;
+        int segments = 12;
+
+        shapeRenderer.setColor(AIRCRAFT_FACTORY_MARKER_COLOR);
+        float startX = cx - width / 2f;
+        float prevX = startX;
+        float prevY = cy;
+        for (int i = 1; i <= segments; i++) {
+            float t = (float) i / segments;
+            float x = startX + width * t;
+            float y = cy + amplitude * MathUtils.sin(t * MathUtils.PI2);
+            shapeRenderer.rectLine(prevX, prevY, x, y, 2.5f);
+            prevX = x;
+            prevY = y;
+        }
     }
 
     /**
