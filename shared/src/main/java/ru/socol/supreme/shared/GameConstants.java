@@ -137,11 +137,17 @@ public final class GameConstants {
     /** Размер клетки сетки для поиска пути (Pathfinding) — 2000/50 = 40x40 клеток. */
     public static final float PATH_GRID_CELL_SIZE = 50f;
 
-    // Туман войны — своя сетка, но той же клетки, что и у Pathfinding
-    // (переиспользуем размер, не городим отдельный масштаб без причины).
-    // FOG_GRID_WIDTH/HEIGHT — целое число клеток на всю карту, MAP_WIDTH/
-    // HEIGHT кратны 50, так что деление ровное.
-    public static final float FOG_GRID_CELL_SIZE = PATH_GRID_CELL_SIZE;
+    // Туман войны — своя сетка, отдельная от Pathfinding: клетка 50 (та
+    // же, что у поиска пути) достаточна для обхода препятствий, но у
+    // самой маленькой дальности обзора в игре (70, у зданий) давала
+    // всего 2.8 клетки в поперечнике — по сути крестик, а не круг, из-за
+    // чего открытие тумана выглядело квадратным, а не круглым, хотя сама
+    // проверка видимости (markVisibleCircle) всегда была честной по
+    // расстоянию. Клетка 25 даёт той же дальности уже 5.6 в поперечнике
+    // — заметно круглее на глаз, а самой большой (250, у стрелка) — 20,
+    // почти гладкая окружность. FOG_GRID_WIDTH/HEIGHT — целое число
+    // клеток на всю карту, MAP_WIDTH/HEIGHT кратны 25, деление ровное.
+    public static final float FOG_GRID_CELL_SIZE = 25f;
     public static final int FOG_GRID_WIDTH = (int) (MAP_WIDTH / FOG_GRID_CELL_SIZE);
     public static final int FOG_GRID_HEIGHT = (int) (MAP_HEIGHT / FOG_GRID_CELL_SIZE);
     // Через сколько секунд после потери видимости клетка снова закрывается
