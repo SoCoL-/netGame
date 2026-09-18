@@ -15,20 +15,23 @@ import java.util.Map;
  * за время партии не меняется, так что "посчитать один раз при старте"
  * достаточно.
  *
- * Файл ищется в текущей рабочей директории процесса (units.json рядом с
- * server.jar при запуске через java -jar, или рядом с корнем модуля
- * server при ./gradlew :server:run — см. buildJars в корневом
- * build.gradle, который кладёт units.json туда же, куда собранные jar-и).
+ * Файл ищется в текущей рабочей директории процесса — единая assets/ в
+ * корне проекта, а не отдельная копия под сервер (см. её же комментарий
+ * в server/build.gradle, откуда там ./gradlew :server:run/IDE берут эту
+ * рабочую директорию, и buildJars в корневом build.gradle, который при
+ * java -jar кладёт units.json рядом с самим server.jar).
  * Если файла нет, он повреждён или не описывает какой-то из типов —
  * для ЭТОГО типа используются встроенные значения по умолчанию
  * (defaultDefinitions), а не падение сервера: баланс не настолько
  * критичен, чтобы сервер отказывался запускаться без него.
  *
- * Используется только сервером (CombatSystem — дальность атаки, урон,
+ * Используется в основном сервером (CombatSystem — дальность атаки, урон,
  * скорострельность; AggroSystem — та же дальность атаки как радиус
  * агрессии, отдельного радиуса агрессии больше нет; GameServer.createUnit
- * — скорость и здоровье). Клиенту эти цифры не нужны — он ничего не
- * считает сам, только показывает то, что уже посчитал сервер.
+ * — скорость и здоровье) — он ничего не пересчитывает заново из снапшота,
+ * все решения принимает сам. Клиент тоже кое-что читает отсюда, но только
+ * для отображения (например, GameScreen.drawBuildingInfoPanel —
+ * buildTimeFor для доли прогресс-бара), никогда для авторитетных решений.
  *
  * Ровно ради этого всё и выносилось из Java-констант в данные: чтобы
  * добавить новый тип юнита, достаточно дописать запись в units.json, не
@@ -151,7 +154,7 @@ public final class UnitDefinitions {
         definitions.put(UnitType.ARCHER, new UnitDefinition(UnitType.ARCHER, 80f, 20, 4f, 2, 210f, 300, 300, 10f, 0f, 250f, 0f, false, 0f));
         definitions.put(UnitType.BUILDER, new UnitDefinition(UnitType.BUILDER, 80f, 65, 4f, 1, 70f, 100, 150, 10f, 210f, 120f, 0f, false, 0f));
         definitions.put(UnitType.SCOUT, new UnitDefinition(UnitType.SCOUT, 80f, 65, 4f, 4, 100f, 150, 200, 10f, 0f, 100f, 100f, false, 45f));
-        definitions.put(UnitType.ATTACK_AIRCRAFT, new UnitDefinition(UnitType.ATTACK_AIRCRAFT, 60f, 100, 4f, 4, 80f, 100, 800, 12f, 0f, 120f, 20f, true, 55f));
+        definitions.put(UnitType.ATTACK_AIRCRAFT, new UnitDefinition(UnitType.ATTACK_AIRCRAFT, 60f, 100, 4f, 4, 100f, 100, 800, 12f, 0f, 120f, 20f, true, 55f));
         return definitions;
     }
 }

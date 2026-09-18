@@ -162,7 +162,7 @@ public class GameServer {
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new MovementSystem());
-        engine.addSystem(new AircraftMovementSystem());
+        engine.addSystem(new AircraftMovementSystem(unitsById));
         engine.addSystem(new OrderQueueSystem(this::startAttackOrder, this::assignBuilderToBuild));
         engine.addSystem(new CollisionSystem(unitsById, collisionGrid));
     }
