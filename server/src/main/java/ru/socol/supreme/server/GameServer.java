@@ -416,11 +416,12 @@ public class GameServer {
 
         float turnRadius = UnitDefinitions.turnRadiusFor(type);
         if (turnRadius > 0f) {
-            // Авиация — physical поворот ограничен, см. AircraftMovementSystem.
+            // Авиация — физически поворот ограничен, см. AircraftMovementSystem.
             // turnRate = speed/turnRadius (угловая скорость кругового
             // движения) считается один раз тут, не каждый тик.
             AircraftComponent aircraft = engine.createComponent(AircraftComponent.class);
             aircraft.turnRate = direction.speed / turnRadius;
+            aircraft.canHover = UnitDefinitions.canHoverFor(type);
             unit.add(aircraft);
         }
 
@@ -1026,6 +1027,9 @@ public class GameServer {
             if (production != null) {
                 unitSnapshot.queuedCount = production.queue.size();
                 unitSnapshot.buildProgress = production.progress;
+                if (!production.queue.isEmpty()) {
+                    unitSnapshot.producingUnitType = production.queue.get(0).ordinal();
+                }
                 unitSnapshot.hasRallyPoint = production.hasRallyPoint;
                 unitSnapshot.rallyX = production.rallyX;
                 unitSnapshot.rallyY = production.rallyY;

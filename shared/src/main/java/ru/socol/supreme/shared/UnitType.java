@@ -11,5 +11,6 @@ public enum UnitType {
     WARRIOR,
     ARCHER,
     BUILDER,
-    SCOUT
+    SCOUT,
+    ATTACK_AIRCRAFT
 }

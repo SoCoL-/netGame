@@ -70,7 +70,8 @@
     "maxHealth": 50,
     "buildTime": 10,
     "producesUnitTypes": [
-      "SCOUT"
+      "SCOUT",
+      "ATTACK_AIRCRAFT"
     ],
     "consumesResourceType": "ELECTRICITY",
     "idleConsumptionRate": 30,

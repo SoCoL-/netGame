@@ -261,7 +261,7 @@ public final class BuildingDefinitions {
         aircraftFactory.halfHeight = 75f; // 3 клетки по 50
         aircraftFactory.maxHealth = 50;
         aircraftFactory.buildTime = 10f;
-        aircraftFactory.producesUnitTypes = new UnitType[]{UnitType.SCOUT};
+        aircraftFactory.producesUnitTypes = new UnitType[]{UnitType.SCOUT, UnitType.ATTACK_AIRCRAFT};
         aircraftFactory.consumesResourceType = ResourceType.ELECTRICITY;
         aircraftFactory.idleConsumptionRate = 30f;
         aircraftFactory.activeConsumptionRate = 70f;

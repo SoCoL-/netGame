@@ -75,6 +75,7 @@ public class EntityFactory {
             ProductionComponent production = entity.getComponent(ProductionComponent.class);
             if (production != null) {
                 production.queuedCount = snapshot.queuedCount;
+                production.producingUnitType = snapshot.queuedCount > 0 ? UnitType.values()[snapshot.producingUnitType] : null;
                 production.progress = snapshot.buildProgress;
                 production.hasRallyPoint = snapshot.hasRallyPoint;
                 production.rallyX = snapshot.rallyX;
@@ -206,6 +207,7 @@ public class EntityFactory {
         if (BuildingDefinitions.producesUnitTypesFor(type).length > 0) {
             ProductionComponent production = new ProductionComponent();
             production.queuedCount = snapshot.queuedCount;
+            production.producingUnitType = snapshot.queuedCount > 0 ? UnitType.values()[snapshot.producingUnitType] : null;
             production.progress = snapshot.buildProgress;
             production.hasRallyPoint = snapshot.hasRallyPoint;
             production.rallyX = snapshot.rallyX;

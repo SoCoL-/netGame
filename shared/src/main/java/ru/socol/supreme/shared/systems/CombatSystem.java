@@ -8,6 +8,7 @@ import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
+import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
@@ -27,6 +28,17 @@ import java.util.Map;
  * снимая урон (UnitDefinitions.damageFor, тоже по типу атакующего)
  * здоровья. При 0 HP цель удаляется из движка и из общего реестра юнитов
  * сервера.
+ *
+ * У авиации (AircraftComponent) есть ещё одно условие для выстрела — цель
+ * должна быть в конусе ±firingArcDegrees впереди по курсу (своя половина
+ * угла у каждого типа авиации — UnitDefinitions.firingArcDegreesFor,
+ * например ±45° у разведчика и ±55° у штурмовика), не сбоку и не сзади:
+ * самолёт не может повернуть мгновенно (AircraftMovementSystem), так что
+ * остановка в радиусе атаки не значит "можно стрелять прямо сейчас" —
+ * приходится ждать, пока курс довернётся сам, обычно за счёт кружения
+ * вокруг цели (или просто зависания, если умеет — см. AircraftComponent
+ * .canHover). Наземных юнитов это не касается — им ориентация не важна
+ * никогда.
  *
  * Приоритет 0 — раньше MovementSystem (приоритет 10) — чтобы направление
  * погони, выставленное здесь, в этом же тике подхватила MovementSystem.
@@ -63,6 +75,9 @@ public class CombatSystem extends IteratingSystem {
 
     /** Переиспользуемый вектор для точки подхода при погоне — не аллоцируем новый каждый тик на каждого атакующего. */
     private final Vector2 approachPoint = new Vector2();
+
+    /** Переиспользуемый вектор для направления на цель — только для проверки конуса стрельбы авиации, см. её ниже. */
+    private final Vector2 toTargetDirection = new Vector2();
 
     private Engine engine;
 
@@ -127,8 +142,33 @@ public class CombatSystem extends IteratingSystem {
             return;
         }
 
-        // В радиусе атаки — останавливаемся и стреляем по кулдауну.
+        // В радиусе атаки — останавливаемся, но стрелять может быть ещё
+        // рано (см. проверку конуса стрельбы ниже).
         direction.moving = false;
+
+        // Авиация стреляет только вперёд по курсу, не вбок и не назад —
+        // наземных юнитов это не касается вовсе, им ориентация никогда не
+        // была важна. direction.direction у авиации каждый тик
+        // поддерживает AircraftMovementSystem (её реальный текущий курс,
+        // не мгновенно довёрнутый на цель — самолёт не может повернуть
+        // мгновенно), так что сравниваем именно его, не считаем угол
+        // заново. Цель вне конуса — не стреляем и не тикаем кулдаун:
+        // ждём, пока курс довернётся сам по себе (в первую очередь —
+        // кружением, см. AircraftMovementSystem.loitering), а не жжём
+        // впустую время перезарядки на то, что всё равно не могли бы
+        // применить.
+        if (attacker.getComponent(AircraftComponent.class) != null) {
+            toTargetDirection.set(targetPosition.position).sub(myPosition.position);
+            if (toTargetDirection.len2() > 0.0001f) {
+                toTargetDirection.nor();
+                float cosAngle = direction.direction.dot(toTargetDirection);
+                float firingCosThreshold = (float) Math.cos(Math.toRadians(UnitDefinitions.firingArcDegreesFor(attackerType)));
+                if (cosAngle < firingCosThreshold) {
+                    return;
+                }
+            }
+        }
+
         attack.cooldown -= deltaTime;
 
         if (attack.cooldown > 0f) {

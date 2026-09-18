@@ -19,17 +19,19 @@ import ru.socol.supreme.shared.components.PositionComponent;
  * (handleMoveUnit, CombatSystem при погоне); эта система просто
  * ИНТЕРПРЕТИРУЕТ их иначе.
  *
- * Самолёт никогда не останавливается по-настоящему — физически не может
- * зависнуть в воздухе. По достижении direction.target (или если что-то
- * ещё, не подумав об авиации специально, выставило moving=false —
- * например, CombatSystem, остановивший юнита в радиусе атаки) он
- * переходит в кружение (loitering) вокруг последней точки и летает по
- * кругу радиуса turnRadius, пока не получит новый приказ. Круг получается
- * без явного расчёта траектории: непрерывное стремление лететь по
- * касательной к окружности при максимальной скорости поворота само
- * вычерчивает нужный радиус, та же идея, что и с approach point в
- * CombatSystem/BuildSystem, только цель движения — сама окружность, а не
- * точка.
+ * По достижении direction.target (или если что-то ещё, не подумав об
+ * авиации специально, выставило moving=false — например, CombatSystem,
+ * остановивший юнита в радиусе атаки) — дальнейшее поведение зависит от
+ * AircraftComponent.canHover (своё у каждого типа, см.
+ * UnitDefinitions.canHoverFor): кто умеет зависать (штурмовик) —
+ * просто останавливается там, где оказался, курс больше не меняется,
+ * пока не будет нового приказа; кто не умеет (разведчик) — физически не
+ * может просто стоять в воздухе, переходит в кружение (loitering) вокруг
+ * последней точки радиуса turnRadius. Круг получается без явного расчёта
+ * траектории: непрерывное стремление лететь по касательной к окружности
+ * при максимальной скорости поворота само вычерчивает нужный радиус, та
+ * же идея, что и с approach point в CombatSystem/BuildSystem, только
+ * цель движения — сама окружность, а не точка.
  *
  * Приоритет 10 — тот же, что и у MovementSystem: они обрабатывают
  * взаимоисключающие множества сущностей (см. exclude(AircraftComponent)
@@ -60,26 +62,36 @@ public class AircraftMovementSystem extends IteratingSystem {
         if (direction.moving) {
             float distanceToTarget = position.position.dst(direction.target);
             if (distanceToTarget <= GameConstants.ARRIVE_THRESHOLD) {
-                // Долетели — переходим в кружение, а не останавливаемся.
-                // moving становится false тут же, в момент прибытия: для
-                // остальных систем (например, OrderQueueSystem) это
-                // "приказ выполнен, юнит свободен для следующего", хотя
-                // физически он продолжает лететь по кругу без приказа.
-                aircraft.loitering = true;
-                aircraft.loiterCenterX = direction.target.x;
-                aircraft.loiterCenterY = direction.target.y;
+                // Долетели. moving становится false тут же, в момент
+                // прибытия: для остальных систем (например,
+                // OrderQueueSystem) это "приказ выполнен, юнит свободен
+                // для следующего", хотя физически кружащий (не умеющий
+                // зависать) может ещё лететь по кругу без приказа.
                 direction.moving = false;
+                if (aircraft.canHover) {
+                    aircraft.loitering = false; // просто зависает тут же, где остановился
+                } else {
+                    aircraft.loitering = true;
+                    aircraft.loiterCenterX = direction.target.x;
+                    aircraft.loiterCenterY = direction.target.y;
+                }
             }
-        } else if (!aircraft.loitering) {
-            // moving уже false, но кружения тоже ещё нет — либо только
-            // что созданный юнит без единого приказа (тогда кружит вокруг
-            // места появления), либо что-то другое (CombatSystem — в
-            // радиусе атаки) остановило юнита, не выставив кружение само.
-            // Самолёт не может просто зависнуть — начинаем кружить прямо
-            // тут, где остановились.
+        } else if (!aircraft.loitering && !aircraft.canHover) {
+            // moving уже false, кружения тоже ещё нет, и зависать не
+            // умеет — либо только что созданный юнит без единого приказа
+            // (тогда кружит вокруг места появления), либо что-то другое
+            // (CombatSystem — в радиусе атаки) остановило юнита, не
+            // выставив кружение само. Самолёт не может просто зависнуть —
+            // начинаем кружить прямо тут, где остановились.
             aircraft.loitering = true;
             aircraft.loiterCenterX = position.position.x;
             aircraft.loiterCenterY = position.position.y;
+        }
+        // Иначе — не летит и не кружит, но МОЖЕТ зависать: висит на месте,
+        // курс и позиция ниже не трогаются вовсе (см. return дальше).
+
+        if (!direction.moving && !aircraft.loitering) {
+            return; // зависает — курс и позиция не меняются, считать больше нечего
         }
 
         float desiredHeadingX;

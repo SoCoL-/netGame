@@ -61,12 +61,14 @@ public class RenderSystem extends IteratingSystem {
     private static final float ARCHER_MARKER_RADIUS = GameConstants.UNIT_RADIUS * 0.4f;
     private static final Color BUILDER_MARKER_COLOR = Color.LIGHT_GRAY; // тот же цвет, что у "стройки" (UNDER_CONSTRUCTION_COLOR) — тематическая связь
     private static final float BUILDER_MARKER_HALF_SIZE = GameConstants.UNIT_RADIUS * 0.35f;
-    // Разведчик — единственный юнит с настоящим курсом (см.
+    // Вся авиация — единственные юниты с настоящим курсом (см.
     // AircraftMovementSystem), поэтому метка не просто цветная точка, а
-    // треугольник по направлению полёта — жёлтый, авиационный цвет.
+    // треугольник по направлению полёта (drawHeadingTriangleMarker),
+    // общая форма на любой тип, цвет свой у каждого.
+    private static final float AIRCRAFT_MARKER_LENGTH = GameConstants.UNIT_RADIUS * 0.9f;
+    private static final float AIRCRAFT_MARKER_WIDTH = GameConstants.UNIT_RADIUS * 0.6f;
     private static final Color SCOUT_MARKER_COLOR = Color.YELLOW;
-    private static final float SCOUT_MARKER_LENGTH = GameConstants.UNIT_RADIUS * 0.9f;
-    private static final float SCOUT_MARKER_WIDTH = GameConstants.UNIT_RADIUS * 0.6f;
+    private static final Color ATTACK_AIRCRAFT_MARKER_COLOR = Color.RED;
 
     private static final float SELECTION_RING_RADIUS = GameConstants.UNIT_RADIUS + 3f;
 
@@ -139,23 +141,9 @@ public class RenderSystem extends IteratingSystem {
             float half = BUILDER_MARKER_HALF_SIZE;
             shapeRenderer.rect(position.position.x - half, position.position.y - half, half * 2f, half * 2f);
         } else if (unitType != null && unitType.type == UnitType.SCOUT) {
-            DirectionComponent scoutDirection = DIRECTION.get(entity);
-            float dx = scoutDirection != null ? scoutDirection.direction.x : 1f;
-            float dy = scoutDirection != null ? scoutDirection.direction.y : 0f;
-            if (dx == 0f && dy == 0f) {
-                dx = 1f; // ещё ни разу не летал — направление не определено, берём любое
-            }
-            float perpX = -dy;
-            float perpY = dx;
-            float noseX = position.position.x + dx * SCOUT_MARKER_LENGTH;
-            float noseY = position.position.y + dy * SCOUT_MARKER_LENGTH;
-            float tailX = position.position.x - dx * SCOUT_MARKER_LENGTH * 0.5f;
-            float tailY = position.position.y - dy * SCOUT_MARKER_LENGTH * 0.5f;
-            shapeRenderer.setColor(SCOUT_MARKER_COLOR);
-            shapeRenderer.triangle(
-                    noseX, noseY,
-                    tailX + perpX * SCOUT_MARKER_WIDTH, tailY + perpY * SCOUT_MARKER_WIDTH,
-                    tailX - perpX * SCOUT_MARKER_WIDTH, tailY - perpY * SCOUT_MARKER_WIDTH);
+            drawHeadingTriangleMarker(entity, position, SCOUT_MARKER_COLOR);
+        } else if (unitType != null && unitType.type == UnitType.ATTACK_AIRCRAFT) {
+            drawHeadingTriangleMarker(entity, position, ATTACK_AIRCRAFT_MARKER_COLOR);
         }
 
         drawHealthBar(position, health, UNIT_HEALTH_BAR_Y_OFFSET, UNIT_HEALTH_BAR_WIDTH);
@@ -248,6 +236,32 @@ public class RenderSystem extends IteratingSystem {
         float markerHalf = halfSize * 0.4f;
         shapeRenderer.setColor(color);
         shapeRenderer.rect(cx - markerHalf, cy - markerHalf, markerHalf * 2f, markerHalf * 2f);
+    }
+
+    /**
+     * Треугольник по направлению полёта — общий для любого типа авиации с
+     * настоящим курсом (DirectionComponent.direction, его поддерживает
+     * AircraftMovementSystem), цвет передаёт вызывающий код, форма и
+     * размер — общие (AIRCRAFT_MARKER_LENGTH/WIDTH).
+     */
+    private void drawHeadingTriangleMarker(Entity entity, PositionComponent position, Color color) {
+        DirectionComponent unitDirection = DIRECTION.get(entity);
+        float dx = unitDirection != null ? unitDirection.direction.x : 1f;
+        float dy = unitDirection != null ? unitDirection.direction.y : 0f;
+        if (dx == 0f && dy == 0f) {
+            dx = 1f; // ещё ни разу не летал — направление не определено, берём любое
+        }
+        float perpX = -dy;
+        float perpY = dx;
+        float noseX = position.position.x + dx * AIRCRAFT_MARKER_LENGTH;
+        float noseY = position.position.y + dy * AIRCRAFT_MARKER_LENGTH;
+        float tailX = position.position.x - dx * AIRCRAFT_MARKER_LENGTH * 0.5f;
+        float tailY = position.position.y - dy * AIRCRAFT_MARKER_LENGTH * 0.5f;
+        shapeRenderer.setColor(color);
+        shapeRenderer.triangle(
+                noseX, noseY,
+                tailX + perpX * AIRCRAFT_MARKER_WIDTH, tailY + perpY * AIRCRAFT_MARKER_WIDTH,
+                tailX - perpX * AIRCRAFT_MARKER_WIDTH, tailY - perpY * AIRCRAFT_MARKER_WIDTH);
     }
 
     /**

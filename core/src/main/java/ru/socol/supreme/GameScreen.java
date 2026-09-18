@@ -22,6 +22,7 @@ import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.QueuedOrder;
+import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.components.BuildBeamComponent;
 import ru.socol.supreme.components.DebugPathComponent;
@@ -1034,7 +1035,9 @@ public class GameScreen extends InputAdapter implements Screen {
         }
 
         if (production != null && production.queuedCount > 0) {
-            float fraction = MathUtils.clamp(production.progress / GameConstants.UNIT_BUILD_TIME, 0f, 1f);
+            float buildTime = production.producingUnitType != null
+                    ? UnitDefinitions.buildTimeFor(production.producingUnitType) : GameConstants.UNIT_BUILD_TIME;
+            float fraction = MathUtils.clamp(production.progress / buildTime, 0f, 1f);
 
             shapeRenderer.setColor(Color.DARK_GRAY);
             shapeRenderer.rect(PROGRESS_BAR_X, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT);
@@ -1165,6 +1168,8 @@ public class GameScreen extends InputAdapter implements Screen {
                 return "Builder";
             case SCOUT:
                 return "Scout";
+            case ATTACK_AIRCRAFT:
+                return "Attack Aircraft";
             default:
                 return "";
         }

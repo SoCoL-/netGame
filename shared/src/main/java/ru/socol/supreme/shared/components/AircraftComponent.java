@@ -26,9 +26,21 @@ public class AircraftComponent implements Component, Pool.Poolable {
     public float turnRate;
 
     /**
-     * Кружит вокруг loiterCenter, а не остановился — самолёт физически не
-     * может зависнуть в воздухе. Выставляется AircraftMovementSystem сама
-     * (и по достижении цели движения, и если что-то ещё, например
+     * Может ли этот конкретный самолёт зависать неподвижно в воздухе
+     * вместо обязательного кружения — не все типы авиации это умеют (см.
+     * UnitDefinitions.canHoverFor, считается один раз при создании юнита,
+     * как и turnRate). Разведчик не умеет и всегда кружит; штурмовик
+     * умеет и просто останавливается там, где оказался. Если умеет —
+     * AircraftMovementSystem не выставляет loitering вовсе, юнит просто
+     * стоит на месте, куда бы его ни остановили (движение или бой).
+     */
+    public boolean canHover;
+
+    /**
+     * Кружит вокруг loiterCenter, а не остановился — актуально только для
+     * авиации, которая НЕ умеет зависать (canHover=false): она физически
+     * не может просто стоять в воздухе. Выставляется AircraftMovementSystem
+     * сама (и по достижении цели движения, и если что-то ещё, например
      * CombatSystem, остановило юнита, не подумав об этом специально).
      */
     public boolean loitering;
@@ -39,6 +51,7 @@ public class AircraftComponent implements Component, Pool.Poolable {
     public void reset() {
         heading = 0f;
         turnRate = 0f;
+        canHover = false;
         loitering = false;
         loiterCenterX = 0f;
         loiterCenterY = 0f;

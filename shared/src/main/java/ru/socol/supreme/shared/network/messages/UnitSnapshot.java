@@ -21,6 +21,16 @@ public class UnitSnapshot {
     public int queuedCount;
     public float buildProgress;
 
+    /**
+     * Актуально только когда queuedCount > 0 — ordinal() типа юнита,
+     * который сейчас строится первым в очереди (production.queue.get(0)
+     * на сервере). Нужен клиенту, чтобы верно посчитать долю
+     * прогресс-бара (GameScreen.drawBuildingInfoPanel) — у каждого типа
+     * юнита теперь своё UnitDefinitions.buildTimeFor, не общая константа
+     * на всех, так что без этого поля клиент не знал бы, на что делить.
+     */
+    public int producingUnitType;
+
     /** Актуально только для здания с production (building=true, queuedCount/buildProgress осмысленны). Точка сбора для новых юнитов — см. ProductionComponent.hasRallyPoint. */
     public boolean hasRallyPoint;
     public float rallyX;

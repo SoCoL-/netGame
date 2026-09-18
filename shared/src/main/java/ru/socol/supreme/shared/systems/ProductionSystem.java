@@ -42,12 +42,12 @@ import java.util.Map;
  *
  * Стоимость самого юнита (UnitDefinitions.ironCostFor/electricityCostFor,
  * по типу ПЕРВОГО элемента очереди) списывается РАВНОМЕРНО за
- * UNIT_BUILD_TIME, а не разом: за один тик длительности deltaTime
- * тратится cost * deltaTime / UNIT_BUILD_TIME каждого ресурса — так что
- * за весь UNIT_BUILD_TIME спишется ровно cost. Если на очередной тик не
- * хватает ХОТЯ БЫ ОДНОГО из двух — прогресс просто не растёт (как и при
- * нехватке места под юнита, MAX_TOTAL_UNITS), а не уходит в минус и не
- * теряется.
+ * buildTimeFor этого же типа (своя у каждого, не общая на всех), а не
+ * разом: за один тик длительности deltaTime тратится cost * deltaTime /
+ * buildTime каждого ресурса — так что за весь buildTime спишется ровно
+ * cost. Если на очередной тик не хватает ХОТЯ БЫ ОДНОГО из двух —
+ * прогресс просто не растёт (как и при нехватке места под юнита,
+ * MAX_TOTAL_UNITS), а не уходит в минус и не теряется.
  *
  * Фактическое создание сущности юнита делегируется обратно в GameServer
  * через UnitFactory — у этой системы (как и у всех shared-систем) нет
@@ -116,6 +116,7 @@ public class ProductionSystem extends IteratingSystem {
         }
 
         UnitType buildingUnitType = production.queue.get(0); // первый в очереди — тот, что строится сейчас
+        float buildTime = UnitDefinitions.buildTimeFor(buildingUnitType); // своя у каждого типа, не общая GameConstants.UNIT_BUILD_TIME
 
         // Зажимаем оставшимся временем постройки, а не просто deltaTime —
         // та же причина, что и в BuildSystem у стоимости здания (см. её
@@ -123,10 +124,10 @@ public class ProductionSystem extends IteratingSystem {
         // ЦЕЛОГО тика, даже если доделать осталось меньше, и при впритык
         // хватающих ресурсах постройка юнита зависала бы на этом самом
         // тике навсегда.
-        float progressThisTick = Math.min(deltaTime, GameConstants.UNIT_BUILD_TIME - production.progress);
+        float progressThisTick = Math.min(deltaTime, buildTime - production.progress);
 
-        float tickIron = UnitDefinitions.ironCostFor(buildingUnitType) * progressThisTick / GameConstants.UNIT_BUILD_TIME;
-        float tickElectricity = UnitDefinitions.electricityCostFor(buildingUnitType) * progressThisTick / GameConstants.UNIT_BUILD_TIME;
+        float tickIron = UnitDefinitions.ironCostFor(buildingUnitType) * progressThisTick / buildTime;
+        float tickElectricity = UnitDefinitions.electricityCostFor(buildingUnitType) * progressThisTick / buildTime;
 
         if (resources == null || resources.iron < tickIron - GameConstants.RESOURCE_EPSILON
                 || resources.electricity < tickElectricity - GameConstants.RESOURCE_EPSILON) {
@@ -136,7 +137,7 @@ public class ProductionSystem extends IteratingSystem {
         resources.electricity -= tickElectricity;
 
         production.progress += progressThisTick;
-        if (production.progress < GameConstants.UNIT_BUILD_TIME) {
+        if (production.progress < buildTime) {
             return;
         }
 

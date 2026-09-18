@@ -8,9 +8,12 @@
     "attackRadius": 70,
     "ironCost": 0,
     "electricityCost": 0,
+    "buildTime": 10,
     "buildRadius": 0,
     "sightRadius": 150,
-    "turnRadius": 0
+    "turnRadius": 0,
+    "canHover": false,
+    "firingArcDegrees": 0
   },
   {
     "type": "ARCHER",
@@ -21,9 +24,12 @@
     "attackRadius": 210,
     "ironCost": 300,
     "electricityCost": 300,
+    "buildTime": 10,
     "buildRadius": 0,
     "sightRadius": 250,
-    "turnRadius": 0
+    "turnRadius": 0,
+    "canHover": false,
+    "firingArcDegrees": 0
   },
   {
     "type": "BUILDER",
@@ -34,9 +40,12 @@
     "attackRadius": 70,
     "ironCost": 100,
     "electricityCost": 150,
+    "buildTime": 10,
     "buildRadius": 210,
     "sightRadius": 120,
-    "turnRadius": 0
+    "turnRadius": 0,
+    "canHover": false,
+    "firingArcDegrees": 0
   },
   {
     "type": "SCOUT",
@@ -47,8 +56,27 @@
     "attackRadius": 100,
     "ironCost": 150,
     "electricityCost": 200,
+    "buildTime": 10,
     "buildRadius": 0,
     "sightRadius": 100,
-    "turnRadius": 100
+    "turnRadius": 100,
+    "canHover": false,
+    "firingArcDegrees": 45
+  },
+  {
+    "type": "ATTACK_AIRCRAFT",
+    "speed": 60,
+    "health": 100,
+    "fireRate": 4,
+    "damage": 4,
+    "attackRadius": 80,
+    "ironCost": 100,
+    "electricityCost": 800,
+    "buildTime": 12,
+    "buildRadius": 0,
+    "sightRadius": 120,
+    "turnRadius": 20,
+    "canHover": true,
+    "firingArcDegrees": 55
   }
 ]

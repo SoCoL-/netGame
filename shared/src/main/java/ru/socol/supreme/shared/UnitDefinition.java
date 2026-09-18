@@ -33,13 +33,27 @@ public class UnitDefinition {
 
     /**
      * Сколько железа/электричества стоит один такой юнит — списывается не
-     * разом, а равномерно за время постройки (UNIT_BUILD_TIME), см.
-     * ProductionSystem: если на очередной тик не хватает ресурсов, прогресс
-     * просто не растёт, как и при нехватке места под юнита (MAX_TOTAL_UNITS).
-     * 0 — юнит ничего не стоит (сейчас так у воина).
+     * разом, а равномерно за время постройки (buildTime ниже, своё у
+     * каждого типа), см. ProductionSystem: если на очередной тик не
+     * хватает ресурсов, прогресс просто не растёт, как и при нехватке
+     * места под юнита (MAX_TOTAL_UNITS). 0 — юнит ничего не стоит (сейчас
+     * так у воина).
      */
     public int ironCost;
     public int electricityCost;
+
+    /**
+     * Секунд на постройку одного юнита этого типа — раньше была общая
+     * GameConstants.UNIT_BUILD_TIME на всех, теперь у каждого типа своя
+     * (появилось, когда штурмовику потребовались собственные 12 секунд
+     * вместо стандартных 10). Клиенту тоже нужно её знать — для доли
+     * прогресс-бара у производящего здания (GameScreen
+     * .drawBuildingInfoPanel) — сервер шлёт тип юнита, который сейчас
+     * строится первым в очереди (UnitSnapshot.producingUnitType), и
+     * клиент сам смотрит buildTimeFor этого типа, а не полагается на
+     * общую константу.
+     */
+    public float buildTime;
 
     /**
      * Актуально только для строителя — на каком расстоянии от здания он
@@ -66,12 +80,32 @@ public class UnitDefinition {
      */
     public float turnRadius;
 
+    /**
+     * Актуально только для авиации — может ли она зависать неподвижно в
+     * воздухе (например, штурмовик) вместо того, чтобы, остановившись,
+     * обязательно кружить вокруг точки (как разведчик, см.
+     * AircraftMovementSystem.loitering) — самолёт, который не умеет
+     * зависать, физически не может просто стоять в воздухе. false у
+     * наземных типов — не используется, они и так просто стоят на месте.
+     */
+    public boolean canHover;
+
+    /**
+     * Половина угла конуса стрельбы вперёд по курсу, градусы — актуально
+     * только для авиации (см. CombatSystem): цель вне этого конуса
+     * относительно текущего курса — не по курсу, стрелять нельзя, что бы
+     * ни показывал кулдаун. 0 у наземных типов — не используется, им
+     * ориентация не важна вовсе.
+     */
+    public float firingArcDegrees;
+
     public UnitDefinition() {
         // требуется Json для десериализации
     }
 
     public UnitDefinition(UnitType type, float speed, int health, float fireRate, int damage, float attackRadius,
-                           int ironCost, int electricityCost, float buildRadius, float sightRadius, float turnRadius) {
+                           int ironCost, int electricityCost, float buildTime, float buildRadius, float sightRadius,
+                           float turnRadius, boolean canHover, float firingArcDegrees) {
         this.type = type;
         this.speed = speed;
         this.health = health;
@@ -80,8 +114,11 @@ public class UnitDefinition {
         this.attackRadius = attackRadius;
         this.ironCost = ironCost;
         this.electricityCost = electricityCost;
+        this.buildTime = buildTime;
         this.buildRadius = buildRadius;
         this.sightRadius = sightRadius;
         this.turnRadius = turnRadius;
+        this.canHover = canHover;
+        this.firingArcDegrees = firingArcDegrees;
     }
 }

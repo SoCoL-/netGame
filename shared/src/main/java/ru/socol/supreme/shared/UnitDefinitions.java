@@ -109,6 +109,21 @@ public final class UnitDefinitions {
         return DEFINITIONS.get(type).turnRadius;
     }
 
+    /** Секунд на постройку одного юнита этого типа — раньше была общая GameConstants.UNIT_BUILD_TIME на всех, теперь своя у каждого типа. */
+    public static float buildTimeFor(UnitType type) {
+        return DEFINITIONS.get(type).buildTime;
+    }
+
+    /** Актуально только для авиации — может ли она зависать неподвижно вместо обязательного кружения (см. AircraftMovementSystem.loitering). false у наземных типов — не используется. */
+    public static boolean canHoverFor(UnitType type) {
+        return DEFINITIONS.get(type).canHover;
+    }
+
+    /** Половина угла конуса стрельбы вперёд, градусы — актуально только для авиации (см. CombatSystem). 0 у наземных типов — не используется, им ориентация не важна. */
+    public static float firingArcDegreesFor(UnitType type) {
+        return DEFINITIONS.get(type).firingArcDegrees;
+    }
+
     private static Map<UnitType, UnitDefinition> load() {
         Map<UnitType, UnitDefinition> definitions = defaultDefinitions();
 
@@ -132,10 +147,11 @@ public final class UnitDefinitions {
     /** Встроенные значения — то, чем баланс был до вынесения в JSON. Подстраховка на случай отсутствия/поломки файла. */
     private static Map<UnitType, UnitDefinition> defaultDefinitions() {
         Map<UnitType, UnitDefinition> definitions = new EnumMap<>(UnitType.class);
-        definitions.put(UnitType.WARRIOR, new UnitDefinition(UnitType.WARRIOR, 80f, 20, 4f, 2, 70f, 0, 0, 0f, 150f, 0f));
-        definitions.put(UnitType.ARCHER, new UnitDefinition(UnitType.ARCHER, 80f, 20, 4f, 2, 210f, 300, 300, 0f, 250f, 0f));
-        definitions.put(UnitType.BUILDER, new UnitDefinition(UnitType.BUILDER, 80f, 65, 4f, 1, 70f, 100, 150, 210f, 120f, 0f));
-        definitions.put(UnitType.SCOUT, new UnitDefinition(UnitType.SCOUT, 80f, 65, 4f, 4, 100f, 150, 200, 0f, 100f, 100f));
+        definitions.put(UnitType.WARRIOR, new UnitDefinition(UnitType.WARRIOR, 80f, 20, 4f, 2, 70f, 0, 0, 10f, 0f, 150f, 0f, false, 0f));
+        definitions.put(UnitType.ARCHER, new UnitDefinition(UnitType.ARCHER, 80f, 20, 4f, 2, 210f, 300, 300, 10f, 0f, 250f, 0f, false, 0f));
+        definitions.put(UnitType.BUILDER, new UnitDefinition(UnitType.BUILDER, 80f, 65, 4f, 1, 70f, 100, 150, 10f, 210f, 120f, 0f, false, 0f));
+        definitions.put(UnitType.SCOUT, new UnitDefinition(UnitType.SCOUT, 80f, 65, 4f, 4, 100f, 150, 200, 10f, 0f, 100f, 100f, false, 45f));
+        definitions.put(UnitType.ATTACK_AIRCRAFT, new UnitDefinition(UnitType.ATTACK_AIRCRAFT, 60f, 100, 4f, 4, 80f, 100, 800, 12f, 0f, 120f, 20f, true, 55f));
         return definitions;
     }
 }
