@@ -137,6 +137,17 @@ public final class GameConstants {
     /** Размер клетки сетки для поиска пути (Pathfinding) — 2000/50 = 40x40 клеток. */
     public static final float PATH_GRID_CELL_SIZE = 50f;
 
+    // Туман войны — своя сетка, но той же клетки, что и у Pathfinding
+    // (переиспользуем размер, не городим отдельный масштаб без причины).
+    // FOG_GRID_WIDTH/HEIGHT — целое число клеток на всю карту, MAP_WIDTH/
+    // HEIGHT кратны 50, так что деление ровное.
+    public static final float FOG_GRID_CELL_SIZE = PATH_GRID_CELL_SIZE;
+    public static final int FOG_GRID_WIDTH = (int) (MAP_WIDTH / FOG_GRID_CELL_SIZE);
+    public static final int FOG_GRID_HEIGHT = (int) (MAP_HEIGHT / FOG_GRID_CELL_SIZE);
+    // Через сколько секунд после потери видимости клетка снова закрывается
+    // туманом — см. GameServer.updateFogOfWar.
+    public static final float FOG_REVEAL_GRACE_PERIOD = 2f;
+
     /**
      * Раньше было единое время постройки юнита на всех — теперь у каждого
      * типа своё (UnitDefinitions.buildTimeFor, появилось вместе со

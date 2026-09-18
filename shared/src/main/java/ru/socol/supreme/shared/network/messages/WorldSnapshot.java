@@ -8,12 +8,11 @@ public class WorldSnapshot {
 
     public List<UnitSnapshot> units = new ArrayList<>();
 
-    /**
-     * Ресурсы обоих игроков — как и юниты, видны всем одинаково (в игре
-     * нет и не планируется "тумана войны" для ресурсов отдельно от
-     * остального — см. README про упрощения без fog of war).
-     */
+    /** Ресурсы обоих игроков — как и юниты, видны всем одинаково (тумана войны для ресурсов нет, только для карты — см. fog ниже). */
     public List<PlayerResources> playerResources = new ArrayList<>();
+
+    /** Туман войны обоих игроков — см. javadoc FogSnapshot, почему шлются оба, а не только свой. */
+    public List<FogSnapshot> fog = new ArrayList<>();
 
     public WorldSnapshot() {
     }

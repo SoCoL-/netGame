@@ -40,6 +40,7 @@ import ru.socol.supreme.shared.components.ProductionComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
+import ru.socol.supreme.shared.network.messages.FogSnapshot;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
@@ -91,6 +92,10 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float UNIT_CLICK_RADIUS = 12f;
     private static final float CAMERA_PAN_SPEED = 400f; // world units в секунду
     private static final Color WATER_COLOR = new Color(0.25f, 0.55f, 0.85f, 1f); // голубой
+    // Серое затенение непросвеченных клеток тумана войны — полупрозрачное
+    // (не сплошной чёрный), чтобы "затенение", как просили, а не полное
+    // перекрытие.
+    private static final Color FOG_COLOR = new Color(0.12f, 0.12f, 0.12f, 0.88f);
     private static final Color GRASS_COLOR = new Color(0.2f, 0.45f, 0.2f, 1f); // зелёный, трава
     private static final Color DEBUG_PATH_COLOR = Color.ORANGE;
     private static final Color IRON_DEPOSIT_COLOR = new Color(0.55f, 0.35f, 0.2f, 1f); // ржаво-коричневый
@@ -277,9 +282,9 @@ public class GameScreen extends InputAdapter implements Screen {
     // float, не int — потребление/добыча считаются дробно (например,
     // 0.5 электричества/сек простоя казармы), см. PlayerResources. На
     // панели показываем округлённым до целого (drawResourcePanel).
-    // Ресурсов противника здесь нет: сервер их присылает (fog of war для
-    // ресурсов отдельно от остального не планируется), но панель — только
-    // про свои же.
+    // Ресурсов противника здесь нет: сервер их присылает без тумана войны
+    // (он есть только для самой карты, не для счёта ресурсов), но панель —
+    // только про свои же.
     private float myIron = 0f;
     private float myElectricity = 0f;
     // Чистое изменение в секунду — уже посчитано сервером как реально
@@ -287,6 +292,11 @@ public class GameScreen extends InputAdapter implements Screen {
     // PlayerResources.ironRate), клиент тут ничего сам не вычисляет.
     private float myIronRate = 0f;
     private float myElectricityRate = 0f;
+    // Туман войны — своя сетка (см. GameConstants.FOG_GRID_WIDTH/HEIGHT),
+    // revealed[i]=true — клетка сейчас видна (не затенена). Заполняется из
+    // FogSnapshot с моим playerId (см. onWorldSnapshot); null, пока не
+    // пришёл первый снапшот — drawFogOfWar тогда просто ничего не рисует.
+    private boolean[] fogRevealed;
     private String gameOverText = null;
     // Пока не null — показываем этот текст вместо игры (окно уже открыто и
     // отрисовывается, само подключение идёт в фоне — см. GameClient.connect()).
@@ -329,6 +339,12 @@ public class GameScreen extends InputAdapter implements Screen {
                             myElectricity = resources.electricity;
                             myIronRate = resources.ironRate;
                             myElectricityRate = resources.electricityRate;
+                            break;
+                        }
+                    }
+                    for (FogSnapshot fog : snapshot.fog) {
+                        if (fog.playerId == client.getPlayerId()) {
+                            fogRevealed = fog.revealed;
                             break;
                         }
                     }
@@ -445,6 +461,7 @@ public class GameScreen extends InputAdapter implements Screen {
         drawOverlayLines();
         drawArrows();
         drawBuildBeams();
+        drawFogOfWar(); // поверх всего мирового — юнитов, зданий, лучей стройки — но до HUD
         if (debugMode) {
             drawDebugPaths();
         }
@@ -829,6 +846,38 @@ public class GameScreen extends InputAdapter implements Screen {
      * "бегущих" вдоль луча от строителя к зданию — впечатление потока
      * энергии без реальной анимации текстуры.
      */
+    /**
+     * Серые прямоугольники поверх клеток тумана войны, которые сейчас не
+     * просвечены — FOG_GRID_WIDTH/HEIGHT клеток размера FOG_GRID_CELL_SIZE,
+     * та же сетка, что и на сервере (GameServer.updateFogOfWar). Ничего не
+     * рисует, пока не пришёл первый снапшот (fogRevealed == null) — до
+     * этого момента карта просто не видна вместо ложного "всё в тумане".
+     */
+    private void drawFogOfWar() {
+        if (fogRevealed == null) {
+            return;
+        }
+
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(FOG_COLOR);
+        for (int cellY = 0; cellY < GameConstants.FOG_GRID_HEIGHT; cellY++) {
+            for (int cellX = 0; cellX < GameConstants.FOG_GRID_WIDTH; cellX++) {
+                int index = cellY * GameConstants.FOG_GRID_WIDTH + cellX;
+                if (index >= fogRevealed.length || !fogRevealed[index]) {
+                    shapeRenderer.rect(
+                            cellX * GameConstants.FOG_GRID_CELL_SIZE,
+                            cellY * GameConstants.FOG_GRID_CELL_SIZE,
+                            GameConstants.FOG_GRID_CELL_SIZE,
+                            GameConstants.FOG_GRID_CELL_SIZE);
+                }
+            }
+        }
+        shapeRenderer.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+    }
+
     private void drawBuildBeams() {
         boolean anyBeam = false;
         for (Entity entity : engine.getEntities()) {

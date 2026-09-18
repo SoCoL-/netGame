@@ -34,6 +34,7 @@ import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
+import ru.socol.supreme.shared.network.messages.FogSnapshot;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
@@ -63,6 +64,7 @@ import ru.socol.supreme.shared.systems.ResourceExtractionSystem;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -139,6 +141,24 @@ public class GameServer {
      */
     private float timeSinceLastResourceRateUpdate = 0f;
 
+    /**
+     * Реально прошедшее время с последнего пересчёта тумана войны — та же
+     * причина, что и у timeSinceLastResourceRateUpdate чуть выше: считаем
+     * его не в каждом тике симуляции, а раз в SNAPSHOT_RATE (заодно с
+     * рассылкой снапшота, см. broadcastSnapshot), но на реально
+     * прошедшее время, а не на номинальный интервал.
+     */
+    private float timeSinceLastFogUpdate = 0f;
+
+    /**
+     * На игрока — плоская сетка (см. GameConstants.FOG_GRID_WIDTH/HEIGHT)
+     * "сколько секунд прошло с тех пор, как эту клетку последний раз видел
+     * хотя бы один юнит или здание этого игрока". Изначально всё в тумане
+     * (см. updateFogOfWar, где массив заводится) — Float.MAX_VALUE, а не 0,
+     * иначе клетка казалась бы видна прямо со старта партии.
+     */
+    private final Map<Integer, float[]> fogTimeSinceVisible = new HashMap<>();
+
     private volatile boolean gameOver = false;
 
     public GameServer() {
@@ -201,6 +221,7 @@ public class GameServer {
 
                     snapshotAccumulator += deltaTime;
                     timeSinceLastResourceRateUpdate += deltaTime;
+                    timeSinceLastFogUpdate += deltaTime;
                     if (snapshotAccumulator >= GameConstants.SNAPSHOT_RATE) {
                         snapshotAccumulator = 0f;
                         broadcastSnapshot();
@@ -985,6 +1006,9 @@ public class GameServer {
     // ---- Рассылка снапшота ----
 
     private void broadcastSnapshot() {
+        updateFogOfWar(timeSinceLastFogUpdate);
+        timeSinceLastFogUpdate = 0f;
+
         WorldSnapshot snapshot = new WorldSnapshot();
         for (Entity unit : unitsById.values()) {
             PositionComponent position = unit.getComponent(PositionComponent.class);
@@ -1096,6 +1120,103 @@ public class GameServer {
         }
         timeSinceLastResourceRateUpdate = 0f;
         snapshot.playerResources.addAll(resourcesByPlayer.values());
+
+        for (Map.Entry<Integer, float[]> entry : fogTimeSinceVisible.entrySet()) {
+            FogSnapshot fogSnapshot = new FogSnapshot(entry.getKey());
+            float[] timeSinceVisible = entry.getValue();
+            fogSnapshot.revealed = new boolean[timeSinceVisible.length];
+            for (int i = 0; i < timeSinceVisible.length; i++) {
+                fogSnapshot.revealed[i] = timeSinceVisible[i] < GameConstants.FOG_REVEAL_GRACE_PERIOD;
+            }
+            snapshot.fog.add(fogSnapshot);
+        }
+
         server.sendToAllTCP(snapshot);
+    }
+
+    /**
+     * Пересчитывает туман войны для каждого игрока — какие клетки сетки
+     * (GameConstants.FOG_GRID_WIDTH/HEIGHT) видны прямо сейчас хотя бы
+     * одному его юниту/зданию (markVisibleCircle), и обновляет
+     * fogTimeSinceVisible: 0 для только что увиденных клеток, плюс
+     * deltaTime для всех остальных. Сама рассылка "видно/не видно"
+     * (revealed = timeSinceVisible < FOG_REVEAL_GRACE_PERIOD) считается
+     * отдельно, в broadcastSnapshot — тут только обновление счётчиков.
+     */
+    private void updateFogOfWar(float deltaTime) {
+        for (Integer playerId : resourcesByPlayer.keySet()) {
+            float[] timeSinceVisible = fogTimeSinceVisible.get(playerId);
+            if (timeSinceVisible == null) {
+                timeSinceVisible = new float[GameConstants.FOG_GRID_WIDTH * GameConstants.FOG_GRID_HEIGHT];
+                Arrays.fill(timeSinceVisible, Float.MAX_VALUE); // изначально всё в тумане — партия только начинается
+                fogTimeSinceVisible.put(playerId, timeSinceVisible);
+            }
+
+            boolean[] visibleNow = new boolean[timeSinceVisible.length];
+            for (Entity entity : unitsById.values()) {
+                OwnerComponent owner = entity.getComponent(OwnerComponent.class);
+                if (owner == null || owner.playerId != playerId) {
+                    continue;
+                }
+                PositionComponent position = entity.getComponent(PositionComponent.class);
+                if (position == null) {
+                    continue;
+                }
+                float sightRadius = sightRadiusForEntity(entity);
+                if (sightRadius > 0f) {
+                    markVisibleCircle(visibleNow, position.position.x, position.position.y, sightRadius);
+                }
+            }
+
+            for (int i = 0; i < timeSinceVisible.length; i++) {
+                timeSinceVisible[i] = visibleNow[i] ? 0f : timeSinceVisible[i] + deltaTime;
+            }
+        }
+    }
+
+    /** Дальность обзора сущности — здание или юнит, по своему набору данных (BuildingDefinitions/UnitDefinitions). 0, если ни то, ни другое (не должно происходить). */
+    private float sightRadiusForEntity(Entity entity) {
+        BuildingComponent building = entity.getComponent(BuildingComponent.class);
+        if (building != null) {
+            return BuildingDefinitions.sightRadiusFor(building.type);
+        }
+        UnitTypeComponent unitType = entity.getComponent(UnitTypeComponent.class);
+        if (unitType != null) {
+            return UnitDefinitions.sightRadiusFor(unitType.type);
+        }
+        return 0f;
+    }
+
+    /**
+     * Отмечает true все клетки сетки в радиусе radius вокруг (cx, cy) —
+     * перебирает только клетки в пределах ограничивающего квадрата
+     * (не всю сетку целиком на каждый юнит), с точной проверкой
+     * расстояния от центра клетки до (cx, cy) внутри.
+     */
+    private void markVisibleCircle(boolean[] visible, float cx, float cy, float radius) {
+        int cellRadius = (int) Math.ceil(radius / GameConstants.FOG_GRID_CELL_SIZE) + 1;
+        int centerCellX = (int) (cx / GameConstants.FOG_GRID_CELL_SIZE);
+        int centerCellY = (int) (cy / GameConstants.FOG_GRID_CELL_SIZE);
+        float radiusSquared = radius * radius;
+
+        for (int dx = -cellRadius; dx <= cellRadius; dx++) {
+            int cellX = centerCellX + dx;
+            if (cellX < 0 || cellX >= GameConstants.FOG_GRID_WIDTH) {
+                continue;
+            }
+            for (int dy = -cellRadius; dy <= cellRadius; dy++) {
+                int cellY = centerCellY + dy;
+                if (cellY < 0 || cellY >= GameConstants.FOG_GRID_HEIGHT) {
+                    continue;
+                }
+                float cellCenterX = (cellX + 0.5f) * GameConstants.FOG_GRID_CELL_SIZE;
+                float cellCenterY = (cellY + 0.5f) * GameConstants.FOG_GRID_CELL_SIZE;
+                float deltaX = cellCenterX - cx;
+                float deltaY = cellCenterY - cy;
+                if (deltaX * deltaX + deltaY * deltaY <= radiusSquared) {
+                    visible[cellY * GameConstants.FOG_GRID_WIDTH + cellX] = true;
+                }
+            }
+        }
     }
 }
