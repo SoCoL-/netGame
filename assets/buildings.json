@@ -1,0 +1,82 @@
+[
+  {
+    "type": "HOME",
+    "halfWidth": 50,
+    "halfHeight": 50,
+    "maxHealth": 500,
+    "buildTime": 0,
+    "producesUnitTypes": [
+      "WARRIOR",
+      "BUILDER"
+    ],
+    "spawnMargin": 200
+  },
+  {
+    "type": "ARCHER_BARRACKS",
+    "halfWidth": 25,
+    "halfHeight": 50,
+    "maxHealth": 70,
+    "buildTime": 10,
+    "producesUnitTypes": [
+      "ARCHER"
+    ],
+    "consumesResourceType": "ELECTRICITY",
+    "idleConsumptionRate": 0.5,
+    "activeConsumptionRate": 2
+  },
+  {
+    "type": "IRON_MINE",
+    "halfWidth": 25,
+    "halfHeight": 25,
+    "maxHealth": 70,
+    "buildTime": 10,
+    "resourceType": "IRON",
+    "extractionRate": 20,
+    "snapRadius": 60,
+    "ironCost": 50
+  },
+  {
+    "type": "POWER_PLANT",
+    "halfWidth": 50,
+    "halfHeight": 50,
+    "maxHealth": 90,
+    "buildTime": 10,
+    "resourceType": "ELECTRICITY",
+    "extractionRate": 150,
+    "electricityCost": 50
+  },
+  {
+    "type": "IRON_STORAGE",
+    "halfWidth": 25,
+    "halfHeight": 25,
+    "maxHealth": 80,
+    "buildTime": 10,
+    "storesResourceType": "IRON",
+    "storageCapacity": 500
+  },
+  {
+    "type": "ELECTRICITY_STORAGE",
+    "halfWidth": 25,
+    "halfHeight": 25,
+    "maxHealth": 80,
+    "buildTime": 10,
+    "storesResourceType": "ELECTRICITY",
+    "storageCapacity": 3000
+  },
+  {
+    "type": "AIRCRAFT_FACTORY",
+    "halfWidth": 50,
+    "halfHeight": 75,
+    "maxHealth": 50,
+    "buildTime": 10,
+    "producesUnitTypes": [
+      "SCOUT",
+      "ATTACK_AIRCRAFT"
+    ],
+    "consumesResourceType": "ELECTRICITY",
+    "idleConsumptionRate": 30,
+    "activeConsumptionRate": 70,
+    "ironCost": 200,
+    "electricityCost": 1000
+  }
+]
