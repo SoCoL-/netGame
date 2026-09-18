@@ -135,7 +135,7 @@ public final class UnitDefinitions {
         definitions.put(UnitType.WARRIOR, new UnitDefinition(UnitType.WARRIOR, 80f, 20, 4f, 2, 70f, 0, 0, 0f, 150f, 0f));
         definitions.put(UnitType.ARCHER, new UnitDefinition(UnitType.ARCHER, 80f, 20, 4f, 2, 210f, 300, 300, 0f, 250f, 0f));
         definitions.put(UnitType.BUILDER, new UnitDefinition(UnitType.BUILDER, 80f, 65, 4f, 1, 70f, 100, 150, 210f, 120f, 0f));
-        definitions.put(UnitType.SCOUT, new UnitDefinition(UnitType.SCOUT, 20f, 65, 4f, 4, 100f, 150, 200, 0f, 100f, 100f));
+        definitions.put(UnitType.SCOUT, new UnitDefinition(UnitType.SCOUT, 80f, 65, 4f, 4, 100f, 150, 200, 0f, 100f, 100f));
         return definitions;
     }
 }

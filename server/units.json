@@ -40,7 +40,7 @@
   },
   {
     "type": "SCOUT",
-    "speed": 20,
+    "speed": 80,
     "health": 65,
     "fireRate": 4,
     "damage": 4,
