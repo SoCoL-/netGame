@@ -9,6 +9,8 @@ import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.graphics.Pixmap;
+import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
@@ -349,6 +351,19 @@ public class GameScreen extends InputAdapter implements Screen {
     // FogSnapshot с моим playerId (см. onWorldSnapshot); null, пока не
     // пришёл первый снапшот — drawFogOfWar тогда просто ничего не рисует.
     private boolean[] fogRevealed;
+    // Тот же fogRevealed, но перегнанный в маленькую (FOG_GRID_WIDTH x
+    // FOG_GRID_HEIGHT, т.е. по пикселю на клетку) alpha-текстуру с
+    // билинейной фильтрацией — см. updateFogTexture/drawFogOfWar. GPU сам
+    // интерполирует между соседними клетками при растяжении текстуры на
+    // всю карту, получая мягкий сглаженный край вместо чётких
+    // прямоугольников клеток, безо всякого увеличения сетевого трафика
+    // (та же грубая сетка, что и раньше, меняется только СПОСОБ её
+    // отрисовки на клиенте) и почти бесплатно по производительности —
+    // перезаливка 80x80 пикселей при каждом снапшоте (15/сек) на порядки
+    // дешевле самого рендера сцены.
+    private final Pixmap fogPixmap = new Pixmap(
+            GameConstants.FOG_GRID_WIDTH, GameConstants.FOG_GRID_HEIGHT, Pixmap.Format.Alpha);
+    private final Texture fogTexture = new Texture(fogPixmap);
     private String gameOverText = null;
     // Пока не null — показываем этот текст вместо игры (окно уже открыто и
     // отрисовывается, само подключение идёт в фоне — см. GameClient.connect()).
@@ -359,6 +374,15 @@ public class GameScreen extends InputAdapter implements Screen {
         hudCamera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
         font.getData().setScale(3f);
         uiFont.getData().setScale(1.3f);
+
+        // Linear — это и есть всё сглаживание тумана войны: GPU сама
+        // интерполирует альфу между соседними клетками при растяжении
+        // текстуры на всю карту (см. drawFogOfWar). ClampToEdge — чтобы на
+        // самом краю карты текстура не подхватывала клетку с
+        // противоположного края (поведение по умолчанию, Repeat, дало бы
+        // это именно на границе).
+        fogTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+        fogTexture.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
 
         engine.addSystem(new InterpolationSystem());
         engine.addSystem(renderSystem);
@@ -397,6 +421,7 @@ public class GameScreen extends InputAdapter implements Screen {
                     for (FogSnapshot fog : snapshot.fog) {
                         if (fog.playerId == client.getPlayerId()) {
                             fogRevealed = fog.revealed;
+                            updateFogTexture();
                             break;
                         }
                     }
@@ -1040,11 +1065,49 @@ public class GameScreen extends InputAdapter implements Screen {
      * энергии без реальной анимации текстуры.
      */
     /**
-     * Серые прямоугольники поверх клеток тумана войны, которые сейчас не
-     * просвечены — FOG_GRID_WIDTH/HEIGHT клеток размера FOG_GRID_CELL_SIZE,
-     * та же сетка, что и на сервере (GameServer.updateFogOfWar). Ничего не
-     * рисует, пока не пришёл первый снапшот (fogRevealed == null) — до
-     * этого момента карта просто не видна вместо ложного "всё в тумане".
+     * Перегоняет fogRevealed (FOG_GRID_WIDTH x FOG_GRID_HEIGHT булевых
+     * значений с сервера, см. onWorldSnapshot) в fogPixmap — по одному
+     * пикселю alpha-канала на клетку: непросвеченная клетка получает
+     * полную альфу (её и покрасит FOG_COLOR при отрисовке, см.
+     * drawFogOfWar), просвеченная — нулевую (совсем прозрачно, ничего не
+     * рисуется). Затем сразу перезаливает fogTexture этим пикселем —
+     * дальше её растягивает на всю карту сам GPU с билинейной
+     * интерполяцией между соседними клетками, отсюда и сглаженный край.
+     *
+     * Pixmap.drawPixel считает (0,0) верхним левым углом (Y вниз), а мир
+     * — Y вверх (cellY=0 у fogRevealed — нижний ряд карты, как и всюду в
+     * этом файле, см. старую версию drawFogOfWar в истории git) — без
+     * переворота по Y текстура легла бы на карту вверх ногами.
+     */
+    private void updateFogTexture() {
+        if (fogRevealed == null) {
+            return;
+        }
+
+        for (int cellY = 0; cellY < GameConstants.FOG_GRID_HEIGHT; cellY++) {
+            int pixmapY = GameConstants.FOG_GRID_HEIGHT - 1 - cellY;
+            for (int cellX = 0; cellX < GameConstants.FOG_GRID_WIDTH; cellX++) {
+                int index = cellY * GameConstants.FOG_GRID_WIDTH + cellX;
+                boolean revealed = index < fogRevealed.length && fogRevealed[index];
+                fogPixmap.drawPixel(cellX, pixmapY, revealed ? 0x00000000 : 0x000000FF);
+            }
+        }
+        fogTexture.draw(fogPixmap, 0, 0);
+    }
+
+    /**
+     * Одна текстурированная плашка на всю карту вместо сетки отдельных
+     * прямоугольников (как было раньше) — сама сетка (fogRevealed) всё
+     * та же грубая FOG_GRID_WIDTH x FOG_GRID_HEIGHT, что и раньше (её
+     * огрубили нарочно ради сетевого трафика, см. GameConstants
+     * .FOG_GRID_CELL_SIZE), но билинейная фильтрация fogTexture (см.
+     * конструктор) сама сглаживает переход между соседними клетками при
+     * растяжении на MAP_WIDTH x MAP_HEIGHT — край тумана выглядит мягким,
+     * а не рублеными прямоугольниками, притом без единого лишнего байта
+     * по сети: меняется только СПОСОБ отрисовки уже полученных данных.
+     * Ничего не рисует, пока не пришёл первый снапшот (fogRevealed ==
+     * null) — до этого момента карта просто не видна вместо ложного "всё
+     * в тумане".
      */
     private void drawFogOfWar() {
         if (fogRevealed == null) {
@@ -1053,21 +1116,16 @@ public class GameScreen extends InputAdapter implements Screen {
 
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(FOG_COLOR);
-        for (int cellY = 0; cellY < GameConstants.FOG_GRID_HEIGHT; cellY++) {
-            for (int cellX = 0; cellX < GameConstants.FOG_GRID_WIDTH; cellX++) {
-                int index = cellY * GameConstants.FOG_GRID_WIDTH + cellX;
-                if (index >= fogRevealed.length || !fogRevealed[index]) {
-                    shapeRenderer.rect(
-                            cellX * GameConstants.FOG_GRID_CELL_SIZE,
-                            cellY * GameConstants.FOG_GRID_CELL_SIZE,
-                            GameConstants.FOG_GRID_CELL_SIZE,
-                            GameConstants.FOG_GRID_CELL_SIZE);
-                }
-            }
-        }
-        shapeRenderer.end();
+        spriteBatch.begin();
+        spriteBatch.setColor(FOG_COLOR.r, FOG_COLOR.g, FOG_COLOR.b, FOG_COLOR.a);
+        spriteBatch.draw(fogTexture, 0f, 0f, GameConstants.MAP_WIDTH, GameConstants.MAP_HEIGHT);
+        // Сбрасываем тинт сразу же — иначе он "утёк" бы в следующий кадр
+        // spriteBatch, например в drawResourcePanel/drawCenteredText,
+        // которые сами не переустанавливают spriteBatch.setColor и
+        // рассчитывают на белый (непрозрачный, без тонировки) цвет по
+        // умолчанию.
+        spriteBatch.setColor(Color.WHITE);
+        spriteBatch.end();
         Gdx.gl.glDisable(GL20.GL_BLEND);
     }
 
@@ -1822,5 +1880,7 @@ public class GameScreen extends InputAdapter implements Screen {
         font.dispose();
         uiFont.dispose();
         client.dispose();
+        fogTexture.dispose();
+        fogPixmap.dispose();
     }
 }
