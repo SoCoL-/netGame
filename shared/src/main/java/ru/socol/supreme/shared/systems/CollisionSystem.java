@@ -49,6 +49,19 @@ import java.util.Map;
  * сосед, и они отталкивались бы от неё, как от препятствия — юнит на
  * земле физически "сталкивался" бы с самолётом, летящим поверх него.
  *
+ * Family также исключает BuildingComponent — нужно из-за TURRET
+ * (GameServer.spawnBuilding): это единственное здание с DirectionComponent
+ * (нужен ей для боевых Family AggroSystem/CombatSystem/TurretAimSystem,
+ * см. их javadoc), но сама она, в отличие от юнита, двигаться не должна
+ * вообще никогда — без этого исключения соседний юнит, коснувшийся её
+ * границы, "расталкивался" бы с ней как с юнитом (pushApartFromUnit ниже)
+ * и она бы поехала прочь от собственного места постройки. Как ЦЕЛЬ
+ * выталкивания других юнитов из своего прямоугольника (pushOutOfRect,
+ * см. update()/processEntity ниже — обе ветки проверяют BUILDING.has()
+ * раньше DirectionComponent) она по-прежнему участвует наравне со всеми
+ * остальными зданиями — исключение только для роли "кого толкают", не
+ * "от кого отталкиваются".
+ *
  * Приоритет 20 — после MovementSystem (10): корректирует уже случившееся
  * за этот тик перемещение, а не решает, куда юнит хочет идти (этим
  * занимаются AggroSystem/CombatSystem/Pathfinding, отдельно от коллизий).
@@ -83,7 +96,7 @@ public class CollisionSystem extends IteratingSystem {
 
     public CollisionSystem(Map<Integer, Entity> unitsById, SpatialHashGrid grid) {
         super(Family.all(PositionComponent.class, DirectionComponent.class)
-                .exclude(AircraftComponent.class).get(), 20);
+                .exclude(AircraftComponent.class, BuildingComponent.class).get(), 20);
         this.unitsById = unitsById;
         this.grid = grid;
     }

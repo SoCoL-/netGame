@@ -155,6 +155,10 @@ public final class UnitDefinitions {
         definitions.put(UnitType.BUILDER, new UnitDefinition(UnitType.BUILDER, 240f, 65, 4f, 1, 70f, 100, 150, 10f, 210f, 360f, 0f, false, 0f));
         definitions.put(UnitType.SCOUT, new UnitDefinition(UnitType.SCOUT, 240f, 65, 4f, 4, 100f, 150, 200, 10f, 0f, 300f, 100f, false, 45f));
         definitions.put(UnitType.ATTACK_AIRCRAFT, new UnitDefinition(UnitType.ATTACK_AIRCRAFT, 180f, 100, 4f, 4, 100f, 100, 800, 12f, 0f, 360f, 20f, true, 55f));
+        // Только damage/fireRate/attackRadius тут реально используются
+        // (CombatSystem/AggroSystem) — остальные поля для турели ничего не
+        // значат, см. javadoc UnitType.TURRET, почему.
+        definitions.put(UnitType.TURRET, new UnitDefinition(UnitType.TURRET, 0f, 0, 1f, 4, 200f, 0, 0, 0f, 0f, 0f, 0f, false, 0f));
         return definitions;
     }
 }

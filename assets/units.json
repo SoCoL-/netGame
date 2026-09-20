@@ -78,5 +78,21 @@
     "turnRadius": 20,
     "canHover": true,
     "firingArcDegrees": 55
+  },
+  {
+    "type": "TURRET",
+    "speed": 0,
+    "health": 0,
+    "fireRate": 1,
+    "damage": 4,
+    "attackRadius": 200,
+    "ironCost": 0,
+    "electricityCost": 0,
+    "buildTime": 0,
+    "buildRadius": 0,
+    "sightRadius": 0,
+    "turnRadius": 0,
+    "canHover": false,
+    "firingArcDegrees": 0
   }
 ]

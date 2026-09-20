@@ -281,6 +281,16 @@ public final class BuildingDefinitions {
         aircraftFactory.electricityCost = 1000;
         definitions.put(BuildingType.AIRCRAFT_FACTORY, aircraftFactory);
 
+        BuildingDefinition turret = new BuildingDefinition();
+        turret.type = BuildingType.TURRET;
+        turret.sightRadius = 200f; // задано отдельно от остальных зданий (у них 420) — обзор именно этого типа
+        turret.halfWidth = 25f;
+        turret.halfHeight = 25f;
+        turret.maxHealth = 50;
+        turret.buildTime = 10f;
+        turret.ironCost = 100;
+        definitions.put(BuildingType.TURRET, turret);
+
         return definitions;
     }
 }

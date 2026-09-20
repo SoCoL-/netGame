@@ -351,13 +351,16 @@ public class GameServer {
      * Единая точка создания ЛЮБОГО здания — все свойства (размер, здоровье,
      * время постройки, что производит/добывает) решает BuildingDefinitions
      * по type, а не параметры этой функции. Если buildTimeFor(type) > 0
-     * (сейчас — только шахта и электростанция) здание появляется ещё
-     * строящимся, с ConstructionComponent — ConstructionSystem сама
-     * доведёт его до рабочего состояния. Иначе (дом, казарма) — сразу
-     * готовым, с ProductionComponent, если это здание производит юнитов.
-     * Регистрирует здание как препятствие для A* (Pathfinding
-     * .addBuildingObstacle) сразу, ещё до завершения стройки — см. её
-     * javadoc, почему это верно и для строящихся зданий тоже.
+     * (сейчас — шахта, электростанция, казарма, авиазавод и турель)
+     * здание появляется ещё строящимся, с ConstructionComponent —
+     * ConstructionSystem сама доведёт его до рабочего состояния. Иначе
+     * (дом) — сразу готовым, с ProductionComponent, если это здание
+     * производит юнитов. Регистрирует здание как препятствие для A*
+     * (Pathfinding.addBuildingObstacle) сразу, ещё до завершения стройки
+     * — см. её javadoc, почему это верно и для строящихся зданий тоже.
+     * TURRET — единственный тип, для которого ниже дополнительно
+     * добавляются DirectionComponent/TurretComponent/UnitTypeComponent —
+     * см. комментарий прямо перед этой веткой, почему.
      * Возвращает unitId созданного здания.
      */
     private int spawnBuilding(int playerId, BuildingType type, float x, float y) {
@@ -387,10 +390,46 @@ public class GameServer {
         BuildingComponent buildingMarker = engine.createComponent(BuildingComponent.class);
         buildingMarker.type = type;
 
-        // Намеренно без DirectionComponent — здание неподвижно, и этого
+        // Обычно без DirectionComponent — здание неподвижно, и этого
         // достаточно, чтобы MovementSystem и (как атакующего) CombatSystem
         // автоматически его игнорировали за счёт своих Family-фильтров.
+        // Единственное исключение — TURRET чуть ниже: единственное здание,
+        // которое умеет атаковать.
         building.add(position).add(unitComponent).add(owner).add(health).add(buildingMarker);
+
+        if (type == BuildingType.TURRET) {
+            // Сознательно нарушаем инвариант из комментария выше: турели
+            // нужны те же компоненты, что и наземному юниту, чтобы её
+            // подхватили те же generic-системы боя — AggroSystem
+            // (автоагрессия по ближайшему врагу), CombatSystem (сама
+            // стрельба), TurretAimSystem (доворот пушки на цель), — вместо
+            // того чтобы писать для здания-стрелка отдельную копию всей
+            // этой логики. AggroSystem дополнительно исключает
+            // ConstructionComponent из своей Family — недостроенная турель
+            // не должна стрелять, как и не работает недостроенная шахта.
+            // CollisionSystem и BuildingPlacement её с юнитом не путают —
+            // обе явно проверяют BuildingComponent раньше DirectionComponent
+            // (см. их javadoc), так что коллизии её саму не толкают, а
+            // размещение других построек видит в ней здание, не юнита.
+            //
+            // speed = 0 — турель никогда не двигается. Даже если CombatSystem
+            // погонится за отступившим за дальность атаки врагом
+            // (Pathfinding.setDestination выставит moving = true), MovementSystem
+            // всё равно не сдвинет её ни на пиксель — умножение смещения на
+            // speed = 0 всегда даёт 0.
+            //
+            // Урон/дальность атаки/скорострельность — из UnitDefinitions по
+            // отдельному UnitType.TURRET (units.json), не из
+            // BuildingDefinition — там таких полей нет: здание и боевая
+            // роль остаются двумя независимыми "половинами" одной сущности.
+            DirectionComponent turretDirection = engine.createComponent(DirectionComponent.class);
+            turretDirection.speed = 0f;
+            building.add(turretDirection);
+            building.add(engine.createComponent(TurretComponent.class));
+            UnitTypeComponent turretUnitType = engine.createComponent(UnitTypeComponent.class);
+            turretUnitType.type = UnitType.TURRET;
+            building.add(turretUnitType);
+        }
 
         if (buildTime > 0f) {
             ConstructionComponent construction = engine.createComponent(ConstructionComponent.class);

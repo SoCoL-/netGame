@@ -14,5 +14,6 @@ public enum BuildingType {
     POWER_PLANT,
     IRON_STORAGE,
     ELECTRICITY_STORAGE,
-    AIRCRAFT_FACTORY
+    AIRCRAFT_FACTORY,
+    TURRET
 }

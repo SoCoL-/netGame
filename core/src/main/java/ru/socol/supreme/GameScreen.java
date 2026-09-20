@@ -206,6 +206,7 @@ public class GameScreen extends InputAdapter implements Screen {
             BuildingType.IRON_STORAGE,
             BuildingType.ELECTRICITY_STORAGE,
             BuildingType.AIRCRAFT_FACTORY,
+            BuildingType.TURRET,
     };
     // Пустой массив вместо null — для ещё строящегося (или непроизводящего)
     // здания, см. drawBuildingInfoPanel/touchDown.
@@ -228,8 +229,14 @@ public class GameScreen extends InputAdapter implements Screen {
 
     // Ряд кнопок действия — очередь производства ИЛИ кнопки построек
     // (никогда не оба сразу, зависит от того, что выделено), поэтому одна
-    // общая геометрия на оба случая, не две раздельные.
-    private static final float ACTION_BUTTON_WIDTH = 140f;
+    // общая геометрия на оба случая, не две раздельные. Ширина подобрана
+    // так, чтобы даже самый длинный ряд (BUILDABLE_TYPES, сейчас 7 кнопок
+    // с турелью) укладывался в HUD_WIDTH от ACTION_BUTTON_X — иначе
+    // последняя кнопка рисовалась бы за пределами вьюпорта HUD-камеры
+    // (hudCamera.setToOrtho, HUD_WIDTH — это вся ширина экрана в
+    // HUD-координатах, не просто ширина панели) и была бы невидима и
+    // некликабельна.
+    private static final float ACTION_BUTTON_WIDTH = 135f;
     private static final float ACTION_BUTTON_HEIGHT = 42f;
     private static final float ACTION_BUTTON_GAP = 8f;
     private static final float ACTION_BUTTON_X = PANEL_X + 15f;
@@ -898,6 +905,8 @@ public class GameScreen extends InputAdapter implements Screen {
                 return "Electricity Storage";
             case AIRCRAFT_FACTORY:
                 return "Aircraft Factory";
+            case TURRET:
+                return "Turret";
             default:
                 return "";
         }

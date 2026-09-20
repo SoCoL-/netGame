@@ -10,6 +10,7 @@ import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.BuildOrderComponent;
+import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -50,9 +51,18 @@ import java.util.Map;
  *
  * Family намеренно ИСКЛЮЧАЕТ AttackComponent — уже атакующие юниты цель не
  * пересматривают каждый тик, этим занимается только CombatSystem. Здания
- * тоже автоматически не участвуют: у них нет DirectionComponent, а он
+ * автоматически не участвуют: у них нет DirectionComponent, а он
  * обязателен для этой Family (как и для CombatSystem-атакующего) — что
- * само по себе логично, здание сражаться не умеет.
+ * само по себе логично, здание сражаться не умеет. Единственное
+ * исключение — TURRET (см. GameServer.spawnBuilding): она сознательно
+ * получает DirectionComponent/TurretComponent/UnitTypeComponent именно
+ * затем, чтобы её подхватила эта же система, как обычного наземного
+ * юнита. Family дополнительно исключает ConstructionComponent — иначе
+ * недостроенная турель начинала бы стрелять раньше, чем достроится, чего
+ * не делает вообще ни одно другое здание (шахта не добывает, казарма не
+ * производит, пока строится) — для всех остальных типов сущностей этот
+ * фильтр ничего не меняет, у них ConstructionComponent с DirectionComponent
+ * никогда не сочетаются.
  *
  * Приоритет -10 — раньше CombatSystem (0) и MovementSystem (10), чтобы
  * свежедобавленный в этот тик AttackComponent сразу подхватила CombatSystem
@@ -78,7 +88,7 @@ public class AggroSystem extends IteratingSystem {
 
     public AggroSystem(Map<Integer, Entity> unitsById, SpatialHashGrid grid) {
         super(Family.all(PositionComponent.class, OwnerComponent.class, DirectionComponent.class)
-                .exclude(AttackComponent.class).get(), -10);
+                .exclude(AttackComponent.class, ConstructionComponent.class).get(), -10);
         this.unitsById = unitsById;
         this.grid = grid;
     }

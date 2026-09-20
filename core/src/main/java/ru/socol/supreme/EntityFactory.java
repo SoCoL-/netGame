@@ -181,6 +181,21 @@ public class EntityFactory {
             BuildingType type = BuildingType.values()[snapshot.buildingType];
             entity.add(new BuildingComponent(type));
             addBuildingBehaviorComponent(entity, type, snapshot);
+
+            // Только у турели среди зданий есть башня, доворачивающаяся на
+            // цель (сервер шлёт её угол в snapshot.turretDirX/Y для любой
+            // сущности со своим TurretComponent — юнит она или здание, ему
+            // всё равно, см. GameServer.broadcastSnapshot) — остальным
+            // зданиям TurretDisplayComponent не нужен, RenderSystem.drawBuilding
+            // его и не читает. Обновление угла на уже созданной сущности
+            // ниже в applySnapshot уже общее для юнитов и зданий, отдельного
+            // кода для зданий там дописывать не пришлось.
+            if (type == BuildingType.TURRET) {
+                TurretDisplayComponent turretDisplay = new TurretDisplayComponent();
+                turretDisplay.dirX = snapshot.turretDirX;
+                turretDisplay.dirY = snapshot.turretDirY;
+                entity.add(turretDisplay);
+            }
         } else {
             UnitType type = UnitType.values()[snapshot.unitType];
             entity.add(new UnitTypeComponent(type));

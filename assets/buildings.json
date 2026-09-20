@@ -85,5 +85,14 @@
     "ironCost": 200,
     "electricityCost": 1000,
     "sightRadius": 420
+  },
+  {
+    "type": "TURRET",
+    "halfWidth": 25,
+    "halfHeight": 25,
+    "maxHealth": 50,
+    "buildTime": 10,
+    "ironCost": 100,
+    "sightRadius": 200
   }
 ]

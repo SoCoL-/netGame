@@ -42,6 +42,13 @@ import ru.socol.supreme.shared.components.UnitTypeComponent;
  * всех — полоска здоровья над ними и (для выделенных юнитов) кольцо
  * подсветки. Приоритет 10 — выполняется после InterpolationSystem
  * (приоритет 0), чтобы рисовать уже посчитанную на этот кадр позицию.
+ *
+ * TURRET (турель) — единственное исключение из "здание = прямоугольник":
+ * готовая турель рисуется drawTurretBuilding — ромб (drawDiamond) вместо
+ * прямоугольника плюс доворачивающаяся башня-треугольник поверх, той же
+ * механикой (TurretDisplayComponent/TURRET_COLOR/drawHeadingTriangleMarker),
+ * что и у наземной техники. Пока строится — обычный вид "стройки", как у
+ * любого здания, см. её же диспетчеризацию в processEntity.
  */
 public class RenderSystem extends IteratingSystem {
 
@@ -217,7 +224,19 @@ public class RenderSystem extends IteratingSystem {
         }
 
         if (BUILDING.has(entity)) {
-            drawBuilding(entity, position, owner, health);
+            BuildingComponent buildingComponent = BUILDING.get(entity);
+            // Турель — единственное здание с собственным силуэтом (ромб +
+            // доворачивающаяся башня, как у наземной техники), пока она
+            // готова. Под стройкой она выглядит как любое другое здание —
+            // тускло-серый квадрат с прогресс-баром (drawBuilding сама
+            // рисует его до switch по типу, см. её javadoc), отдельный вид
+            // "строящейся турели" не нужен, ромб/башня появляются сразу,
+            // как только CONSTRUCTION.get(entity) == null.
+            if (buildingComponent.type == BuildingType.TURRET && CONSTRUCTION.get(entity) == null) {
+                drawTurretBuilding(entity, position, owner, health);
+            } else {
+                drawBuilding(entity, position, owner, health);
+            }
             return;
         }
 
@@ -339,6 +358,47 @@ public class RenderSystem extends IteratingSystem {
 
         shapeRenderer.triangle(frontLeftX, frontLeftY, frontRightX, frontRightY, rearRightX, rearRightY);
         shapeRenderer.triangle(frontLeftX, frontLeftY, rearRightX, rearRightY, rearLeftX, rearLeftY);
+    }
+
+    /**
+     * Готовая (не строящаяся, см. вызывающий код в processEntity) турель —
+     * корпус-ромб (drawDiamond) в playerColor вместо прямоугольника
+     * обычного здания, и поверх него та же доворачивающаяся
+     * башня-треугольник, что и у наземной техники (drawGroundVehicle) —
+     * тот же TurretDisplayComponent/TURRET_COLOR/drawHeadingTriangleMarker,
+     * сервер шлёт угол одинаково для обоих случаев (см. javadoc
+     * TurretComponent — компонент общий, не завязан на юнит/здание).
+     * Полоска здоровья — как у обычного здания (по halfWidth/halfHeight),
+     * не как у юнита: у турели, в отличие от наземного юнита, размер не
+     * фиксированный UNIT_RADIUS, а свой, из BuildingDefinitions.
+     */
+    private void drawTurretBuilding(Entity entity, PositionComponent position, OwnerComponent owner, HealthComponent health) {
+        float halfWidth = BuildingSizes.halfWidth(entity);
+        float halfHeight = BuildingSizes.halfHeight(entity);
+
+        setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
+        drawDiamond(position.position.x, position.position.y, halfWidth, halfHeight);
+
+        TurretDisplayComponent turretDisplay = TURRET_DISPLAY.get(entity);
+        float turretDx = turretDisplay != null ? turretDisplay.dirX : 0f;
+        float turretDy = turretDisplay != null ? turretDisplay.dirY : 0f;
+        drawHeadingTriangleMarker(position, turretDx, turretDy, TURRET_COLOR,
+                TURRET_BARREL_LENGTH, TURRET_REAR_LENGTH, TURRET_HALF_WIDTH);
+
+        drawHealthBar(position, health, halfHeight + BUILDING_HEALTH_BAR_Y_MARGIN, halfWidth * 2f);
+    }
+
+    /**
+     * Ромб с центром (cx, cy) — вершины на halfWidth/halfHeight от центра
+     * по осям (не повёрнутый квадрат в честном смысле, а "спрайт-ромб":
+     * ширина и высота задаются раздельно, как у прямоугольника обычного
+     * здания, только углы по осям, а не по сторонам). Турель никогда не
+     * двигается (см. GameServer.spawnBuilding), поворачивать сам ромб не
+     * нужно — в отличие от drawRotatedRect у наземной техники.
+     */
+    private void drawDiamond(float cx, float cy, float halfWidth, float halfHeight) {
+        shapeRenderer.triangle(cx, cy + halfHeight, cx + halfWidth, cy, cx, cy - halfHeight);
+        shapeRenderer.triangle(cx, cy + halfHeight, cx - halfWidth, cy, cx, cy - halfHeight);
     }
 
     private void drawBuilding(Entity entity, PositionComponent position, OwnerComponent owner, HealthComponent health) {
