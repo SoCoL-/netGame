@@ -150,21 +150,28 @@ public class GameClient implements Disposable {
         client.sendTCP(request);
     }
 
-    /** builderUnitIds — строители, выделенные в момент подтверждения, автоматически пойдут строить это здание (см. javadoc PlaceIronMineRequest.builderUnitIds). */
-    public void requestPlaceIronMine(int depositIndex, int[] builderUnitIds) {
+    /**
+     * builderUnitIds — строители, выделенные в момент подтверждения,
+     * автоматически пойдут строить это здание (см. javadoc
+     * PlaceIronMineRequest.builderUnitIds). queue — shift-клик при
+     * подтверждении размещения (см. javadoc PlaceIronMineRequest.queue).
+     */
+    public void requestPlaceIronMine(int depositIndex, int[] builderUnitIds, boolean queue) {
         PlaceIronMineRequest request = new PlaceIronMineRequest();
         request.depositIndex = depositIndex;
         request.builderUnitIds = builderUnitIds;
+        request.queue = queue;
         client.sendTCP(request);
     }
 
-    /** Для любого свободно размещаемого здания — сейчас казарма стрелков и электростанция (не дом, не шахта — у неё отдельный requestPlaceIronMine). builderUnitIds — см. её же javadoc. */
-    public void requestPlaceBuilding(BuildingType type, float x, float y, int[] builderUnitIds) {
+    /** Для любого свободно размещаемого здания — сейчас казарма стрелков и электростанция (не дом, не шахта — у неё отдельный requestPlaceIronMine). builderUnitIds/queue — см. их же javadoc в PlaceBuildingRequest. */
+    public void requestPlaceBuilding(BuildingType type, float x, float y, int[] builderUnitIds, boolean queue) {
         PlaceBuildingRequest request = new PlaceBuildingRequest();
         request.buildingType = type.ordinal();
         request.x = x;
         request.y = y;
         request.builderUnitIds = builderUnitIds;
+        request.queue = queue;
         client.sendTCP(request);
     }
 

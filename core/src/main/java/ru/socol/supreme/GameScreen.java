@@ -1583,11 +1583,18 @@ public class GameScreen extends InputAdapter implements Screen {
                 // строить то, что вот-вот появится — см. javadoc
                 // PlaceIronMineRequest.builderUnitIds, почему список едет
                 // прямо с этой заявкой, а не отдельным запросом следом.
+                // queue — тот же shift-модификатор, что и у обычного
+                // приказа на стройку (см. touchDown ниже и javadoc
+                // PlaceIronMineRequest.queue): без него строители,
+                // занятые чем-то другим, немедленно бросают это и едут
+                // строить новое здание, с ним — приказ просто встаёт в
+                // конец их очереди.
                 int[] builderUnitIds = toIntArray(selectedUnitIds);
+                boolean queue = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
                 if (placingBuildingType == BuildingType.IRON_MINE) {
-                    client.requestPlaceIronMine(ironMineSnapDepositIndex, builderUnitIds);
+                    client.requestPlaceIronMine(ironMineSnapDepositIndex, builderUnitIds, queue);
                 } else {
-                    client.requestPlaceBuilding(placingBuildingType, buildGhostX, buildGhostY, builderUnitIds);
+                    client.requestPlaceBuilding(placingBuildingType, buildGhostX, buildGhostY, builderUnitIds, queue);
                 }
                 placingBuildingType = null;
             }

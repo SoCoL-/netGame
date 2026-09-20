@@ -72,6 +72,16 @@ public class RenderSystem extends IteratingSystem {
     private static final Color ARCHER_MARKER_COLOR = Color.WHITE;
     private static final float ARCHER_MARKER_RADIUS = GameConstants.UNIT_RADIUS * 0.4f;
     private static final Color BUILDER_MARKER_COLOR = Color.LIGHT_GRAY; // тот же цвет, что у "стройки" (UNDER_CONSTRUCTION_COLOR) — тематическая связь
+
+    /**
+     * Цвет башни наземной техники (drawGroundVehicle) — намеренно НЕ
+     * playerColor, а один фиксированный тёмно-серый на всех игроков:
+     * иначе башня, будучи того же цвета, что и корпус, визуально
+     * сливалась бы с ним в один силуэт и доворот башни на цель было бы
+     * трудно заметить на глаз. Корпус (drawRotatedRect) по-прежнему
+     * красится в playerColor — по нему различают, чей юнит.
+     */
+    private static final Color TURRET_COLOR = Color.DARK_GRAY;
     private static final float BUILDER_MARKER_HALF_SIZE = GameConstants.UNIT_RADIUS * 0.35f;
     // Вся авиация — единственные юниты с настоящим курсом (см.
     // AircraftMovementSystem), поэтому метка не просто цветная точка, а
@@ -263,8 +273,11 @@ public class RenderSystem extends IteratingSystem {
      * него, повёрнутая по TurretDisplayComponent — доворачивается на
      * цель атаки независимо от корпуса, TurretAimSystem считает это на
      * сервере (см. её javadoc и TurretComponent), клиент только
-     * отображает уже готовый угол. Вершина треугольника — дуло, откуда
-     * визуально вылетает снаряд (см. GameScreen.onProjectileFired).
+     * отображает уже готовый угол. Башня рисуется фиксированным
+     * тёмно-серым (TURRET_COLOR), а не playerColor, как корпус — чтобы
+     * их было видно раздельно, а не одним слитным силуэтом. Вершина
+     * треугольника — дуло, откуда визуально вылетает снаряд (см.
+     * GameScreen.onProjectileFired).
      * Маленькая метка типа (белая точка у стрелка, серый квадратик у
      * строителя — как и раньше) рисуется на корпусе ПОД башней, у воина
      * по-прежнему нет отдельной метки.
@@ -299,7 +312,7 @@ public class RenderSystem extends IteratingSystem {
             turretDx = hullDx;
             turretDy = hullDy;
         }
-        drawHeadingTriangleMarker(position, turretDx, turretDy, playerColor,
+        drawHeadingTriangleMarker(position, turretDx, turretDy, TURRET_COLOR,
                 TURRET_BARREL_LENGTH, TURRET_REAR_LENGTH, TURRET_HALF_WIDTH);
     }
 

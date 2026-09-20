@@ -18,11 +18,18 @@ package ru.socol.supreme.shared.network.messages;
  * создании) — поэтому список строителей едет вместе с заявкой на
  * размещение, а не отдельным BuildOrderRequest следом: назначение
  * происходит на сервере сразу после spawnBuilding, когда id уже известен.
+ *
+ * queue — тот же shift-модификатор, что и у BuildOrderRequest.queue:
+ * без него назначение строителям этого здания немедленно прерывает то,
+ * чем они занимались (в том числе стройку другого здания); с ним —
+ * добавляется в конец их очереди приказов, см.
+ * GameServer.assignBuildersToNewBuilding.
  */
 public class PlaceIronMineRequest {
 
     public int depositIndex;
     public int[] builderUnitIds;
+    public boolean queue;
 
     public PlaceIronMineRequest() {
     }

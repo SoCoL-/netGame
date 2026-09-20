@@ -578,7 +578,7 @@ public class GameServer {
 
         float[] deposit = GameConstants.IRON_DEPOSITS[request.depositIndex];
         int minedBuildingUnitId = spawnBuilding(playerId, BuildingType.IRON_MINE, deposit[0], deposit[1]);
-        assignBuildersToNewBuilding(playerId, minedBuildingUnitId, request.builderUnitIds);
+        assignBuildersToNewBuilding(playerId, minedBuildingUnitId, request.builderUnitIds, request.queue);
     }
 
     /**
@@ -615,7 +615,7 @@ public class GameServer {
         }
 
         int newBuildingUnitId = spawnBuilding(playerId, type, request.x, request.y);
-        assignBuildersToNewBuilding(playerId, newBuildingUnitId, request.builderUnitIds);
+        assignBuildersToNewBuilding(playerId, newBuildingUnitId, request.builderUnitIds, request.queue);
     }
 
     /** Занято ли месторождение — ищем среди unitsById здание добычи (строящееся или уже готовое) точно в этой точке. */
@@ -914,15 +914,49 @@ public class GameServer {
      * Автоматически отправляет строить только что поставленное здание
      * всех строителей, что были выделены в момент подтверждения его
      * размещения (см. PlaceIronMineRequest.builderUnitIds) — по одному
-     * assignBuilderToBuild на каждого, та же проверка владения/типа, что
-     * и у ручного приказа, так что чужой или невалидный id в массиве
-     * просто молча пропускается, не ломая ничего.
+     * assignBuilderToBuild (или enqueueOrder, если queue=true) на
+     * каждого, та же проверка владения/типа, что и у ручного приказа, так
+     * что чужой или невалидный id в массиве просто молча пропускается, не
+     * ломая ничего.
+     *
+     * queue — тот же shift-модификатор, что и у BuildOrderRequest.queue
+     * (см. handleBuildOrder): без него приказ немедленный и заменяет всё,
+     * чем строитель занимался (в том числе стройку другого здания) — то
+     * же самое clearOrderQueue + assignBuilderToBuild, что и там; с ним
+     * приказ просто добавляется в конец очереди строителя через
+     * enqueueOrder, а не выполняется сразу — полная проверка (владение,
+     * тип юнита, состояние здания-цели) в этом случае откладывается до
+     * момента, когда OrderQueueSystem реально возьмёт этот приказ из
+     * очереди и вызовет assignBuilderToBuild сама, тем же путём, что и
+     * очередь BUILD-приказов из handleBuildOrder — здесь достаточно
+     * проверить только владение строителем, чтобы не поставить приказ в
+     * чужую очередь.
      */
-    private void assignBuildersToNewBuilding(int playerId, int newBuildingUnitId, int[] builderUnitIds) {
+    private void assignBuildersToNewBuilding(int playerId, int newBuildingUnitId, int[] builderUnitIds, boolean queue) {
         if (builderUnitIds == null) {
             return;
         }
         for (int builderUnitId : builderUnitIds) {
+            if (queue) {
+                Entity builder = unitsById.get(builderUnitId);
+                if (builder == null) {
+                    continue;
+                }
+                OwnerComponent owner = builder.getComponent(OwnerComponent.class);
+                if (owner == null || owner.playerId != playerId) {
+                    continue; // не ваш юнит
+                }
+                QueuedOrder order = new QueuedOrder();
+                order.type = QueuedOrder.Type.BUILD;
+                order.targetBuildingUnitId = newBuildingUnitId;
+                enqueueOrder(builder, order);
+                continue;
+            }
+
+            Entity builder = unitsById.get(builderUnitId);
+            if (builder != null) {
+                clearOrderQueue(builder);
+            }
             assignBuilderToBuild(playerId, builderUnitId, newBuildingUnitId);
         }
     }

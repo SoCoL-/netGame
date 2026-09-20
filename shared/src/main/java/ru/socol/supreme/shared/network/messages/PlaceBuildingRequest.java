@@ -13,6 +13,10 @@ package ru.socol.supreme.shared.network.messages;
  * builderUnitIds — см. её же смысл в PlaceIronMineRequest: строители,
  * выделенные в момент подтверждения размещения, автоматически получат
  * приказ строить только что поставленное здание.
+ *
+ * queue — см. её же смысл в PlaceIronMineRequest: shift-модификатор,
+ * добавляющий приказ в очередь строителей вместо немедленного прерывания
+ * того, чем они занимались.
  */
 public class PlaceBuildingRequest {
 
@@ -21,6 +25,7 @@ public class PlaceBuildingRequest {
     public float x;
     public float y;
     public int[] builderUnitIds;
+    public boolean queue;
 
     public PlaceBuildingRequest() {
     }
