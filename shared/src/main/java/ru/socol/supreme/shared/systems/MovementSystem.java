@@ -59,8 +59,27 @@ public class MovementSystem extends IteratingSystem {
         PositionComponent position = POSITION.get(entity);
         float distanceToTarget = position.position.dst(direction.target);
 
-        if (distanceToTarget <= GameConstants.ARRIVE_THRESHOLD) {
-            position.position.set(direction.target);
+        // К промежуточной точке обходного пути (см. javadoc
+        // PATH_WAYPOINT_ARRIVE_THRESHOLD) — более щедрый порог прибытия,
+        // чем к конечной цели: иначе юнит, идущий следом за соседом,
+        // остановившимся ровно в следующей путевой точке, никогда не
+        // "дойдёт" до неё точно (CollisionSystem не подпускает ближе
+        // 2×UNIT_RADIUS) и зависнет навсегда вместо того, чтобы пойти на
+        // следующий отрезок маршрута.
+        PathComponent path = PATH.get(entity);
+        boolean intermediateWaypoint = path != null && !path.waypoints.isEmpty();
+        float arriveThreshold = intermediateWaypoint
+                ? GameConstants.PATH_WAYPOINT_ARRIVE_THRESHOLD
+                : GameConstants.ARRIVE_THRESHOLD;
+
+        if (distanceToTarget <= arriveThreshold) {
+            if (!intermediateWaypoint) {
+                // Только для точного финального прибытия юнит "прилипает"
+                // к точной координате цели — на промежуточной точке этого
+                // делать нельзя: при более широком пороге прибытия это
+                // выглядело бы как рывок юнита в сторону от текущего курса.
+                position.position.set(direction.target);
+            }
             advanceToNextWaypointOrStop(entity, position, direction);
             return;
         }
