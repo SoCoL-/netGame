@@ -383,6 +383,18 @@ public class GameScreen extends InputAdapter implements Screen {
         // это именно на границе).
         fogTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
         fogTexture.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
+        // Критично: по умолчанию у Pixmap стоит Blending.SourceOver, и
+        // drawPixel(...) не перезаписывает пиксель, а альфа-смешивает его
+        // со старым значением. Для прозрачного цвета (alpha=0, которым
+        // updateFogTexture помечает просвеченные клетки) SourceOver — это
+        // no-op: 0 + old*(1-0) = old, то есть старое значение остаётся
+        // как было. В итоге клетка, которая хоть раз была затянута
+        // туманом (alpha=1), никогда не смогла бы снова стать прозрачной
+        // — новая территория при движении юнита просто не открывалась
+        // бы (а обратно закрывать туманом работало бы, потому что
+        // alpha=1 при SourceOver всегда просто перезаписывает). None —
+        // обычная прямая перезапись пикселя, без смешивания.
+        fogPixmap.setBlending(Pixmap.Blending.None);
 
         engine.addSystem(new InterpolationSystem());
         engine.addSystem(renderSystem);
