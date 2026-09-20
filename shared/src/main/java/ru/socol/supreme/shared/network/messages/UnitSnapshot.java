@@ -13,6 +13,19 @@ public class UnitSnapshot {
     public float dirX;
     public float dirY;
     public boolean moving;
+
+    /**
+     * Актуально только для наземного юнита (building=false, есть
+     * TurretComponent на сервере) — направление, куда сейчас наведена
+     * его башня (единичный вектор, то же соглашение, что и у dirX/dirY
+     * для корпуса). (0, 0) у зданий и авиации — там башни нет вовсе (см.
+     * javadoc TurretComponent), клиент туда и не смотрит для них.
+     * Клиент рисует по этому вектору треугольник башни отдельно от
+     * прямоугольного корпуса (RenderSystem) и по нему же смещает точку
+     * вылета визуального снаряда (GameScreen.onProjectileFired).
+     */
+    public float turretDirX;
+    public float turretDirY;
     public int health;
     public int maxHealth;
     public boolean building;

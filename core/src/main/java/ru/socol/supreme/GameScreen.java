@@ -252,6 +252,22 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float ARROW_SPEED = 600f; // world units в секунду
     private static final Color ARROW_COLOR = Color.WHITE;
     private static final float ARROW_VISUAL_LENGTH = 8f; // половина длины отрезка, изображающего стрелу
+    // Смещение точки вылета вдоль линии огня (см. onProjectileFired) — у
+    // наземной техники снаряд должен визуально вылетать из дула башни
+    // (см. RenderSystem.TURRET_BARREL_LENGTH — то же число, но
+    // недоступно отсюда напрямую, поэтому продублировано как отдельная
+    // константа, не общий метод/поле ради одного числа), а не из самого
+    // центра юнита. ProjectileFiredEvent не знает угол башни в момент
+    // выстрела (это чисто клиентский TurretDisplayComponent, сервер его
+    // отдельно не шлёт с событием) — используем направление на цель,
+    // ровно ту же линию, куда башня должна быть наведена в момент
+    // выстрела (наземным ориентация для самой атаки не важна, см.
+    // javadoc CombatSystem, но башня к этому моменту в подавляющем
+    // большинстве случаев уже довёрнута, см. TurretAimSystem). Для
+    // авиации то же смещение просто отодвигает точку вылета чуть вперёд
+    // от центра — тоже уместно, у неё оружие тоже не в самом центре
+    // корпуса.
+    private static final float ARROW_MUZZLE_OFFSET = GameConstants.UNIT_RADIUS * 1.6f;
 
     private final Engine engine = new Engine();
     private final ShapeRenderer shapeRenderer = new ShapeRenderer();
@@ -467,8 +483,23 @@ public class GameScreen extends InputAdapter implements Screen {
             public void onProjectileFired(ProjectileFiredEvent event) {
                 // received() приходит из сетевого потока KryoNet — переносим
                 // изменение activeArrows (читается в render()) в поток рендера.
-                Gdx.app.postRunnable(() ->
-                        activeArrows.add(new ArrowVisual(event.fromX, event.fromY, event.toX, event.toY)));
+                Gdx.app.postRunnable(() -> {
+                    float dx = event.toX - event.fromX;
+                    float dy = event.toY - event.fromY;
+                    float length = (float) Math.sqrt(dx * dx + dy * dy);
+                    float fromX = event.fromX;
+                    float fromY = event.fromY;
+                    if (length > 0.0001f) {
+                        // Не даём смещению "перепрыгнуть" саму цель, если она
+                        // почему-то оказалась ближе ARROW_MUZZLE_OFFSET —
+                        // не должно происходить (attackRadius всегда больше),
+                        // но на всякий случай.
+                        float offset = Math.min(ARROW_MUZZLE_OFFSET, length * 0.5f);
+                        fromX += dx / length * offset;
+                        fromY += dy / length * offset;
+                    }
+                    activeArrows.add(new ArrowVisual(fromX, fromY, event.toX, event.toY));
+                });
             }
 
             @Override
@@ -673,7 +704,6 @@ public class GameScreen extends InputAdapter implements Screen {
 
         drawGround(); // до engine.update() — юниты должны рисоваться поверх земли/воды, а не под ними
         drawIronDeposits(); // тоже до engine.update() — поверх земли, но под юнитами/зданиями
-        drawRallyPoints(); // тоже до engine.update() — под юнитами, не поверх них
 
         // Кроссфейд тактический/стратегический вид (см. strategicFactor) —
         // тактический слой (RenderSystem, внутри engine.update) рисуется с
@@ -696,10 +726,13 @@ public class GameScreen extends InputAdapter implements Screen {
         drawArrows();
         drawBuildBeams();
         drawFogOfWar(); // поверх всего мирового — юнитов, зданий, лучей стройки — но до HUD
-        // После тумана, не до него: это очередь приказов СВОЕГО же
-        // выделенного юнита, включая точки, ведущие в ещё не открытую
-        // туманом территорию — раньше эта часть цепочки рисовалась ДО
-        // тумана и потому пряталась под его серой плашкой.
+        // После тумана, не до него: и точка сбора, и очередь приказов —
+        // это всегда СВОИ же здание/юнит, включая точки, ведущие в ещё не
+        // открытую туманом территорию (можно назначить точку сбора или
+        // приказ движения куда угодно на карте, не только в видимую
+        // область) — раньше обе рисовались ДО тумана и потому частично
+        // прятались под его серой плашкой.
+        drawRallyPoints();
         drawOrderQueue();
         if (debugMode) {
             drawDebugPaths();
@@ -971,8 +1004,9 @@ public class GameScreen extends InputAdapter implements Screen {
      * Точка сбора выделенного здания — пунктирная линия от здания до
      * точки и сама точка (бирюзовый круг), только пока это здание
      * выделено (иначе не показываем вовсе — точки сбора чужих или просто
-     * невыделенных зданий не должны загромождать экран). Рисуется до
-     * engine.update() в render() — под юнитами/зданиями, а не поверх них.
+     * невыделенных зданий не должны загромождать экран). Рисуется после
+     * тумана войны (см. render()) — точка сбора может быть назначена и
+     * за пределами видимой области, туман её скрывать не должен.
      */
     private void drawRallyPoints() {
         if (selectedBuildingId == null) {

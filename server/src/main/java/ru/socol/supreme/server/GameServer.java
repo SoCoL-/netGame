@@ -3,6 +3,7 @@ package ru.socol.supreme.server;
 import com.badlogic.ashley.core.Engine;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.PooledEngine;
+import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Server;
@@ -26,6 +27,7 @@ import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PathComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
+import ru.socol.supreme.shared.components.TurretComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.network.NetworkRegistration;
@@ -61,6 +63,7 @@ import ru.socol.supreme.shared.systems.MovementSystem;
 import ru.socol.supreme.shared.systems.OrderQueueSystem;
 import ru.socol.supreme.shared.systems.ProductionSystem;
 import ru.socol.supreme.shared.systems.ResourceExtractionSystem;
+import ru.socol.supreme.shared.systems.TurretAimSystem;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -177,6 +180,7 @@ public class GameServer {
 
         engine.addSystem(new AggroSystem(unitsById, aggroGrid));
         engine.addSystem(new CombatSystem(unitsById, this::handleShotFired));
+        engine.addSystem(new TurretAimSystem(unitsById));
         engine.addSystem(new BuildSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit));
         engine.addSystem(new ConstructionSystem());
@@ -444,6 +448,11 @@ public class GameServer {
             aircraft.turnRate = direction.speed / turnRadius;
             aircraft.canHover = UnitDefinitions.canHoverFor(type);
             unit.add(aircraft);
+        } else {
+            // Наземный юнит — своя башня, доворачивающаяся на цель отдельно
+            // от корпуса (см. TurretComponent/TurretAimSystem). У авиации
+            // её нет вовсе — орудие жёстко смотрит по курсу.
+            unit.add(engine.createComponent(TurretComponent.class));
         }
 
         engine.addEntity(unit);
@@ -1028,6 +1037,15 @@ public class GameServer {
                 unitSnapshot.dirX = direction.direction.x;
                 unitSnapshot.dirY = direction.direction.y;
                 unitSnapshot.moving = direction.moving;
+            }
+            // Только у наземных юнитов есть TurretComponent (см.
+            // createUnit) — у зданий и авиации остаётся (0, 0), клиент
+            // туда для них и не смотрит (см. javadoc UnitSnapshot
+            // .turretDirX).
+            TurretComponent turret = unit.getComponent(TurretComponent.class);
+            if (turret != null) {
+                unitSnapshot.turretDirX = MathUtils.cos(turret.angleRadians);
+                unitSnapshot.turretDirY = MathUtils.sin(turret.angleRadians);
             }
             unitSnapshot.health = health.currentHealth;
             unitSnapshot.maxHealth = health.maxHealth;

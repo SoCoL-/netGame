@@ -8,6 +8,7 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import ru.socol.supreme.components.SelectedComponent;
+import ru.socol.supreme.components.TurretDisplayComponent;
 import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
@@ -21,20 +22,26 @@ import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 
 /**
- * Рисует каждую сущность: юнит — кружком (у стрелка ещё белая точка
- * внутри, чтобы отличать от воина), здание — прямоугольником нужной
- * формы (дом 2x2 клетки с золотой звездой, казарма стрелков 1x2 с белой
- * "крышечкой", шахта железа 1x1 с ржаво-коричневым ромбом, электростанция
- * 2x2 с жёлтым кружком — единственный способ различить их на глаз, раз
- * цвет у всех один и тот же — цвет игрока). Какой значок и какого
- * размера рисовать, решает BuildingComponent.type — единственный
- * источник истины "какое это здание" (BuildingSizes для размера,
- * switch по type здесь для значка, не отдельные проверки компонентов).
- * Здание добычи, пока строится, рисуется тускло-серым с прогресс-баром
- * вместо обычного вида — см. drawUnderConstruction. У всех — полоска
- * здоровья над ними и (для выделенных юнитов) кольцо подсветки.
- * Приоритет 10 — выполняется после InterpolationSystem (приоритет 0),
- * чтобы рисовать уже посчитанную на этот кадр позицию.
+ * Рисует каждую сущность. Наземная техника (WARRIOR/ARCHER/BUILDER) —
+ * прямоугольный корпус, повёрнутый по направлению движения, и отдельная
+ * башня-треугольник поверх него, доворачивающаяся на цель атаки (см.
+ * drawGroundVehicle/TurretDisplayComponent). Авиация (SCOUT,
+ * ATTACK_AIRCRAFT — несмотря на "разведчик" в названии, см. javadoc
+ * processEntity) — по-прежнему кружком с треугольником-курсом поверх.
+ * У стрелка и строителя ещё маленькая метка на корпусе (белая точка и
+ * серый квадратик соответственно), у воина — нет. Здание — прямоугольником
+ * нужной формы (дом 2x2 клетки с золотой звездой, казарма стрелков 1x2 с
+ * белой "крышечкой", шахта железа 1x1 с ржаво-коричневым ромбом,
+ * электростанция 2x2 с жёлтым кружком — единственный способ различить
+ * их на глаз, раз цвет у всех один и тот же — цвет игрока). Какой значок
+ * и какого размера рисовать, решает BuildingComponent.type —
+ * единственный источник истины "какое это здание" (BuildingSizes для
+ * размера, switch по type здесь для значка, не отдельные проверки
+ * компонентов). Здание добычи, пока строится, рисуется тускло-серым с
+ * прогресс-баром вместо обычного вида — см. drawUnderConstruction. У
+ * всех — полоска здоровья над ними и (для выделенных юнитов) кольцо
+ * подсветки. Приоритет 10 — выполняется после InterpolationSystem
+ * (приоритет 0), чтобы рисовать уже посчитанную на этот кадр позицию.
  */
 public class RenderSystem extends IteratingSystem {
 
@@ -54,6 +61,8 @@ public class RenderSystem extends IteratingSystem {
             ComponentMapper.getFor(UnitTypeComponent.class);
     private static final ComponentMapper<ConstructionComponent> CONSTRUCTION =
             ComponentMapper.getFor(ConstructionComponent.class);
+    private static final ComponentMapper<TurretDisplayComponent> TURRET_DISPLAY =
+            ComponentMapper.getFor(TurretDisplayComponent.class);
 
     // Публичный — GameScreen переиспользует те же цвета для стратегических
     // значков (drawStrategicIcons), чтобы кроссфейд тактический/
@@ -74,6 +83,26 @@ public class RenderSystem extends IteratingSystem {
     private static final Color ATTACK_AIRCRAFT_MARKER_COLOR = Color.RED;
 
     private static final float SELECTION_RING_RADIUS = GameConstants.UNIT_RADIUS + 3f;
+
+    // Наземная техника (WARRIOR/ARCHER/BUILDER — не SCOUT, см. javadoc
+    // processEntity, почему разведчик тут авиация) — прямоугольный
+    // корпус вместо круга, ориентированный по DirectionComponent
+    // .direction (drawGroundVehicle/drawRotatedRect), и отдельно
+    // поворачивающаяся башня-треугольник поверх него (TurretDisplayComponent).
+    private static final float HULL_HALF_LENGTH = GameConstants.UNIT_RADIUS * 1.3f;
+    private static final float HULL_HALF_WIDTH = GameConstants.UNIT_RADIUS * 0.8f;
+    // Побольше, чем у круглых юнитов (UNIT_RADIUS + 3) — иначе кольцо
+    // выделения обрезало бы углы прямоугольного корпуса на диагональных
+    // поворотах (диагональ корпуса — sqrt(HULL_HALF_LENGTH^2 +
+    // HULL_HALF_WIDTH^2), примерно 15.3 при текущих множителях).
+    private static final float GROUND_SELECTION_RING_RADIUS = 17f;
+    // "Нос" треугольника башни — дуло, откуда визуально вылетает снаряд
+    // (см. GameScreen.onProjectileFired) — длиннее половины корпуса,
+    // чтобы торчать за его край стволом, как у настоящей техники;
+    // "хвост" короче и уже — просто чтобы силуэт читался как треугольник.
+    private static final float TURRET_BARREL_LENGTH = GameConstants.UNIT_RADIUS * 1.6f;
+    private static final float TURRET_REAR_LENGTH = GameConstants.UNIT_RADIUS * 0.5f;
+    private static final float TURRET_HALF_WIDTH = GameConstants.UNIT_RADIUS * 0.35f;
 
     private static final Color HQ_STAR_COLOR = Color.GOLD;
     private static final Color ARCHER_ROOF_COLOR = Color.WHITE;
@@ -182,41 +211,121 @@ public class RenderSystem extends IteratingSystem {
             return;
         }
 
+        UnitTypeComponent unitTypeComponent = UNIT_TYPE.get(entity);
+        UnitType type = unitTypeComponent != null ? unitTypeComponent.type : null;
+        // "Наземная техника" — только WARRIOR/ARCHER/BUILDER (turnRadius
+        // == 0, см. GameServer.createUnit). SCOUT, несмотря на название,
+        // и ATTACK_AIRCRAFT — авиация (обоих производит AIRCRAFT_FACTORY,
+        // см. BuildingDefinitions, у обоих ненулевой turnRadius) — их
+        // отрисовка (круг + треугольник-курс) этой веткой не тронута.
+        boolean groundVehicle = type == UnitType.WARRIOR || type == UnitType.ARCHER || type == UnitType.BUILDER;
+
         // Подсветка выделения рисуется под юнитом более крупным кругом —
-        // из-под основного кружка выглядывает как обводка, без отдельного
-        // ShapeType.Line-прохода (ShapeRenderer не позволяет мешать типы
-        // фигур внутри одного begin()/end()). Зданий это не касается — их
-        // нельзя выделить (см. GameScreen), SelectedComponent на них не бывает.
+        // из-под основного кружка/корпуса выглядывает как обводка, без
+        // отдельного ShapeType.Line-прохода (ShapeRenderer не позволяет
+        // мешать типы фигур внутри одного begin()/end()). Зданий это не
+        // касается — их нельзя выделить (см. GameScreen), SelectedComponent
+        // на них не бывает. У наземной техники кольцо пошире — иначе на
+        // некоторых углах поворота прямоугольный корпус вылезал бы за его
+        // пределы (см. javadoc GROUND_SELECTION_RING_RADIUS).
         if (SELECTED.has(entity)) {
             setColor(SELECTION_RING_COLOR);
-            shapeRenderer.circle(position.position.x, position.position.y, SELECTION_RING_RADIUS);
+            float ringRadius = groundVehicle ? GROUND_SELECTION_RING_RADIUS : SELECTION_RING_RADIUS;
+            shapeRenderer.circle(position.position.x, position.position.y, ringRadius);
         }
 
-        setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
-        shapeRenderer.circle(position.position.x, position.position.y, GameConstants.UNIT_RADIUS);
+        Color playerColor = PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length];
 
-        // Маленькая метка внутри (или, у разведчика, треугольник по
-        // направлению полёта) — единственное, что отличает остальные
-        // типы от воина (и друг от друга) на глаз: у всех одинаковый
-        // размер и цвет круга иначе. Стрелок — белая точка, строитель —
-        // серый квадратик (тот же цвет, что у "стройки" на зданиях —
-        // тематическая связь), разведчик — жёлтый треугольник по курсу,
-        // у воина метки нет вовсе.
-        UnitTypeComponent unitType = UNIT_TYPE.get(entity);
-        if (unitType != null && unitType.type == UnitType.ARCHER) {
-            setColor(ARCHER_MARKER_COLOR);
-            shapeRenderer.circle(position.position.x, position.position.y, ARCHER_MARKER_RADIUS);
-        } else if (unitType != null && unitType.type == UnitType.BUILDER) {
-            setColor(BUILDER_MARKER_COLOR);
-            float half = BUILDER_MARKER_HALF_SIZE;
-            shapeRenderer.rect(position.position.x - half, position.position.y - half, half * 2f, half * 2f);
-        } else if (unitType != null && unitType.type == UnitType.SCOUT) {
-            drawHeadingTriangleMarker(entity, position, SCOUT_MARKER_COLOR);
-        } else if (unitType != null && unitType.type == UnitType.ATTACK_AIRCRAFT) {
-            drawHeadingTriangleMarker(entity, position, ATTACK_AIRCRAFT_MARKER_COLOR);
+        if (groundVehicle) {
+            drawGroundVehicle(entity, position, playerColor, type);
+        } else {
+            setColor(playerColor);
+            shapeRenderer.circle(position.position.x, position.position.y, GameConstants.UNIT_RADIUS);
+
+            // Треугольник по курсу — только у авиации (см. выше, почему
+            // разведчик тут тоже авиация), у обычной наземной техники
+            // курса в этом смысле нет вовсе, ей занимается drawGroundVehicle.
+            if (type == UnitType.SCOUT) {
+                drawHeadingTriangleMarker(entity, position, SCOUT_MARKER_COLOR);
+            } else if (type == UnitType.ATTACK_AIRCRAFT) {
+                drawHeadingTriangleMarker(entity, position, ATTACK_AIRCRAFT_MARKER_COLOR);
+            }
         }
 
         drawHealthBar(position, health, UNIT_HEALTH_BAR_Y_OFFSET, UNIT_HEALTH_BAR_WIDTH);
+    }
+
+    /**
+     * Наземная техника (воин/стрелок/строитель) — прямоугольный корпус
+     * вместо круга, повёрнутый по направлению движения
+     * (DirectionComponent.direction — куда юнит реально сейчас едет, не
+     * куда "смотрит" произвольно), и отдельная башня-треугольник поверх
+     * него, повёрнутая по TurretDisplayComponent — доворачивается на
+     * цель атаки независимо от корпуса, TurretAimSystem считает это на
+     * сервере (см. её javadoc и TurretComponent), клиент только
+     * отображает уже готовый угол. Вершина треугольника — дуло, откуда
+     * визуально вылетает снаряд (см. GameScreen.onProjectileFired).
+     * Маленькая метка типа (белая точка у стрелка, серый квадратик у
+     * строителя — как и раньше) рисуется на корпусе ПОД башней, у воина
+     * по-прежнему нет отдельной метки.
+     */
+    private void drawGroundVehicle(Entity entity, PositionComponent position, Color playerColor, UnitType type) {
+        DirectionComponent bodyDirection = DIRECTION.get(entity);
+        float hullDx = bodyDirection != null ? bodyDirection.direction.x : 0f;
+        float hullDy = bodyDirection != null ? bodyDirection.direction.y : 0f;
+        if (hullDx == 0f && hullDy == 0f) {
+            hullDx = 1f; // ещё ни разу не двигался — направление не определено, берём любое
+        }
+
+        setColor(playerColor);
+        drawRotatedRect(position.position.x, position.position.y, hullDx, hullDy, HULL_HALF_LENGTH, HULL_HALF_WIDTH);
+
+        if (type == UnitType.ARCHER) {
+            setColor(ARCHER_MARKER_COLOR);
+            shapeRenderer.circle(position.position.x, position.position.y, ARCHER_MARKER_RADIUS);
+        } else if (type == UnitType.BUILDER) {
+            setColor(BUILDER_MARKER_COLOR);
+            float half = BUILDER_MARKER_HALF_SIZE;
+            shapeRenderer.rect(position.position.x - half, position.position.y - half, half * 2f, half * 2f);
+        }
+
+        TurretDisplayComponent turretDisplay = TURRET_DISPLAY.get(entity);
+        float turretDx = turretDisplay != null ? turretDisplay.dirX : 0f;
+        float turretDy = turretDisplay != null ? turretDisplay.dirY : 0f;
+        if (turretDx == 0f && turretDy == 0f) {
+            // Сервер ещё не прислал ни одного снапшота с осмысленным
+            // углом (самый первый кадр после создания юнита) — рисуем
+            // башню по корпусу, а не в никуда.
+            turretDx = hullDx;
+            turretDy = hullDy;
+        }
+        drawHeadingTriangleMarker(position, turretDx, turretDy, playerColor,
+                TURRET_BARREL_LENGTH, TURRET_REAR_LENGTH, TURRET_HALF_WIDTH);
+    }
+
+    /**
+     * Заполненный прямоугольник с центром (cx, cy), повёрнутый так, что
+     * (dx, dy) — направление его длинной оси — корпус наземной техники
+     * (drawGroundVehicle). ShapeRenderer не умеет рисовать повёрнутый
+     * прямоугольник одним вызовом — раскладываем на два треугольника по
+     * вершинам, тот же приём, что и у звезды/маркеров ниже. (dx, dy)
+     * должен быть единичным вектором — иначе halfLength/halfWidth
+     * означали бы не то, что заявлено в имени.
+     */
+    private void drawRotatedRect(float cx, float cy, float dx, float dy, float halfLength, float halfWidth) {
+        float perpX = -dy;
+        float perpY = dx;
+        float frontLeftX = cx + dx * halfLength + perpX * halfWidth;
+        float frontLeftY = cy + dy * halfLength + perpY * halfWidth;
+        float frontRightX = cx + dx * halfLength - perpX * halfWidth;
+        float frontRightY = cy + dy * halfLength - perpY * halfWidth;
+        float rearRightX = cx - dx * halfLength - perpX * halfWidth;
+        float rearRightY = cy - dy * halfLength - perpY * halfWidth;
+        float rearLeftX = cx - dx * halfLength + perpX * halfWidth;
+        float rearLeftY = cy - dy * halfLength + perpY * halfWidth;
+
+        shapeRenderer.triangle(frontLeftX, frontLeftY, frontRightX, frontRightY, rearRightX, rearRightY);
+        shapeRenderer.triangle(frontLeftX, frontLeftY, rearRightX, rearRightY, rearLeftX, rearLeftY);
     }
 
     private void drawBuilding(Entity entity, PositionComponent position, OwnerComponent owner, HealthComponent health) {
@@ -309,29 +418,46 @@ public class RenderSystem extends IteratingSystem {
     }
 
     /**
-     * Треугольник по направлению полёта — общий для любого типа авиации с
-     * настоящим курсом (DirectionComponent.direction, его поддерживает
-     * AircraftMovementSystem), цвет передаёт вызывающий код, форма и
-     * размер — общие (AIRCRAFT_MARKER_LENGTH/WIDTH).
+     * Треугольник по направлению полёта авиации (DirectionComponent
+     * .direction, его поддерживает AircraftMovementSystem) — тонкая
+     * обёртка над общей drawHeadingTriangleMarker(position, dx, dy, ...),
+     * которая читает направление из сущности сама и подставляет
+     * фиксированные AIRCRAFT_MARKER_LENGTH/WIDTH — только чтобы не
+     * дублировать эти два вызова с одинаковыми размерами в двух местах.
      */
     private void drawHeadingTriangleMarker(Entity entity, PositionComponent position, Color color) {
         DirectionComponent unitDirection = DIRECTION.get(entity);
         float dx = unitDirection != null ? unitDirection.direction.x : 1f;
         float dy = unitDirection != null ? unitDirection.direction.y : 0f;
+        drawHeadingTriangleMarker(position, dx, dy, color,
+                AIRCRAFT_MARKER_LENGTH, AIRCRAFT_MARKER_LENGTH * 0.5f, AIRCRAFT_MARKER_WIDTH);
+    }
+
+    /**
+     * Треугольник по направлению (dx, dy) — общий для курса авиации
+     * (drawHeadingTriangleMarker(Entity, ...) выше) и башни наземной
+     * техники (drawGroundVehicle): "нос" на расстоянии noseLength от
+     * центра — нос самолёта или дуло орудия, смотря по вызывающему коду,
+     * "хвост" на tailLength в противоположную сторону, раздвинутый на
+     * halfWidth перпендикулярно — тот же приём, что и раньше, только без
+     * жёстко зашитых размеров.
+     */
+    private void drawHeadingTriangleMarker(PositionComponent position, float dx, float dy, Color color,
+                                            float noseLength, float tailLength, float halfWidth) {
         if (dx == 0f && dy == 0f) {
-            dx = 1f; // ещё ни разу не летал — направление не определено, берём любое
+            dx = 1f; // направление не определено — берём любое
         }
         float perpX = -dy;
         float perpY = dx;
-        float noseX = position.position.x + dx * AIRCRAFT_MARKER_LENGTH;
-        float noseY = position.position.y + dy * AIRCRAFT_MARKER_LENGTH;
-        float tailX = position.position.x - dx * AIRCRAFT_MARKER_LENGTH * 0.5f;
-        float tailY = position.position.y - dy * AIRCRAFT_MARKER_LENGTH * 0.5f;
+        float noseX = position.position.x + dx * noseLength;
+        float noseY = position.position.y + dy * noseLength;
+        float tailX = position.position.x - dx * tailLength;
+        float tailY = position.position.y - dy * tailLength;
         setColor(color);
         shapeRenderer.triangle(
                 noseX, noseY,
-                tailX + perpX * AIRCRAFT_MARKER_WIDTH, tailY + perpY * AIRCRAFT_MARKER_WIDTH,
-                tailX - perpX * AIRCRAFT_MARKER_WIDTH, tailY - perpY * AIRCRAFT_MARKER_WIDTH);
+                tailX + perpX * halfWidth, tailY + perpY * halfWidth,
+                tailX - perpX * halfWidth, tailY - perpY * halfWidth);
     }
 
     /**

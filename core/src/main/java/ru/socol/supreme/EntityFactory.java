@@ -12,8 +12,10 @@ import ru.socol.supreme.components.BuildBeamComponent;
 import ru.socol.supreme.components.DebugPathComponent;
 import ru.socol.supreme.components.InterpolationComponent;
 import ru.socol.supreme.components.OrderQueueDisplayComponent;
+import ru.socol.supreme.components.TurretDisplayComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
+import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -92,6 +94,26 @@ public class EntityFactory {
                 updateBuildBeam(entity, snapshot);
             }
 
+            // Раньше это поле только читалось из снапшота и нигде не
+            // хранилось клиентом (DirectionComponent на клиентских
+            // сущностях вообще не заводился) — из-за этого, например,
+            // треугольник-маркер разведчика/авиации (RenderSystem
+            // .drawHeadingTriangleMarker) всегда смотрел в одну и ту же
+            // сторону по умолчанию, а не по настоящему курсу юнита.
+            // Нужен и корпусу наземного юнита ниже (прямоугольник теперь
+            // ориентирован по направлению движения).
+            DirectionComponent direction = entity.getComponent(DirectionComponent.class);
+            if (direction != null) {
+                direction.direction.set(snapshot.dirX, snapshot.dirY);
+                direction.moving = snapshot.moving;
+            }
+
+            TurretDisplayComponent turretDisplay = entity.getComponent(TurretDisplayComponent.class);
+            if (turretDisplay != null) {
+                turretDisplay.dirX = snapshot.turretDirX;
+                turretDisplay.dirY = snapshot.turretDirY;
+            }
+
             InterpolationComponent interpolation = entity.getComponent(InterpolationComponent.class);
             if (interpolation != null) {
                 // Точка отправления лерпа — там, где юнит нарисован ПРЯМО
@@ -162,6 +184,16 @@ public class EntityFactory {
         } else {
             UnitType type = UnitType.values()[snapshot.unitType];
             entity.add(new UnitTypeComponent(type));
+
+            DirectionComponent direction = new DirectionComponent();
+            direction.direction.set(snapshot.dirX, snapshot.dirY);
+            direction.moving = snapshot.moving;
+            entity.add(direction);
+
+            TurretDisplayComponent turretDisplay = new TurretDisplayComponent();
+            turretDisplay.dirX = snapshot.turretDirX;
+            turretDisplay.dirY = snapshot.turretDirY;
+            entity.add(turretDisplay);
 
             InterpolationComponent interpolation = new InterpolationComponent();
             interpolation.previousPosition.set(snapshot.x, snapshot.y);
