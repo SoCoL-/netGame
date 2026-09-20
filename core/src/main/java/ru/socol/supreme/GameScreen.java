@@ -63,6 +63,11 @@ import java.util.Set;
  * Управление:
  *  - WASD / стрелки            -> прокрутка камеры (карта 8000x8000, окно
  *                                 1024x768 — целиком не помещается)
+ *  - Колесо мыши                -> зум камеры к точке под курсором (как в
+ *                                 Supreme Commander); на сильном отдалении
+ *                                 юниты и здания плавно сменяются
+ *                                 укрупнёнными стратегическими значками
+ *                                 (см. strategicFactor/drawStrategicIcons)
  *  - ЛКМ клик по своему юниту   -> выбрать только его
  *  - ЛКМ протяжка (рамка)       -> выбрать все свои юниты внутри рамки
  *    (здания рамкой не выделяются)
@@ -86,6 +91,44 @@ public class GameScreen extends InputAdapter implements Screen {
     // размером окна физически.
     private static final float HUD_WIDTH = 1024f;
     private static final float HUD_HEIGHT = 768f;
+
+    // ---- Зум камеры и переход тактический/стратегический вид ----
+    //
+    // MIN_ZOOM — чуть ближе, чем базовый zoom=1, для детального осмотра.
+    // MAX_ZOOM считается от размера карты и вьюпорта (не зашит числом),
+    // так что на максимальном отдалении вся карта помещается в кадр с
+    // запасом ~15% по краям — и не придётся руками пересчитывать эту
+    // константу при следующем изменении GameConstants.MAP_WIDTH/HEIGHT.
+    private static final float MIN_ZOOM = 0.4f;
+    private static final float MAX_ZOOM = Math.max(
+            GameConstants.MAP_WIDTH / HUD_WIDTH,
+            GameConstants.MAP_HEIGHT / HUD_HEIGHT) * 1.15f;
+
+    // Один "щелчок" колеса меняет ЦЕЛЕВОЙ зум на этот множитель
+    // (мультипликативно, не аддитивно — иначе шаг на большом зуме казался
+    // бы то огромным, то незаметным). Сам camera.zoom плавно "доезжает" до
+    // цели каждый кадр (ZOOM_LERP_SPEED — доля пути в секунду), а не
+    // переключается мгновенно, см. updateCamera.
+    private static final float ZOOM_SCROLL_FACTOR = 1.15f;
+    private static final float ZOOM_LERP_SPEED = 10f;
+
+    // Полоса перехода тактический -> стратегический вид, в долях MAX_ZOOM.
+    // Ниже STRATEGIC_ZOOM_START виден только тактический слой (обычные
+    // юниты/здания, как сейчас, RenderSystem), выше STRATEGIC_ZOOM_FULL —
+    // только укрупнённые стратегические значки (drawStrategicIcons), между
+    // ними оба слоя рисуются одновременно с дополняющей друг друга альфой
+    // (strategicFactor) — плавный кроссфейд, а не мгновенный переключатель.
+    private static final float STRATEGIC_ZOOM_START = MAX_ZOOM * 0.35f;
+    private static final float STRATEGIC_ZOOM_FULL = MAX_ZOOM * 0.65f;
+
+    // Размер стратегического значка — в экранных пикселях (при zoom=1 это
+    // мировые юниты, но рисуется он с размером *camera.zoom, см.
+    // drawStrategicIcons, поэтому на любом зуме внутри стратегической
+    // полосы значок остаётся одного и того же видимого на экране размера,
+    // а не съёживается вместе с остальным миром).
+    private static final float STRATEGIC_UNIT_ICON_RADIUS_PX = 8f;
+    private static final float STRATEGIC_BUILDING_ICON_HALF_SIZE_PX = 11f;
+    private static final float STRATEGIC_SELECTION_RING_EXTRA_PX = 3f;
 
     private static final float DRAG_THRESHOLD = 6f; // world units — отличает клик от протяжки рамки
     private static final float MOVE_ORDER_SPACING = 24f; // world units между юнитами в сетке при групповом приказе
@@ -217,6 +260,10 @@ public class GameScreen extends InputAdapter implements Screen {
     // Отдельная неподвижная камера для HUD (панель постройки) — рисуется в
     // экранных координатах, не должна зависеть от прокрутки world-камеры.
     private final OrthographicCamera hudCamera = new OrthographicCamera();
+    // Именованное поле (не анонимный addSystem(new RenderSystem(...))), так
+    // как GameScreen каждый кадр должен сообщать ей текущую альфу
+    // тактического слоя (см. render()/strategicFactor).
+    private final RenderSystem renderSystem = new RenderSystem(shapeRenderer);
     private final EntityFactory entityFactory = new EntityFactory(engine);
     private final GameClient client = new GameClient();
 
@@ -252,6 +299,11 @@ public class GameScreen extends InputAdapter implements Screen {
     private final Vector3 dragCurrentWorld = new Vector3();
 
     private boolean cameraInitialized = false;
+    // Цель, к которой camera.zoom плавно "доезжает" каждый кадр (см.
+    // updateCamera) — меняется колесом мыши (scrolled), а не самим zoom
+    // напрямую, иначе один щелчок колеса мгновенно перескакивал бы зум,
+    // без всякой плавности.
+    private float targetZoom = 1f;
     // Копится с начала экрана каждый кадр в render(), никогда не сбрасывается
     // и не используется ни для какой игровой логики — только чтобы
     // анимировать голографический луч стройки (drawBuildBeams).
@@ -309,7 +361,7 @@ public class GameScreen extends InputAdapter implements Screen {
         uiFont.getData().setScale(1.3f);
 
         engine.addSystem(new InterpolationSystem());
-        engine.addSystem(new RenderSystem(shapeRenderer));
+        engine.addSystem(renderSystem);
 
         client.connect(serverHost, new GameClient.GameClientListener() {
             @Override
@@ -415,7 +467,11 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     private void updateCamera(float delta) {
-        float pan = CAMERA_PAN_SPEED * delta;
+        // На сильном отдалении (большой camera.zoom) фиксированная скорость
+        // прокрутки в мировых юнитах ощущалась бы неподвижной — экран же
+        // после zoom-аута показывает намного больше мира сразу. Скорость
+        // прокрутки растёт вместе с zoom, как и в большинстве RTS-камер.
+        float pan = CAMERA_PAN_SPEED * camera.zoom * delta;
         if (Gdx.input.isKeyPressed(Input.Keys.W) || Gdx.input.isKeyPressed(Input.Keys.UP)) {
             camera.position.y += pan;
         }
@@ -429,10 +485,134 @@ public class GameScreen extends InputAdapter implements Screen {
             camera.position.x += pan;
         }
 
-        float halfWidth = camera.viewportWidth / 2f;
-        float halfHeight = camera.viewportHeight / 2f;
-        camera.position.x = MathUtils.clamp(camera.position.x, halfWidth, GameConstants.MAP_WIDTH - halfWidth);
-        camera.position.y = MathUtils.clamp(camera.position.y, halfHeight, GameConstants.MAP_HEIGHT - halfHeight);
+        if (!MathUtils.isEqual(camera.zoom, targetZoom, 0.0005f)) {
+            // Зум "доезжает" до targetZoom плавно, а не мгновенно по щелчку
+            // колеса (scrolled только меняет цель), и всё время держит под
+            // курсором ТУ ЖЕ мировую точку, что была под ним в начале этого
+            // кадра — как в Supreme Commander, карта "тянется" из-под
+            // курсора, а не масштабируется от центра экрана. camera.update()
+            // вызывается вручную дважды (до и после смены zoom) — иначе
+            // unproject ниже пользовался бы устаревшей (позапрошлого кадра)
+            // матрицей проекции.
+            camera.update();
+            Vector3 cursorBefore = camera.unproject(new Vector3(Gdx.input.getX(), Gdx.input.getY(), 0));
+
+            camera.zoom = MathUtils.lerp(camera.zoom, targetZoom, Math.min(1f, ZOOM_LERP_SPEED * delta));
+
+            camera.update();
+            Vector3 cursorAfter = camera.unproject(new Vector3(Gdx.input.getX(), Gdx.input.getY(), 0));
+
+            camera.position.x += cursorBefore.x - cursorAfter.x;
+            camera.position.y += cursorBefore.y - cursorAfter.y;
+        }
+
+        float halfWidth = camera.viewportWidth * camera.zoom / 2f;
+        float halfHeight = camera.viewportHeight * camera.zoom / 2f;
+        // Если на таком зуме сама камера шире/выше карты целиком (близко к
+        // MAX_ZOOM) — не зажимаем позицию между halfWidth и MAP_WIDTH-half
+        // Width (при halfWidth > MAP_WIDTH/2 это дало бы min > max и
+        // MathUtils.clamp вернул бы бессмысленное значение), а центрируем
+        // камеру по этой оси.
+        camera.position.x = halfWidth * 2f >= GameConstants.MAP_WIDTH
+                ? GameConstants.MAP_WIDTH / 2f
+                : MathUtils.clamp(camera.position.x, halfWidth, GameConstants.MAP_WIDTH - halfWidth);
+        camera.position.y = halfHeight * 2f >= GameConstants.MAP_HEIGHT
+                ? GameConstants.MAP_HEIGHT / 2f
+                : MathUtils.clamp(camera.position.y, halfHeight, GameConstants.MAP_HEIGHT - halfHeight);
+    }
+
+    /**
+     * Колесо мыши — зум. Отрицательный amountY (прокрутка "от себя"/вверх,
+     * стандартное поведение LibGDX) приближает — множитель меньше 1,
+     * targetZoom уменьшается; положительный (прокрутка "к себе"/вниз)
+     * отдаляет. Сам camera.zoom сюда не трогаем — только цель, к которой он
+     * плавно едет в updateCamera, отсюда и "плавно переключается" из
+     * заказа, а не мгновенный прыжок по щелчку колеса.
+     */
+    @Override
+    public boolean scrolled(float amountX, float amountY) {
+        float factor = (float) Math.pow(ZOOM_SCROLL_FACTOR, amountY);
+        targetZoom = MathUtils.clamp(targetZoom * factor, MIN_ZOOM, MAX_ZOOM);
+        return true;
+    }
+
+    /**
+     * 0 — чистый тактический вид (RenderSystem рисует юниты/здания как
+     * сейчас), 1 — чистый стратегический (см. drawStrategicIcons). Между
+     * STRATEGIC_ZOOM_START и STRATEGIC_ZOOM_FULL — плавный кроссфейд обоих
+     * слоёв разом (renderSystem.setRenderAlpha(1-factor) и
+     * drawStrategicIcons рисует свой слой с alpha=factor), а не мгновенное
+     * переключение. Smoothstep, а не линейная интерполяция — мягче на
+     * границах полосы (нулевая производная на обоих концах), меньше
+     * ощущается как "включили-выключили".
+     */
+    private float strategicFactor() {
+        float t = (camera.zoom - STRATEGIC_ZOOM_START) / (STRATEGIC_ZOOM_FULL - STRATEGIC_ZOOM_START);
+        t = MathUtils.clamp(t, 0f, 1f);
+        return t * t * (3f - 2f * t);
+    }
+
+    /**
+     * Стратегический вид — вместо настоящих фигур юнитов/зданий (кружки,
+     * значки-детали, полоски здоровья — см. RenderSystem) укрупнённые
+     * значки постоянного ВИДИМОГО НА ЭКРАНЕ размера: их мировой размер
+     * растёт вместе с camera.zoom (*camera.zoom ниже), поэтому на любом
+     * зуме внутри стратегической полосы они не съёживаются вместе с
+     * остальным миром, как обычные юниты — ровно то, ради чего Supreme
+     * Commander вообще переключается в этот режим при отдалении: иначе на
+     * сильном зуме юниты стали бы неразличимыми точками в 1-2 пикселя.
+     * Юнит — кружок, здание — квадрат (та же логика различения, что и в
+     * тактическом виде, просто без индивидуальных значков по типу — на
+     * таком отдалении они всё равно неразличимы на глаз), оба в цвете
+     * игрока (тот же RenderSystem.PLAYER_COLORS, чтобы кроссфейд не менял
+     * ещё и цвет одновременно с формой). Рисуется ДО тумана войны (как и
+     * тактический слой), чтобы неразведанные области оставались
+     * притенёнными одинаково в обоих режимах.
+     */
+    private void drawStrategicIcons(float alpha) {
+        if (alpha <= 0f) {
+            return;
+        }
+
+        float unitRadius = STRATEGIC_UNIT_ICON_RADIUS_PX * camera.zoom;
+        float buildingHalfSize = STRATEGIC_BUILDING_ICON_HALF_SIZE_PX * camera.zoom;
+        float selectionRingRadius = unitRadius + STRATEGIC_SELECTION_RING_EXTRA_PX * camera.zoom;
+
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+
+        for (Entity entity : engine.getEntities()) {
+            PositionComponent position = entity.getComponent(PositionComponent.class);
+            OwnerComponent owner = entity.getComponent(OwnerComponent.class);
+            if (position == null || owner == null) {
+                continue;
+            }
+            Color playerColor = RenderSystem.PLAYER_COLORS[owner.playerId % RenderSystem.PLAYER_COLORS.length];
+            boolean isBuilding = entity.getComponent(BuildingComponent.class) != null;
+
+            if (!isBuilding && entity.getComponent(SelectedComponent.class) != null) {
+                // Тот же приём, что и в RenderSystem: сперва больший белый
+                // круг, потом обычный поверх него — снизу выглядывает
+                // кольцом, без отдельного прохода ShapeType.Line.
+                shapeRenderer.setColor(1f, 1f, 1f, alpha);
+                shapeRenderer.circle(position.position.x, position.position.y, selectionRingRadius, 14);
+            }
+
+            shapeRenderer.setColor(playerColor.r, playerColor.g, playerColor.b, playerColor.a * alpha);
+            if (isBuilding) {
+                shapeRenderer.rect(
+                        position.position.x - buildingHalfSize,
+                        position.position.y - buildingHalfSize,
+                        buildingHalfSize * 2f,
+                        buildingHalfSize * 2f);
+            } else {
+                shapeRenderer.circle(position.position.x, position.position.y, unitRadius, 14);
+            }
+        }
+
+        shapeRenderer.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
     }
 
     // ---- Рендер ----
@@ -455,7 +635,20 @@ public class GameScreen extends InputAdapter implements Screen {
         drawRallyPoints(); // тоже до engine.update() — под юнитами, не поверх них
         drawOrderQueue(); // тоже до engine.update() — под юнитами, не поверх них
 
+        // Кроссфейд тактический/стратегический вид (см. strategicFactor) —
+        // тактический слой (RenderSystem, внутри engine.update) рисуется с
+        // дополняющей альфой 1-factor, стратегические значки поверх него —
+        // с alpha=factor. GL_BLEND нужен именно тут: при alpha=1 (обычный,
+        // не зумированный вид) он не меняет картинку (dst-вклад умножается
+        // на 1-1=0), но без него частичная альфа при кроссфейде просто не
+        // применялась бы (RenderSystem рисовал бы непрозрачно всегда).
+        float strategicFactor = strategicFactor();
+        renderSystem.setRenderAlpha(1f - strategicFactor);
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         engine.update(delta);
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+        drawStrategicIcons(strategicFactor); // тоже до тумана войны — см. javadoc метода
 
         updateArrows(delta);
         drawOverlayLines();
@@ -1581,15 +1774,25 @@ public class GameScreen extends InputAdapter implements Screen {
         return closest;
     }
 
-    /** Юнит — фиксированный радиус; здание — до угла его фактического прямоугольника (дом и казарма разной формы, см. GameConstants). */
-    /** Юнит — фиксированный радиус; здание (дом/казарма/здание добычи, в любом состоянии) — до угла его фактического прямоугольника. */
+    /**
+     * Юнит — фиксированный радиус (или радиус укрупнённого стратегического
+     * значка, если он сейчас крупнее — см. drawStrategicIcons: на сильном
+     * отдалении юнит рисуется заметно больше своего настоящего мирового
+     * размера, клик обязан попадать по нему так же надёжно, а не только с
+     * пиксельной точностью по крошечному настоящему кружку под значком).
+     * Здание (дом/казарма/здание добычи, в любом состоянии) — до угла его
+     * фактического прямоугольника, с тем же поправками на стратегический
+     * значок.
+     */
     private float clickRadiusFor(Entity entity) {
         if (entity.getComponent(BuildingComponent.class) == null) {
-            return UNIT_CLICK_RADIUS;
+            return Math.max(UNIT_CLICK_RADIUS, STRATEGIC_UNIT_ICON_RADIUS_PX * camera.zoom);
         }
         float halfWidth = BuildingSizes.halfWidth(entity);
         float halfHeight = BuildingSizes.halfHeight(entity);
-        return (float) Math.sqrt(halfWidth * halfWidth + halfHeight * halfHeight);
+        float baseRadius = (float) Math.sqrt(halfWidth * halfWidth + halfHeight * halfHeight);
+        float strategicRadius = STRATEGIC_BUILDING_ICON_HALF_SIZE_PX * camera.zoom * (float) Math.sqrt(2);
+        return Math.max(baseRadius, strategicRadius);
     }
 
     @Override

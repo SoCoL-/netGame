@@ -55,7 +55,10 @@ public class RenderSystem extends IteratingSystem {
     private static final ComponentMapper<ConstructionComponent> CONSTRUCTION =
             ComponentMapper.getFor(ConstructionComponent.class);
 
-    private static final Color[] PLAYER_COLORS = {Color.SKY, Color.ORANGE};
+    // Публичный — GameScreen переиспользует те же цвета для стратегических
+    // значков (drawStrategicIcons), чтобы кроссфейд тактический/
+    // стратегический вид не менял ещё и цвет заодно с формой/размером.
+    public static final Color[] PLAYER_COLORS = {Color.SKY, Color.ORANGE};
     private static final Color SELECTION_RING_COLOR = Color.WHITE;
     private static final Color ARCHER_MARKER_COLOR = Color.WHITE;
     private static final float ARCHER_MARKER_RADIUS = GameConstants.UNIT_RADIUS * 0.4f;
@@ -89,16 +92,42 @@ public class RenderSystem extends IteratingSystem {
 
     private final ShapeRenderer shapeRenderer;
 
+    // Множитель альфы всего тактического слоя — 1 в обычном режиме, тает до
+    // 0 при переходе в стратегический вид на сильном отдалении камеры (см.
+    // GameScreen.strategicFactor/render()). Выставляется GameScreen перед
+    // каждым engine.update(), а не читается отсюда напрямую — у ashley-
+    // систем нет доступа к камере клиента, да и незачем: одно поле проще,
+    // чем протаскивать сюда всю камеру ради единственного числа.
+    private float renderAlpha = 1f;
+
     public RenderSystem(ShapeRenderer shapeRenderer) {
         super(Family.all(PositionComponent.class, OwnerComponent.class, HealthComponent.class).get(), 10);
         this.shapeRenderer = shapeRenderer;
     }
 
+    public void setRenderAlpha(float renderAlpha) {
+        this.renderAlpha = renderAlpha;
+    }
+
     @Override
     public void update(float deltaTime) {
+        if (renderAlpha <= 0f) {
+            return; // полностью прозрачно (чистый стратегический вид) — тактический слой можно не рисовать вовсе
+        }
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         super.update(deltaTime);
         shapeRenderer.end();
+    }
+
+    /**
+     * Обёртка над shapeRenderer.setColor, домножающая альфу цвета на
+     * renderAlpha — единая точка, через которую проходит вообще любой цвет
+     * в этой системе (см. замены ниже), чтобы кроссфейд тактический/
+     * стратегический вид плавно затухал целиком, а не только у части фигур.
+     * При renderAlpha=1 (обычный вид) ведёт себя как обычный setColor.
+     */
+    private void setColor(Color color) {
+        shapeRenderer.setColor(color.r, color.g, color.b, color.a * renderAlpha);
     }
 
     @Override
@@ -118,11 +147,11 @@ public class RenderSystem extends IteratingSystem {
         // фигур внутри одного begin()/end()). Зданий это не касается — их
         // нельзя выделить (см. GameScreen), SelectedComponent на них не бывает.
         if (SELECTED.has(entity)) {
-            shapeRenderer.setColor(SELECTION_RING_COLOR);
+            setColor(SELECTION_RING_COLOR);
             shapeRenderer.circle(position.position.x, position.position.y, SELECTION_RING_RADIUS);
         }
 
-        shapeRenderer.setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
+        setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
         shapeRenderer.circle(position.position.x, position.position.y, GameConstants.UNIT_RADIUS);
 
         // Маленькая метка внутри (или, у разведчика, треугольник по
@@ -134,10 +163,10 @@ public class RenderSystem extends IteratingSystem {
         // у воина метки нет вовсе.
         UnitTypeComponent unitType = UNIT_TYPE.get(entity);
         if (unitType != null && unitType.type == UnitType.ARCHER) {
-            shapeRenderer.setColor(ARCHER_MARKER_COLOR);
+            setColor(ARCHER_MARKER_COLOR);
             shapeRenderer.circle(position.position.x, position.position.y, ARCHER_MARKER_RADIUS);
         } else if (unitType != null && unitType.type == UnitType.BUILDER) {
-            shapeRenderer.setColor(BUILDER_MARKER_COLOR);
+            setColor(BUILDER_MARKER_COLOR);
             float half = BUILDER_MARKER_HALF_SIZE;
             shapeRenderer.rect(position.position.x - half, position.position.y - half, half * 2f, half * 2f);
         } else if (unitType != null && unitType.type == UnitType.SCOUT) {
@@ -160,7 +189,7 @@ public class RenderSystem extends IteratingSystem {
             return;
         }
 
-        shapeRenderer.setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
+        setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
         shapeRenderer.rect(
                 position.position.x - halfWidth,
                 position.position.y - halfHeight,
@@ -199,7 +228,7 @@ public class RenderSystem extends IteratingSystem {
     /** Стройка (шахта или электростанция) — тускло-серый квадрат вместо цвета игрока (здание ещё не работает) плюс прогресс-бар. */
     private void drawUnderConstruction(PositionComponent position, float halfWidth, float halfHeight,
                                         ConstructionComponent construction) {
-        shapeRenderer.setColor(UNDER_CONSTRUCTION_COLOR);
+        setColor(UNDER_CONSTRUCTION_COLOR);
         shapeRenderer.rect(
                 position.position.x - halfWidth,
                 position.position.y - halfHeight,
@@ -210,23 +239,23 @@ public class RenderSystem extends IteratingSystem {
         float barWidth = halfWidth * 2f;
         float barY = position.position.y - halfHeight - 10f; // под зданием, а не над ним — там уже полоска здоровья
 
-        shapeRenderer.setColor(Color.DARK_GRAY);
+        setColor(Color.DARK_GRAY);
         shapeRenderer.rect(position.position.x - halfWidth, barY, barWidth, HEALTH_BAR_HEIGHT);
-        shapeRenderer.setColor(Color.GOLD);
+        setColor(Color.GOLD);
         shapeRenderer.rect(position.position.x - halfWidth, barY, barWidth * fraction, HEALTH_BAR_HEIGHT);
     }
 
     /** Маленький ромб в цвете месторождений — единственное, что отличает шахту железа от дома/казармы на глаз. */
     private void drawIronMineMarker(float cx, float cy, float halfSize) {
         float markerHalf = halfSize * 0.5f;
-        shapeRenderer.setColor(IRON_MINE_MARKER_COLOR);
+        setColor(IRON_MINE_MARKER_COLOR);
         shapeRenderer.triangle(cx - markerHalf, cy, cx, cy + markerHalf, cx + markerHalf, cy);
         shapeRenderer.triangle(cx - markerHalf, cy, cx, cy - markerHalf, cx + markerHalf, cy);
     }
 
     /** Жёлтый кружок — единственное, что отличает электростанцию от дома (та же форма 2x2, но с этим значком) на глаз. */
     private void drawPowerPlantMarker(float cx, float cy, float halfSize) {
-        shapeRenderer.setColor(POWER_PLANT_MARKER_COLOR);
+        setColor(POWER_PLANT_MARKER_COLOR);
         shapeRenderer.circle(cx, cy, halfSize * 0.5f);
     }
 
@@ -234,7 +263,7 @@ public class RenderSystem extends IteratingSystem {
     /** Маленький квадрат в цвете добываемого ресурса — единственное, что отличает хранилище (железа или электричества) от здания добычи того же ресурса (там ромб/кружок) на глаз. */
     private void drawStorageMarker(float cx, float cy, float halfSize, Color color) {
         float markerHalf = halfSize * 0.4f;
-        shapeRenderer.setColor(color);
+        setColor(color);
         shapeRenderer.rect(cx - markerHalf, cy - markerHalf, markerHalf * 2f, markerHalf * 2f);
     }
 
@@ -257,7 +286,7 @@ public class RenderSystem extends IteratingSystem {
         float noseY = position.position.y + dy * AIRCRAFT_MARKER_LENGTH;
         float tailX = position.position.x - dx * AIRCRAFT_MARKER_LENGTH * 0.5f;
         float tailY = position.position.y - dy * AIRCRAFT_MARKER_LENGTH * 0.5f;
-        shapeRenderer.setColor(color);
+        setColor(color);
         shapeRenderer.triangle(
                 noseX, noseY,
                 tailX + perpX * AIRCRAFT_MARKER_WIDTH, tailY + perpY * AIRCRAFT_MARKER_WIDTH,
@@ -277,7 +306,7 @@ public class RenderSystem extends IteratingSystem {
         float width = halfSize * 1.6f;
         int segments = 12;
 
-        shapeRenderer.setColor(AIRCRAFT_FACTORY_MARKER_COLOR);
+        setColor(AIRCRAFT_FACTORY_MARKER_COLOR);
         float startX = cx - width / 2f;
         float prevX = startX;
         float prevY = cy;
@@ -301,7 +330,7 @@ public class RenderSystem extends IteratingSystem {
         float tall = radius * 0.8660254f; // radius * sqrt(3)/2
         float half = radius * 0.5f;
 
-        shapeRenderer.setColor(HQ_STAR_COLOR);
+        setColor(HQ_STAR_COLOR);
         shapeRenderer.triangle(cx, cy + radius, cx - tall, cy - half, cx + tall, cy - half);
         shapeRenderer.triangle(cx, cy - radius, cx + tall, cy + half, cx - tall, cy + half);
     }
@@ -309,7 +338,7 @@ public class RenderSystem extends IteratingSystem {
     /** "Крышечка" — залитый треугольник поверх верхней грани здания, силуэтом похожий на двускатную крышу. */
     private void drawRoofCap(float cx, float baseY, float halfWidth) {
         float peakHeight = halfWidth;
-        shapeRenderer.setColor(ARCHER_ROOF_COLOR);
+        setColor(ARCHER_ROOF_COLOR);
         shapeRenderer.triangle(cx - halfWidth, baseY, cx + halfWidth, baseY, cx, baseY + peakHeight);
     }
 
@@ -319,10 +348,10 @@ public class RenderSystem extends IteratingSystem {
         // health.maxHealth, а не общая константа — у здания и юнита разный максимум.
         float healthFraction = MathUtils.clamp((float) health.currentHealth / health.maxHealth, 0f, 1f);
 
-        shapeRenderer.setColor(Color.DARK_GRAY);
+        setColor(Color.DARK_GRAY);
         shapeRenderer.rect(barX, barY, barWidth, HEALTH_BAR_HEIGHT);
 
-        shapeRenderer.setColor(healthFraction > 0.3f ? Color.GREEN : Color.RED);
+        setColor(healthFraction > 0.3f ? Color.GREEN : Color.RED);
         shapeRenderer.rect(barX, barY, barWidth * healthFraction, HEALTH_BAR_HEIGHT);
     }
 }
