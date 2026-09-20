@@ -237,7 +237,24 @@ public final class Pathfinding {
         PathComponent path = entity.getComponent(PathComponent.class);
         if (path != null && path.destinationCellX == destCellX && path.destinationCellY == destCellY
                 && !path.waypoints.isEmpty()) {
-            return; // уже идём туда же тем же путём — пересчитывать не нужно
+            // Путь пересчитывать не нужно, но direction.moving обязательно
+            // выставляем явно, а не полагаемся, что он и так true. Юнит
+            // мог быть остановлен ДО того, как этот путь был пройден до
+            // конца — например, BuildSystem ставит moving=false, как
+            // только строитель входит в радиус стройки, а это может
+            // случиться раньше, чем MovementSystem дойдёт до последней
+            // точки обходного пути (buildRange обычно больше
+            // ARRIVE_THRESHOLD). Если после этого выдать тот же приказ
+            // на стройку заново (hasApproachPoint сбрасывается в false —
+            // см. GameServer.assignBuilderToBuild), новая точка подхода
+            // нередко попадает в ту же самую клетку сетки, что и уже
+            // пройденная часть старого пути: тогда без этой строчки юнит
+            // навсегда зависал бы с валидным, но не используемым путём —
+            // видимая на экране линия есть, а движения нет, — пока
+            // случайный приказ с ДРУГОЙ целевой клеткой не проходил бы
+            // мимо этого раннего return и не включал moving заново.
+            direction.moving = true;
+            return;
         }
 
         List<Vector2> waypoints = findPath(position.position.x, position.position.y, destX, destY);
