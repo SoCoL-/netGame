@@ -210,6 +210,41 @@ public final class GameConstants {
      */
     public static final float UNIT_BUILD_TIME = 10f;
 
+    /**
+     * Сколько дополнительной скорости строительства/ремонта даёт КАЖДЫЙ
+     * следующий строитель сверх первого — первый даёт 100% (обычная
+     * скорость, множитель 1.0), второй ещё +10% (итого 1.1), третий ещё
+     * +10% (1.2) и так далее, а не удвоение/утроение на каждого. Общая
+     * константа для BuildSystem (стройка) и RepairSystem (ремонт) — то же
+     * самое рассуждение верно для обеих: несколько строителей работают
+     * быстрее, но не пропорционально своему числу.
+     */
+    public static final float EXTRA_BUILDER_SPEED_BONUS = 0.1f;
+
+    /**
+     * Электричество, которое стоит ЛЮБОЙ ремонт здания — фиксированная
+     * сумма, не зависящая от степени повреждений (в отличие от железа,
+     * см. javadoc RepairComponent.totalIronCost) и от типа здания.
+     * Списывается равномерно за время ремонта, тем же приёмом, что и
+     * ironCostFor/electricityCostFor стройки в BuildSystem.
+     */
+    public static final int REPAIR_ELECTRICITY_COST = 100;
+
+    /**
+     * Сколько секунд занимает ремонт КАЖДОГО процента повреждений здания
+     * (GameServer.assignBuilderToRepair: totalTime = damagePercent *
+     * это). Полностью разрушенное (условно 100%) здание чинилось бы
+     * 10 секунд — тот же порядок, что и обычное время стройки с нуля
+     * (BuildingDefinitions.buildTimeFor, у всех типов сейчас 10f).
+     * Намеренно ОТДЕЛЬНАЯ константа, а не переиспользование buildTimeFor
+     * самого здания: у дома (HOME) buildTime == 0 (он появляется сразу
+     * готовым, не через ConstructionComponent) — при этом дом всё равно
+     * может быть повреждён в бою и должен ремонтироваться, а
+     * "damagePercent * 0" дало бы totalTime == 0 и деление на ноль в
+     * RepairSystem.advanceRepair.
+     */
+    public static final float REPAIR_SECONDS_PER_PERCENT_DAMAGE = 0.1f;
+
     /** Частота обновления симуляции на сервере. */
     public static final float SERVER_TICK_RATE = 1f / 30f;
 

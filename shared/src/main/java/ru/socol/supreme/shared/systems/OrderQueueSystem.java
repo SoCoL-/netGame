@@ -11,6 +11,7 @@ import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.OrderQueueComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
+import ru.socol.supreme.shared.components.RepairOrderComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
@@ -23,12 +24,13 @@ import ru.socol.supreme.shared.pathfinding.Pathfinding;
  * просто пропускается каждый тик почти бесплатно (queue.isEmpty()).
  *
  * MOVE запускается прямо здесь (Pathfinding.setDestination — статический
- * метод, доступен без обратного вызова); ATTACK и BUILD требуют
+ * метод, доступен без обратного вызова); ATTACK, BUILD и REPAIR требуют
  * валидации и доступа к GameServer-специфичным вещам (engine
- * .createComponent для AttackComponent, assignBuilderToBuild) — для них
- * два обратных вызова (тот же приём, что и ProductionSystem.UnitFactory
- * или CombatSystem.ShotFiredListener), чтобы не тащить в shared-систему
- * ничего специфичного для конкретной реализации сервера.
+ * .createComponent для AttackComponent, assignBuilderToBuild/
+ * assignBuilderToRepair) — для них три обратных вызова (тот же приём,
+ * что и ProductionSystem.UnitFactory или CombatSystem.ShotFiredListener),
+ * чтобы не тащить в shared-систему ничего специфичного для конкретной
+ * реализации сервера.
  *
  * Если очередной приказ из очереди оказался невалиден прямо сейчас
  * (цель погибла, здание уже снесено кем-то ещё) — обратный вызов просто
@@ -62,12 +64,14 @@ public class OrderQueueSystem extends IteratingSystem {
 
     private final OrderExecutor attackExecutor;
     private final OrderExecutor buildExecutor;
+    private final OrderExecutor repairExecutor;
 
-    public OrderQueueSystem(OrderExecutor attackExecutor, OrderExecutor buildExecutor) {
+    public OrderQueueSystem(OrderExecutor attackExecutor, OrderExecutor buildExecutor, OrderExecutor repairExecutor) {
         super(Family.all(OrderQueueComponent.class, DirectionComponent.class,
                 OwnerComponent.class, PositionComponent.class, UnitComponent.class).get(), 15);
         this.attackExecutor = attackExecutor;
         this.buildExecutor = buildExecutor;
+        this.repairExecutor = repairExecutor;
     }
 
     @Override
@@ -79,6 +83,7 @@ public class OrderQueueSystem extends IteratingSystem {
 
         boolean idle = entity.getComponent(AttackComponent.class) == null
                 && entity.getComponent(BuildOrderComponent.class) == null
+                && entity.getComponent(RepairOrderComponent.class) == null
                 && !DIRECTION.get(entity).moving;
         if (!idle) {
             return;
@@ -99,6 +104,9 @@ public class OrderQueueSystem extends IteratingSystem {
                 break;
             case BUILD:
                 buildExecutor.execute(playerId, actorUnitId, next.targetBuildingUnitId);
+                break;
+            case REPAIR:
+                repairExecutor.execute(playerId, actorUnitId, next.targetBuildingUnitId);
                 break;
         }
     }

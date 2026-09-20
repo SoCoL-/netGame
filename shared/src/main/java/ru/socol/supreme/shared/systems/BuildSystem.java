@@ -85,9 +85,6 @@ public class BuildSystem extends EntitySystem {
     private static final Family FAMILY =
             Family.all(BuildOrderComponent.class, PositionComponent.class, DirectionComponent.class).get();
 
-    /** Первый строитель на здании — 100% (обычная скорость, множитель 1.0). Каждый следующий добавляет ещё столько. */
-    private static final float EXTRA_BUILDER_SPEED_BONUS = 0.1f;
-
     private static final ComponentMapper<PositionComponent> POSITION =
             ComponentMapper.getFor(PositionComponent.class);
     private static final ComponentMapper<DirectionComponent> DIRECTION =
@@ -148,7 +145,7 @@ public class BuildSystem extends EntitySystem {
             return; // не должно происходить — цель уже проверена в updateBuilder — но на всякий случай не падаем
         }
 
-        float speedMultiplier = 1f + (builderCount - 1) * EXTRA_BUILDER_SPEED_BONUS;
+        float speedMultiplier = 1f + (builderCount - 1) * GameConstants.EXTRA_BUILDER_SPEED_BONUS;
         // Зажимаем оставшимся временем стройки, а не просто deltaTime *
         // speedMultiplier — иначе на последнем тике списывалась бы
         // стоимость ЦЕЛОГО тика, даже если реально доделать осталось

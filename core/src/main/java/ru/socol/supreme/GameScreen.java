@@ -161,6 +161,7 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final Color ORDER_QUEUE_MOVE_COLOR = Color.WHITE;
     private static final Color ORDER_QUEUE_ATTACK_COLOR = Color.valueOf("FF5555");
     private static final Color ORDER_QUEUE_BUILD_COLOR = Color.valueOf("55DDFF");
+    private static final Color ORDER_QUEUE_REPAIR_COLOR = Color.valueOf("77FF77");
     private static final float ORDER_QUEUE_MARKER_RADIUS = 6f;
 
     // Голографический луч стройки — три слоя одного отрезка (см.
@@ -1105,6 +1106,8 @@ public class GameScreen extends InputAdapter implements Screen {
                 return ORDER_QUEUE_ATTACK_COLOR;
             case BUILD:
                 return ORDER_QUEUE_BUILD_COLOR;
+            case REPAIR:
+                return ORDER_QUEUE_REPAIR_COLOR;
             default:
                 return ORDER_QUEUE_MOVE_COLOR;
         }
@@ -1674,7 +1677,7 @@ public class GameScreen extends InputAdapter implements Screen {
         } else if (button == Input.Buttons.RIGHT && !selectedUnitIds.isEmpty()) {
             // Shift — добавить приказ в очередь, а не заменить текущий (см.
             // javadoc MoveUnitRequest.queue) — тот же модификатор для всех
-            // трёх видов приказа, выдаваемых отсюда.
+            // четырёх видов приказа, выдаваемых отсюда.
             boolean queue = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
             Vector3 world = camera.unproject(new Vector3(screenX, screenY, 0));
             Entity target = findEntityNear(world.x, world.y);
@@ -1687,11 +1690,31 @@ public class GameScreen extends InputAdapter implements Screen {
                 // его достраивать, остальные юниты выделения просто
                 // игнорируют клик (см. javadoc issueBuildOrder).
                 issueBuildOrder(target.getComponent(UnitComponent.class).unitId, queue);
+            } else if (target != null && !isEnemy(target) && isDamagedOwnBuilding(target)) {
+                // Своё уже достроенное, но повреждённое здание — строители
+                // идут его чинить (см. javadoc issueRepairOrder). Проверка
+                // ConstructionComponent выше идёт первой — недостроенное
+                // здание обрабатывает та ветка, а не эта, даже если оно
+                // формально тоже "isDamagedOwnBuilding" (у него ведь и HP
+                // меньше максимума, пока стройка не завершена).
+                issueRepairOrder(target.getComponent(UnitComponent.class).unitId, queue);
             } else {
                 issueMoveOrder(world.x, world.y, queue);
             }
         }
         return true;
+    }
+
+    /** Своё, уже достроенное (не ConstructionComponent — та стройка, а не ремонт), но повреждённое (currentHealth < maxHealth) здание — цель для issueRepairOrder. Юнит с тем же дефицитом HP репаиру не подлежит — строители чинят только здания. */
+    private boolean isDamagedOwnBuilding(Entity entity) {
+        if (entity.getComponent(BuildingComponent.class) == null) {
+            return false;
+        }
+        if (entity.getComponent(ConstructionComponent.class) != null) {
+            return false;
+        }
+        HealthComponent health = entity.getComponent(HealthComponent.class);
+        return health != null && health.currentHealth < health.maxHealth;
     }
 
     @Override
@@ -1994,6 +2017,20 @@ public class GameScreen extends InputAdapter implements Screen {
             UnitTypeComponent unitType = unit.getComponent(UnitTypeComponent.class);
             if (unitType != null && unitType.type == UnitType.BUILDER) {
                 client.requestBuildOrder(unitId, targetBuildingUnitId, queue);
+            }
+        }
+    }
+
+    /** Зеркально issueBuildOrder, только для ремонта — по одному RepairOrderRequest на каждого строителя в выделении, остальные юниты выделения (не строители) просто игнорируют этот клик. */
+    private void issueRepairOrder(int targetBuildingUnitId, boolean queue) {
+        for (int unitId : selectedUnitIds) {
+            Entity unit = entityFactory.getEntity(unitId);
+            if (unit == null) {
+                continue;
+            }
+            UnitTypeComponent unitType = unit.getComponent(UnitTypeComponent.class);
+            if (unitType != null && unitType.type == UnitType.BUILDER) {
+                client.requestRepairOrder(unitId, targetBuildingUnitId, queue);
             }
         }
     }

@@ -21,6 +21,7 @@ import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
 import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
+import ru.socol.supreme.shared.network.messages.RepairOrderRequest;
 import ru.socol.supreme.shared.network.messages.SetRallyPointRequest;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 
@@ -130,6 +131,15 @@ public class GameClient implements Disposable {
     /** queue — см. javadoc BuildOrderRequest.queue: shift-клик добавляет в очередь, не прерывая текущий приказ строителя. */
     public void requestBuildOrder(int builderUnitId, int targetBuildingUnitId, boolean queue) {
         BuildOrderRequest request = new BuildOrderRequest();
+        request.builderUnitId = builderUnitId;
+        request.targetBuildingUnitId = targetBuildingUnitId;
+        request.queue = queue;
+        client.sendTCP(request);
+    }
+
+    /** queue — см. javadoc RepairOrderRequest.queue: shift-клик добавляет в очередь, не прерывая текущий приказ строителя. */
+    public void requestRepairOrder(int builderUnitId, int targetBuildingUnitId, boolean queue) {
+        RepairOrderRequest request = new RepairOrderRequest();
         request.builderUnitId = builderUnitId;
         request.targetBuildingUnitId = targetBuildingUnitId;
         request.queue = queue;

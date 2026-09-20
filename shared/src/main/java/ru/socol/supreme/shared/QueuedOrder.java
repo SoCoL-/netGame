@@ -3,7 +3,7 @@ package ru.socol.supreme.shared;
 /**
  * Один отложенный приказ в очереди юнита (OrderQueueComponent) — не сам
  * компонент, а элемент списка внутри него. Какие поля актуальны, решает
- * type: для MOVE — x/y, для ATTACK — targetUnitId, для BUILD —
+ * type: для MOVE — x/y, для ATTACK — targetUnitId, для BUILD и REPAIR —
  * targetBuildingUnitId (остальные поля просто не используются для этого
  * типа, как и везде в проекте — не отдельные подклассы на каждый вид
  * приказа ради всего двух-трёх полей).
@@ -13,7 +13,8 @@ public class QueuedOrder {
     public enum Type {
         MOVE,
         ATTACK,
-        BUILD
+        BUILD,
+        REPAIR
     }
 
     public Type type;
@@ -25,6 +26,6 @@ public class QueuedOrder {
     /** Актуально только для ATTACK. */
     public int targetUnitId;
 
-    /** Актуально только для BUILD. */
+    /** Актуально только для BUILD и REPAIR. */
     public int targetBuildingUnitId;
 }

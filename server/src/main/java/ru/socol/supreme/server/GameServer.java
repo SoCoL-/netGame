@@ -27,6 +27,8 @@ import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PathComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
+import ru.socol.supreme.shared.components.RepairComponent;
+import ru.socol.supreme.shared.components.RepairOrderComponent;
 import ru.socol.supreme.shared.components.TurretComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
@@ -48,6 +50,7 @@ import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueuedOrderPoint;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
+import ru.socol.supreme.shared.network.messages.RepairOrderRequest;
 import ru.socol.supreme.shared.network.messages.SetRallyPointRequest;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
@@ -62,6 +65,7 @@ import ru.socol.supreme.shared.systems.ConstructionSystem;
 import ru.socol.supreme.shared.systems.MovementSystem;
 import ru.socol.supreme.shared.systems.OrderQueueSystem;
 import ru.socol.supreme.shared.systems.ProductionSystem;
+import ru.socol.supreme.shared.systems.RepairSystem;
 import ru.socol.supreme.shared.systems.ResourceExtractionSystem;
 import ru.socol.supreme.shared.systems.TurretAimSystem;
 
@@ -182,12 +186,13 @@ public class GameServer {
         engine.addSystem(new CombatSystem(unitsById, this::handleShotFired));
         engine.addSystem(new TurretAimSystem(unitsById));
         engine.addSystem(new BuildSystem(unitsById, resourcesByPlayer));
+        engine.addSystem(new RepairSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit));
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new MovementSystem());
         engine.addSystem(new AircraftMovementSystem(unitsById));
-        engine.addSystem(new OrderQueueSystem(this::startAttackOrder, this::assignBuilderToBuild));
+        engine.addSystem(new OrderQueueSystem(this::startAttackOrder, this::assignBuilderToBuild, this::assignBuilderToRepair));
         engine.addSystem(new CollisionSystem(unitsById, collisionGrid));
     }
 
@@ -685,9 +690,12 @@ public class GameServer {
         if (unit.getComponent(AttackComponent.class) != null) {
             unit.remove(AttackComponent.class);
         }
-        // И текущую стройку — если это был строитель.
+        // И текущую стройку или ремонт — если это был строитель.
         if (unit.getComponent(BuildOrderComponent.class) != null) {
             unit.remove(BuildOrderComponent.class);
+        }
+        if (unit.getComponent(RepairOrderComponent.class) != null) {
+            unit.remove(RepairOrderComponent.class);
         }
 
         PositionComponent position = unit.getComponent(PositionComponent.class);
@@ -787,9 +795,12 @@ public class GameServer {
             return false; // нельзя атаковать своих (свои здания — тоже)
         }
 
-        // Ручной приказ на атаку отменяет текущую стройку — как и обычный приказ на движение.
+        // Ручной приказ на атаку отменяет текущую стройку или ремонт — как и обычный приказ на движение.
         if (attacker.getComponent(BuildOrderComponent.class) != null) {
             attacker.remove(BuildOrderComponent.class);
+        }
+        if (attacker.getComponent(RepairOrderComponent.class) != null) {
+            attacker.remove(RepairOrderComponent.class);
         }
 
         AttackComponent attack = attacker.getComponent(AttackComponent.class);
@@ -890,9 +901,12 @@ public class GameServer {
             return; // уже достроено (или не здание вовсе) — нечего строить
         }
 
-        // Ручной приказ на стройку отменяет текущую атаку — как и обычный приказ на движение.
+        // Ручной приказ на стройку отменяет текущую атаку и текущий ремонт — как и обычный приказ на движение.
         if (builder.getComponent(AttackComponent.class) != null) {
             builder.remove(AttackComponent.class);
+        }
+        if (builder.getComponent(RepairOrderComponent.class) != null) {
+            builder.remove(RepairOrderComponent.class);
         }
 
         BuildOrderComponent order = builder.getComponent(BuildOrderComponent.class);
@@ -959,6 +973,125 @@ public class GameServer {
             }
             assignBuilderToBuild(playerId, builderUnitId, newBuildingUnitId);
         }
+    }
+
+    /**
+     * Приказ строителю ремонтировать (или продолжить ремонтировать)
+     * конкретное здание — по правому клику на своё повреждённое, но уже
+     * достроенное здание при выделенных строителях (см.
+     * GameScreen.issueRepairOrder). Обработка зеркальна handleBuildOrder
+     * — та же логика queue/не-queue, см. её же javadoc.
+     */
+    synchronized void handleRepairOrder(Connection connection, RepairOrderRequest request) {
+        if (gameOver) {
+            return;
+        }
+
+        Integer playerId = connectionToPlayer.get(connection.getID());
+        if (playerId == null) {
+            return;
+        }
+
+        if (request.queue) {
+            Entity builder = unitsById.get(request.builderUnitId);
+            if (builder == null) {
+                return;
+            }
+            OwnerComponent owner = builder.getComponent(OwnerComponent.class);
+            if (owner == null || owner.playerId != playerId) {
+                return; // не ваш юнит
+            }
+
+            QueuedOrder order = new QueuedOrder();
+            order.type = QueuedOrder.Type.REPAIR;
+            order.targetBuildingUnitId = request.targetBuildingUnitId;
+            enqueueOrder(builder, order);
+            return;
+        }
+
+        Entity builder = unitsById.get(request.builderUnitId);
+        if (builder != null) {
+            clearOrderQueue(builder);
+        }
+        assignBuilderToRepair(playerId, request.builderUnitId, request.targetBuildingUnitId);
+    }
+
+    /**
+     * Назначает одного строителя ремонтировать конкретное (уже
+     * достроенное) здание — общая логика для обоих путей выдачи приказа
+     * (ручной приказ handleRepairOrder и разбор очереди через
+     * OrderQueueSystem). Молча ничего не делает при любой проверке
+     * владения/типа, которая не проходит — не ваш юнит, не строитель,
+     * чужое здание, здание ещё строится (это BuildOrderRequest, не этот
+     * приказ) или не повреждено вовсе — нечего чинить.
+     *
+     * Если здание УЖЕ ремонтируется (RepairComponent уже есть — другой
+     * строитель начал раньше, или тот же строитель переприказан на ту же
+     * цель) — компонент переиспользуется как есть, стоимость и время
+     * ремонта НЕ пересчитываются заново от текущего процента повреждений:
+     * они зафиксированы один раз, в момент первого назначения — см.
+     * javadoc RepairComponent, почему.
+     */
+    private void assignBuilderToRepair(int playerId, int builderUnitId, int targetBuildingUnitId) {
+        Entity builder = unitsById.get(builderUnitId);
+        Entity targetBuilding = unitsById.get(targetBuildingUnitId);
+        if (builder == null || targetBuilding == null) {
+            return;
+        }
+
+        OwnerComponent builderOwner = builder.getComponent(OwnerComponent.class);
+        if (builderOwner == null || builderOwner.playerId != playerId) {
+            return; // не ваш юнит
+        }
+
+        UnitTypeComponent builderType = builder.getComponent(UnitTypeComponent.class);
+        if (builderType == null || builderType.type != UnitType.BUILDER) {
+            return; // ремонтировать может только строитель
+        }
+
+        OwnerComponent targetOwner = targetBuilding.getComponent(OwnerComponent.class);
+        if (targetOwner == null || targetOwner.playerId != playerId) {
+            return; // ремонтировать можно только своё
+        }
+
+        if (targetBuilding.getComponent(ConstructionComponent.class) != null) {
+            return; // ещё строится — это обычная стройка (BuildOrderRequest), не ремонт
+        }
+
+        HealthComponent health = targetBuilding.getComponent(HealthComponent.class);
+        if (health == null || health.currentHealth >= health.maxHealth) {
+            return; // не повреждено — нечего ремонтировать
+        }
+
+        // Ручной приказ на ремонт отменяет текущую атаку и текущую стройку — как и обычный приказ на движение.
+        if (builder.getComponent(AttackComponent.class) != null) {
+            builder.remove(AttackComponent.class);
+        }
+        if (builder.getComponent(BuildOrderComponent.class) != null) {
+            builder.remove(BuildOrderComponent.class);
+        }
+
+        RepairComponent repair = targetBuilding.getComponent(RepairComponent.class);
+        if (repair == null) {
+            repair = engine.createComponent(RepairComponent.class);
+            float damagePercent = (1f - (float) health.currentHealth / health.maxHealth) * 100f;
+            repair.totalIronCost = Math.round(damagePercent);
+            repair.totalTime = damagePercent * GameConstants.REPAIR_SECONDS_PER_PERCENT_DAMAGE;
+            repair.remaining = repair.totalTime;
+            repair.startHealth = health.currentHealth;
+            targetBuilding.add(repair);
+        }
+
+        RepairOrderComponent order = builder.getComponent(RepairOrderComponent.class);
+        if (order == null) {
+            order = engine.createComponent(RepairOrderComponent.class);
+            builder.add(order);
+        }
+        order.targetBuildingUnitId = targetBuildingUnitId;
+        // Тот же приём, что и в assignBuilderToBuild — (пере)выдача
+        // приказа заставляет RepairSystem посчитать точку подхода заново
+        // на следующем тике, не тащить устаревшую с прошлого захода.
+        order.hasApproachPoint = false;
     }
 
     /**
@@ -1096,6 +1229,17 @@ public class GameServer {
                 BuildOrderComponent buildOrder = unit.getComponent(BuildOrderComponent.class);
                 if (buildOrder != null && buildOrder.inRange) {
                     unitSnapshot.buildTargetUnitId = buildOrder.targetBuildingUnitId;
+                }
+                // То же самое поле, что и для стройки — с точки зрения
+                // клиентского луча (GameScreen.drawBuildBeams) ремонт и
+                // стройка неотличимы, оба означают "строитель что-то
+                // делает вон с тем зданием" (см. javadoc
+                // RepairOrderComponent.inRange). Строитель не может
+                // одновременно строить и чинить, так что оба если
+                // сработают — не перезапишут друг друга неверно.
+                RepairOrderComponent repairOrder = unit.getComponent(RepairOrderComponent.class);
+                if (repairOrder != null && repairOrder.inRange) {
+                    unitSnapshot.buildTargetUnitId = repairOrder.targetBuildingUnitId;
                 }
             }
 
