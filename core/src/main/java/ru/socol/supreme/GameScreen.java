@@ -53,9 +53,11 @@ import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -287,6 +289,33 @@ public class GameScreen extends InputAdapter implements Screen {
 
     private final Set<Integer> selectedUnitIds = new HashSet<>();
     private Integer selectedBuildingId = null;
+
+    /**
+     * Группы выделения по горячим клавишам (см. keyDown): Shift+1..Shift+9
+     * сохраняют текущее выделение под этим номером, просто 1..9 —
+     * выделяют сохранённую группу целиком. Юниты, погибшие после того,
+     * как их занесли в группу, из неё не убираются сразу, а
+     * отфильтровываются при очередном выборе группы (см.
+     * selectControlGroup) — с максимум 9 группами и небольшим числом
+     * юнитов это не накапливает сколько-нибудь заметный мёртвый груз.
+     * Чисто клиентское, презентационное состояние — сервер про группы
+     * ничего не знает, это просто способ быстро набрать то же
+     * selectedUnitIds, что можно набрать рамкой или кликами по одному.
+     */
+    private final Map<Integer, Set<Integer>> controlGroups = new HashMap<>();
+
+    /**
+     * Номер группы, которой соответствует ТЕКУЩЕЕ выделение — не null,
+     * только если оно получено через selectControlGroup (нажатие цифры
+     * без shift) и с тех пор не заменялось целиком чем-то другим (клик по
+     * пустому месту/другому юниту без shift, рамка) — см. setSelection,
+     * которая сбрасывает это поле при любой полной замене выделения.
+     * Нужно ровно для одного: чтобы shift-клик по юниту (см.
+     * handleSingleClickSelect/addToSelection) знал, в какую именно
+     * сохранённую группу заодно дописать этого юнита, а не только в
+     * видимое выделение.
+     */
+    private Integer activeControlGroupNumber = null;
 
     // Активные визуальные стрелы (см. ProjectileFiredEvent) — список сам себя
     // чистит по мере пролёта, отдельного лимита на размер не нужно: при
@@ -1685,7 +1714,8 @@ public class GameScreen extends InputAdapter implements Screen {
             Vector3 end = camera.unproject(new Vector3(screenX, screenY, 0));
 
             if (dragStartWorld.dst(end) < DRAG_THRESHOLD) {
-                handleSingleClickSelect(end.x, end.y);
+                boolean shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
+                handleSingleClickSelect(end.x, end.y, shift);
             } else {
                 handleBoxSelect(dragStartWorld.x, dragStartWorld.y, end.x, end.y);
             }
@@ -1723,12 +1753,34 @@ public class GameScreen extends InputAdapter implements Screen {
             }
             return true;
         }
+
+        // Группы выделения: Shift+1..Shift+9 сохраняют текущее выделение
+        // под этим номером (assignControlGroup), просто 1..9 — выделяют
+        // сохранённую группу целиком (selectControlGroup). NUM_1..NUM_9 —
+        // ряд цифр над буквами, не NUMPAD_1..NUMPAD_9 (цифровая клавиатура).
+        if (keycode >= Input.Keys.NUM_1 && keycode <= Input.Keys.NUM_9) {
+            int groupNumber = keycode - Input.Keys.NUM_1 + 1;
+            boolean shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
+            if (shift) {
+                assignControlGroup(groupNumber);
+            } else {
+                selectControlGroup(groupNumber);
+            }
+            return true;
+        }
         return false;
     }
 
     // ---- Выделение ----
 
-    private void handleSingleClickSelect(float x, float y) {
+    /**
+     * addToSelection — shift был зажат в момент клика: клик по своему
+     * юниту тогда ДОПОЛНЯЕТ текущее выделение (см. одноимённый метод
+     * ниже), а не заменяет его целиком. На остальные случаи (пустое
+     * место, чужой юнит/здание, своё здание) shift сейчас не влияет —
+     * запрошено было именно добавление юнита кликом, не более того.
+     */
+    private void handleSingleClickSelect(float x, float y, boolean addToSelection) {
         Entity clicked = findEntityNear(x, y);
         if (clicked == null) {
             setSelection(Collections.emptySet());
@@ -1756,7 +1808,12 @@ public class GameScreen extends InputAdapter implements Screen {
 
         if (isMine) { // свой юнит
             selectedBuildingId = null;
-            setSelection(Collections.singleton(clicked.getComponent(UnitComponent.class).unitId));
+            int unitId = clicked.getComponent(UnitComponent.class).unitId;
+            if (addToSelection && !selectedUnitIds.isEmpty()) {
+                this.addToSelection(unitId);
+            } else {
+                setSelection(Collections.singleton(unitId));
+            }
             return;
         }
 
@@ -1804,6 +1861,11 @@ public class GameScreen extends InputAdapter implements Screen {
 
         selectedUnitIds.clear();
         selectedUnitIds.addAll(newSelection);
+        // Полная замена выделения — оно перестаёт быть "привязанным" к
+        // группе, даже если новое содержимое случайно с ней совпало;
+        // selectControlGroup выставляет это поле обратно сама, сразу
+        // после своего вызова setSelection.
+        activeControlGroupNumber = null;
 
         for (int unitId : selectedUnitIds) {
             Entity entity = entityFactory.getEntity(unitId);
@@ -1811,6 +1873,73 @@ public class GameScreen extends InputAdapter implements Screen {
                 entity.add(new SelectedComponent());
             }
         }
+    }
+
+    /**
+     * Добавляет одного юнита к уже имеющемуся выделению, не заменяя его
+     * целиком (в отличие от setSelection) — единственный источник вызова:
+     * shift-клик по своему юниту в handleSingleClickSelect. Если сейчас
+     * выделена группа (activeControlGroupNumber не null), юнит заодно
+     * дописывается и в саму сохранённую группу, а не только в текущее
+     * видимое выделение — так следующее нажатие той же цифры уже будет
+     * включать его.
+     */
+    private void addToSelection(int unitId) {
+        if (!selectedUnitIds.add(unitId)) {
+            return; // уже был выделен — делать нечего
+        }
+        Entity entity = entityFactory.getEntity(unitId);
+        if (entity != null) {
+            entity.add(new SelectedComponent());
+        }
+        if (activeControlGroupNumber != null) {
+            Set<Integer> group = controlGroups.get(activeControlGroupNumber);
+            if (group != null) {
+                group.add(unitId);
+            }
+        }
+    }
+
+    /** Shift+N (см. keyDown) — сохранить текущее выделение как группу N целиком заменяя то, что было в ней раньше. Пустое выделение ничего не делает — иначе Shift+N по ошибке стирал бы уже сохранённую группу. */
+    private void assignControlGroup(int groupNumber) {
+        if (selectedUnitIds.isEmpty()) {
+            return;
+        }
+        controlGroups.put(groupNumber, new HashSet<>(selectedUnitIds));
+        activeControlGroupNumber = groupNumber;
+    }
+
+    /**
+     * N без Shift (см. keyDown) — выделить группу N целиком, как обычную
+     * замену выделения (клик/рамка). Юнитов, погибших с момента
+     * назначения группы, тут же вычищаем из хранимой группы (см. javadoc
+     * controlGroups) — если после этого группа опустела, она удаляется
+     * целиком, а нажатие просто ничего не делает (как и на изначально
+     * пустую/никогда не назначенную группу).
+     */
+    private void selectControlGroup(int groupNumber) {
+        Set<Integer> group = controlGroups.get(groupNumber);
+        if (group == null || group.isEmpty()) {
+            return;
+        }
+
+        Set<Integer> alive = new HashSet<>();
+        for (int unitId : group) {
+            if (entityFactory.getEntity(unitId) != null) {
+                alive.add(unitId);
+            }
+        }
+        if (alive.isEmpty()) {
+            controlGroups.remove(groupNumber);
+            return;
+        }
+        if (alive.size() != group.size()) {
+            controlGroups.put(groupNumber, alive);
+        }
+
+        selectedBuildingId = null;
+        setSelection(alive);
+        activeControlGroupNumber = groupNumber;
     }
 
     // ---- Приказы выделенным юнитам ----
