@@ -197,18 +197,18 @@ public final class BuildingDefinitions {
 
         BuildingDefinition home = new BuildingDefinition();
         home.type = BuildingType.HOME;
-        home.sightRadius = 70f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
+        home.sightRadius = 420f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
         home.halfWidth = 50f;
         home.halfHeight = 50f;
         home.maxHealth = 500;
         home.buildTime = 0f;
         home.producesUnitTypes = new UnitType[]{UnitType.WARRIOR, UnitType.BUILDER};
-        home.spawnMargin = 200f;
+        home.spawnMargin = 800f; // увеличен в 4 раза вместе с картой (было 200 при 2000x2000) — та же относительная позиция дома в углу карты
         definitions.put(BuildingType.HOME, home);
 
         BuildingDefinition archerBarracks = new BuildingDefinition();
         archerBarracks.type = BuildingType.ARCHER_BARRACKS;
-        archerBarracks.sightRadius = 70f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
+        archerBarracks.sightRadius = 420f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
         archerBarracks.halfWidth = 25f;
         archerBarracks.halfHeight = 50f;
         archerBarracks.maxHealth = 70;
@@ -221,7 +221,7 @@ public final class BuildingDefinitions {
 
         BuildingDefinition ironMine = new BuildingDefinition();
         ironMine.type = BuildingType.IRON_MINE;
-        ironMine.sightRadius = 70f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
+        ironMine.sightRadius = 420f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
         ironMine.halfWidth = 25f;
         ironMine.halfHeight = 25f;
         ironMine.maxHealth = 70;
@@ -234,7 +234,7 @@ public final class BuildingDefinitions {
 
         BuildingDefinition powerPlant = new BuildingDefinition();
         powerPlant.type = BuildingType.POWER_PLANT;
-        powerPlant.sightRadius = 70f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
+        powerPlant.sightRadius = 420f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
         powerPlant.halfWidth = 50f;
         powerPlant.halfHeight = 50f;
         powerPlant.maxHealth = 90;
@@ -246,7 +246,7 @@ public final class BuildingDefinitions {
 
         BuildingDefinition ironStorage = new BuildingDefinition();
         ironStorage.type = BuildingType.IRON_STORAGE;
-        ironStorage.sightRadius = 70f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
+        ironStorage.sightRadius = 420f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
         ironStorage.halfWidth = 25f;
         ironStorage.halfHeight = 25f;
         ironStorage.maxHealth = 80;
@@ -257,7 +257,7 @@ public final class BuildingDefinitions {
 
         BuildingDefinition electricityStorage = new BuildingDefinition();
         electricityStorage.type = BuildingType.ELECTRICITY_STORAGE;
-        electricityStorage.sightRadius = 70f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
+        electricityStorage.sightRadius = 420f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
         electricityStorage.halfWidth = 25f;
         electricityStorage.halfHeight = 25f;
         electricityStorage.maxHealth = 80;
@@ -268,7 +268,7 @@ public final class BuildingDefinitions {
 
         BuildingDefinition aircraftFactory = new BuildingDefinition();
         aircraftFactory.type = BuildingType.AIRCRAFT_FACTORY;
-        aircraftFactory.sightRadius = 70f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
+        aircraftFactory.sightRadius = 420f; // настраиваемый параметр — см. javadoc BuildingDefinition.sightRadius, почему у всех сейчас одно и то же число
         aircraftFactory.halfWidth = 50f; // 2 клетки по 50
         aircraftFactory.halfHeight = 75f; // 3 клетки по 50
         aircraftFactory.maxHealth = 50;

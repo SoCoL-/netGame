@@ -150,11 +150,11 @@ public final class UnitDefinitions {
     /** Встроенные значения — то, чем баланс был до вынесения в JSON. Подстраховка на случай отсутствия/поломки файла. */
     private static Map<UnitType, UnitDefinition> defaultDefinitions() {
         Map<UnitType, UnitDefinition> definitions = new EnumMap<>(UnitType.class);
-        definitions.put(UnitType.WARRIOR, new UnitDefinition(UnitType.WARRIOR, 80f, 20, 4f, 2, 70f, 0, 0, 10f, 0f, 150f, 0f, false, 0f));
-        definitions.put(UnitType.ARCHER, new UnitDefinition(UnitType.ARCHER, 80f, 20, 4f, 2, 210f, 300, 300, 10f, 0f, 250f, 0f, false, 0f));
-        definitions.put(UnitType.BUILDER, new UnitDefinition(UnitType.BUILDER, 80f, 65, 4f, 1, 70f, 100, 150, 10f, 210f, 120f, 0f, false, 0f));
-        definitions.put(UnitType.SCOUT, new UnitDefinition(UnitType.SCOUT, 80f, 65, 4f, 4, 100f, 150, 200, 10f, 0f, 100f, 100f, false, 45f));
-        definitions.put(UnitType.ATTACK_AIRCRAFT, new UnitDefinition(UnitType.ATTACK_AIRCRAFT, 60f, 100, 4f, 4, 100f, 100, 800, 12f, 0f, 120f, 20f, true, 55f));
+        definitions.put(UnitType.WARRIOR, new UnitDefinition(UnitType.WARRIOR, 240f, 20, 4f, 2, 70f, 0, 0, 10f, 0f, 450f, 0f, false, 0f));
+        definitions.put(UnitType.ARCHER, new UnitDefinition(UnitType.ARCHER, 240f, 20, 4f, 2, 210f, 300, 300, 10f, 0f, 750f, 0f, false, 0f));
+        definitions.put(UnitType.BUILDER, new UnitDefinition(UnitType.BUILDER, 240f, 65, 4f, 1, 70f, 100, 150, 10f, 210f, 360f, 0f, false, 0f));
+        definitions.put(UnitType.SCOUT, new UnitDefinition(UnitType.SCOUT, 240f, 65, 4f, 4, 100f, 150, 200, 10f, 0f, 300f, 100f, false, 45f));
+        definitions.put(UnitType.ATTACK_AIRCRAFT, new UnitDefinition(UnitType.ATTACK_AIRCRAFT, 180f, 100, 4f, 4, 100f, 100, 800, 12f, 0f, 360f, 20f, true, 55f));
         return definitions;
     }
 }

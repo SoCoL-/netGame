@@ -9,8 +9,8 @@
       "WARRIOR",
       "BUILDER"
     ],
-    "spawnMargin": 200,
-    "sightRadius": 70
+    "spawnMargin": 800,
+    "sightRadius": 420
   },
   {
     "type": "ARCHER_BARRACKS",
@@ -24,7 +24,7 @@
     "consumesResourceType": "ELECTRICITY",
     "idleConsumptionRate": 0.5,
     "activeConsumptionRate": 2,
-    "sightRadius": 70
+    "sightRadius": 420
   },
   {
     "type": "IRON_MINE",
@@ -36,7 +36,7 @@
     "extractionRate": 20,
     "snapRadius": 60,
     "ironCost": 50,
-    "sightRadius": 70
+    "sightRadius": 420
   },
   {
     "type": "POWER_PLANT",
@@ -47,7 +47,7 @@
     "resourceType": "ELECTRICITY",
     "extractionRate": 150,
     "electricityCost": 50,
-    "sightRadius": 70
+    "sightRadius": 420
   },
   {
     "type": "IRON_STORAGE",
@@ -57,7 +57,7 @@
     "buildTime": 10,
     "storesResourceType": "IRON",
     "storageCapacity": 500,
-    "sightRadius": 70
+    "sightRadius": 420
   },
   {
     "type": "ELECTRICITY_STORAGE",
@@ -67,7 +67,7 @@
     "buildTime": 10,
     "storesResourceType": "ELECTRICITY",
     "storageCapacity": 3000,
-    "sightRadius": 70
+    "sightRadius": 420
   },
   {
     "type": "AIRCRAFT_FACTORY",
@@ -84,6 +84,6 @@
     "activeConsumptionRate": 70,
     "ironCost": 200,
     "electricityCost": 1000,
-    "sightRadius": 70
+    "sightRadius": 420
   }
 ]
