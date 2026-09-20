@@ -100,6 +100,17 @@ public class RenderSystem extends IteratingSystem {
     // чем протаскивать сюда всю камеру ради единственного числа.
     private float renderAlpha = 1f;
 
+    // Туман войны для чужих юнитов/зданий — своя сущность (owner.playerId
+    // == localPlayerId) сквозь туман видна всегда, чужая рисуется только
+    // если её клетка сейчас просвечена. null, пока GameScreen ещё не
+    // получил ни одного FogSnapshot (в начале подключения) — тогда фильтр
+    // выключен, рисуем всех, как и раньше. Оба поля выставляет GameScreen
+    // перед каждым engine.update() (см. setFogVisibility) — то же самое
+    // "протащить одно значение, а не всю камеру/клиента" решение, что и у
+    // renderAlpha чуть выше.
+    private boolean[] fogRevealed;
+    private int localPlayerId = -1;
+
     public RenderSystem(ShapeRenderer shapeRenderer) {
         super(Family.all(PositionComponent.class, OwnerComponent.class, HealthComponent.class).get(), 10);
         this.shapeRenderer = shapeRenderer;
@@ -107,6 +118,32 @@ public class RenderSystem extends IteratingSystem {
 
     public void setRenderAlpha(float renderAlpha) {
         this.renderAlpha = renderAlpha;
+    }
+
+    public void setFogVisibility(boolean[] fogRevealed, int localPlayerId) {
+        this.fogRevealed = fogRevealed;
+        this.localPlayerId = localPlayerId;
+    }
+
+    /**
+     * Чужая сущность, чья клетка сейчас не просвечена туманом войны, вообще
+     * не рисуется — раньше она была видна сквозь полупрозрачную серую
+     * плашку тумана (FOG_COLOR.a меньше 1, это же и часть сглаживания),
+     * что превращало туман в чисто косметический эффект. Свои сущности
+     * туман не трогает никогда — сравнение идёт напрямую по
+     * owner.playerId == localPlayerId.
+     */
+    private boolean isHiddenByFog(OwnerComponent owner, PositionComponent position) {
+        if (fogRevealed == null || owner.playerId == localPlayerId) {
+            return false;
+        }
+        int cellX = (int) (position.position.x / GameConstants.FOG_GRID_CELL_SIZE);
+        int cellY = (int) (position.position.y / GameConstants.FOG_GRID_CELL_SIZE);
+        if (cellX < 0 || cellX >= GameConstants.FOG_GRID_WIDTH || cellY < 0 || cellY >= GameConstants.FOG_GRID_HEIGHT) {
+            return true; // координата вне сетки тумана — не должно происходить, но безопаснее скрыть, чем показать
+        }
+        int index = cellY * GameConstants.FOG_GRID_WIDTH + cellX;
+        return index >= fogRevealed.length || !fogRevealed[index];
     }
 
     @Override
@@ -135,6 +172,10 @@ public class RenderSystem extends IteratingSystem {
         PositionComponent position = POSITION.get(entity);
         OwnerComponent owner = OWNER.get(entity);
         HealthComponent health = HEALTH.get(entity);
+
+        if (isHiddenByFog(owner, position)) {
+            return;
+        }
 
         if (BUILDING.has(entity)) {
             drawBuilding(entity, position, owner, health);

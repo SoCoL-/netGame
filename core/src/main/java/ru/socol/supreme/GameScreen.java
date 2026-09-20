@@ -625,6 +625,10 @@ public class GameScreen extends InputAdapter implements Screen {
             if (position == null || owner == null) {
                 continue;
             }
+            if (isHiddenByFog(owner, position)) {
+                continue; // тот же принцип, что и в RenderSystem.isHiddenByFog — чужой значок в тумане вообще не рисуем
+            }
+
             Color playerColor = RenderSystem.PLAYER_COLORS[owner.playerId % RenderSystem.PLAYER_COLORS.length];
             boolean isBuilding = entity.getComponent(BuildingComponent.class) != null;
 
@@ -670,7 +674,6 @@ public class GameScreen extends InputAdapter implements Screen {
         drawGround(); // до engine.update() — юниты должны рисоваться поверх земли/воды, а не под ними
         drawIronDeposits(); // тоже до engine.update() — поверх земли, но под юнитами/зданиями
         drawRallyPoints(); // тоже до engine.update() — под юнитами, не поверх них
-        drawOrderQueue(); // тоже до engine.update() — под юнитами, не поверх них
 
         // Кроссфейд тактический/стратегический вид (см. strategicFactor) —
         // тактический слой (RenderSystem, внутри engine.update) рисуется с
@@ -681,6 +684,7 @@ public class GameScreen extends InputAdapter implements Screen {
         // применялась бы (RenderSystem рисовал бы непрозрачно всегда).
         float strategicFactor = strategicFactor();
         renderSystem.setRenderAlpha(1f - strategicFactor);
+        renderSystem.setFogVisibility(fogRevealed, client.getPlayerId());
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         engine.update(delta);
@@ -692,6 +696,11 @@ public class GameScreen extends InputAdapter implements Screen {
         drawArrows();
         drawBuildBeams();
         drawFogOfWar(); // поверх всего мирового — юнитов, зданий, лучей стройки — но до HUD
+        // После тумана, не до него: это очередь приказов СВОЕГО же
+        // выделенного юнита, включая точки, ведущие в ещё не открытую
+        // туманом территорию — раньше эта часть цепочки рисовалась ДО
+        // тумана и потому пряталась под его серой плашкой.
+        drawOrderQueue();
         if (debugMode) {
             drawDebugPaths();
         }
@@ -1824,6 +1833,29 @@ public class GameScreen extends InputAdapter implements Screen {
     private boolean isEnemy(Entity entity) {
         OwnerComponent owner = entity.getComponent(OwnerComponent.class);
         return owner != null && owner.playerId != client.getPlayerId();
+    }
+
+    /**
+     * Та же проверка, что и в RenderSystem.isHiddenByFog (дублируется
+     * здесь, а не выносится в общий метод, — единственное, что вызывает
+     * это тут, drawStrategicIcons, и там своя, не Ashley-система, версия
+     * цикла, так что общий метод потребовал бы либо статического
+     * хелпера в GameConstants ради одной строки формулы, либо
+     * протаскивания RenderSystem в этот метод — ни то ни другое не
+     * дешевле). Своя сущность видна всегда, чужая — только если её
+     * клетка сейчас просвечена туманом.
+     */
+    private boolean isHiddenByFog(OwnerComponent owner, PositionComponent position) {
+        if (fogRevealed == null || owner.playerId == client.getPlayerId()) {
+            return false;
+        }
+        int cellX = (int) (position.position.x / GameConstants.FOG_GRID_CELL_SIZE);
+        int cellY = (int) (position.position.y / GameConstants.FOG_GRID_CELL_SIZE);
+        if (cellX < 0 || cellX >= GameConstants.FOG_GRID_WIDTH || cellY < 0 || cellY >= GameConstants.FOG_GRID_HEIGHT) {
+            return true;
+        }
+        int index = cellY * GameConstants.FOG_GRID_WIDTH + cellX;
+        return index >= fogRevealed.length || !fogRevealed[index];
     }
 
     /** Возвращает ближайшую сущность под точкой — у зданий клик-радиус зависит от их реальной формы (дом и казарма разного размера). */
