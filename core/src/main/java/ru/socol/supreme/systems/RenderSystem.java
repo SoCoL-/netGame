@@ -20,6 +20,7 @@ import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
+import ru.socol.supreme.shared.components.WreckComponent;
 
 /**
  * Рисует каждую сущность. Наземная техника (WARRIOR/ARCHER/BUILDER) —
@@ -70,6 +71,8 @@ public class RenderSystem extends IteratingSystem {
             ComponentMapper.getFor(ConstructionComponent.class);
     private static final ComponentMapper<TurretDisplayComponent> TURRET_DISPLAY =
             ComponentMapper.getFor(TurretDisplayComponent.class);
+    private static final ComponentMapper<WreckComponent> WRECK =
+            ComponentMapper.getFor(WreckComponent.class);
 
     // Публичный — GameScreen переиспользует те же цвета для стратегических
     // значков (drawStrategicIcons), чтобы кроссфейд тактический/
@@ -130,6 +133,10 @@ public class RenderSystem extends IteratingSystem {
     // невидим.
     private static final Color AIRCRAFT_FACTORY_MARKER_COLOR = Color.CYAN;
     private static final Color UNDER_CONSTRUCTION_COLOR = Color.GRAY;
+    /** Обломки на суше — тускло-ржавый, чтобы не путались ни с одним цветом игрока (SKY/ORANGE) и не выглядели как здание. */
+    private static final Color WRECK_COLOR = Color.valueOf("6B5B4B");
+    /** Обломки под водой (WreckComponent.underwater) — темнее и холоднее, чтобы читалось "на дне", а не "на суше в тени". */
+    private static final Color WRECK_UNDERWATER_COLOR = Color.valueOf("35465A");
 
     private static final float HEALTH_BAR_HEIGHT = 4f;
     private static final float UNIT_HEALTH_BAR_WIDTH = 24f;
@@ -234,6 +241,13 @@ public class RenderSystem extends IteratingSystem {
             // как только CONSTRUCTION.get(entity) == null.
             if (buildingComponent.type == BuildingType.TURRET && CONSTRUCTION.get(entity) == null) {
                 drawTurretBuilding(entity, position, owner, health);
+            } else if (buildingComponent.type == BuildingType.WRECK) {
+                // Обломки — не настоящее здание и не принадлежат никому
+                // (OwnerComponent.playerId == GameConstants.NEUTRAL_OWNER_ID,
+                // см. javadoc WreckComponent), поэтому не могут пойти через
+                // drawBuilding — та красит корпус в PLAYER_COLORS[owner
+                // .playerId % ...], что упало бы с отрицательным индексом.
+                drawWreck(entity, position, health);
             } else {
                 drawBuilding(entity, position, owner, health);
             }
@@ -399,6 +413,34 @@ public class RenderSystem extends IteratingSystem {
     private void drawDiamond(float cx, float cy, float halfWidth, float halfHeight) {
         shapeRenderer.triangle(cx, cy + halfHeight, cx + halfWidth, cy, cx, cy - halfHeight);
         shapeRenderer.triangle(cx, cy + halfHeight, cx - halfWidth, cy, cx, cy - halfHeight);
+    }
+
+    /**
+     * Обломки погибшего юнита (BuildingType.WRECK, см. её javadoc) —
+     * крестообразный силуэт фиксированного цвета (WRECK_COLOR/
+     * WRECK_UNDERWATER_COLOR — НЕ playerColor, у обломков нет владельца),
+     * а не ровный прямоугольник обычного здания, чтобы на глаз не
+     * путались с настоящей постройкой. ironStock — на самом деле
+     * HealthComponent той же сущности: currentHealth/maxHealth значат
+     * "сколько железа осталось / было изначально", не HP (см. javadoc
+     * WreckComponent) — drawHealthBar рисует ту же долю current/max, что
+     * и всегда, ему всё равно, что именно она значит, так что полоска
+     * честно показывает, сколько ещё осталось собрать.
+     */
+    private void drawWreck(Entity entity, PositionComponent position, HealthComponent ironStock) {
+        float halfWidth = BuildingSizes.halfWidth(entity);
+        float halfHeight = BuildingSizes.halfHeight(entity);
+
+        WreckComponent wreck = WRECK.get(entity);
+        setColor(wreck != null && wreck.underwater ? WRECK_UNDERWATER_COLOR : WRECK_COLOR);
+        shapeRenderer.rect(
+                position.position.x - halfWidth, position.position.y - halfHeight * 0.35f,
+                halfWidth * 2f, halfHeight * 0.7f);
+        shapeRenderer.rect(
+                position.position.x - halfWidth * 0.35f, position.position.y - halfHeight,
+                halfWidth * 0.7f, halfHeight * 2f);
+
+        drawHealthBar(position, ironStock, halfHeight + BUILDING_HEALTH_BAR_Y_MARGIN, halfWidth * 2f);
     }
 
     private void drawBuilding(Entity entity, PositionComponent position, OwnerComponent owner, HealthComponent health) {

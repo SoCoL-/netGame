@@ -15,5 +15,18 @@ public enum BuildingType {
     IRON_STORAGE,
     ELECTRICITY_STORAGE,
     AIRCRAFT_FACTORY,
-    TURRET
+    TURRET,
+
+    /**
+     * Обломки погибшего юнита (GameServer.spawnWreck) — не настоящее
+     * здание, а неподвижное препятствие с запасом железа внутри (см.
+     * javadoc WreckComponent, почему это железо хранится в
+     * HealthComponent, а не отдельным полем). Переиспользует
+     * инфраструктуру препятствий/коллизий зданий (Pathfinding
+     * .addBuildingObstacle, CollisionSystem), но никогда не строится
+     * игроком (нет в BUILDABLE_TYPES), не производит и не добывает
+     * ничего и не имеет владельца (OwnerComponent.playerId ==
+     * GameConstants.NEUTRAL_OWNER_ID).
+     */
+    WRECK
 }

@@ -24,13 +24,13 @@ import ru.socol.supreme.shared.pathfinding.Pathfinding;
  * просто пропускается каждый тик почти бесплатно (queue.isEmpty()).
  *
  * MOVE запускается прямо здесь (Pathfinding.setDestination — статический
- * метод, доступен без обратного вызова); ATTACK, BUILD и REPAIR требуют
- * валидации и доступа к GameServer-специфичным вещам (engine
+ * метод, доступен без обратного вызова); ATTACK, BUILD, REPAIR и COLLECT
+ * требуют валидации и доступа к GameServer-специфичным вещам (engine
  * .createComponent для AttackComponent, assignBuilderToBuild/
- * assignBuilderToRepair) — для них три обратных вызова (тот же приём,
- * что и ProductionSystem.UnitFactory или CombatSystem.ShotFiredListener),
- * чтобы не тащить в shared-систему ничего специфичного для конкретной
- * реализации сервера.
+ * assignBuilderToRepair/assignBuilderToCollect) — для них четыре
+ * обратных вызова (тот же приём, что и ProductionSystem.UnitFactory или
+ * CombatSystem.ShotFiredListener), чтобы не тащить в shared-систему
+ * ничего специфичного для конкретной реализации сервера.
  *
  * Если очередной приказ из очереди оказался невалиден прямо сейчас
  * (цель погибла, здание уже снесено кем-то ещё) — обратный вызов просто
@@ -65,13 +65,16 @@ public class OrderQueueSystem extends IteratingSystem {
     private final OrderExecutor attackExecutor;
     private final OrderExecutor buildExecutor;
     private final OrderExecutor repairExecutor;
+    private final OrderExecutor collectExecutor;
 
-    public OrderQueueSystem(OrderExecutor attackExecutor, OrderExecutor buildExecutor, OrderExecutor repairExecutor) {
+    public OrderQueueSystem(OrderExecutor attackExecutor, OrderExecutor buildExecutor, OrderExecutor repairExecutor,
+                             OrderExecutor collectExecutor) {
         super(Family.all(OrderQueueComponent.class, DirectionComponent.class,
                 OwnerComponent.class, PositionComponent.class, UnitComponent.class).get(), 15);
         this.attackExecutor = attackExecutor;
         this.buildExecutor = buildExecutor;
         this.repairExecutor = repairExecutor;
+        this.collectExecutor = collectExecutor;
     }
 
     @Override
@@ -107,6 +110,9 @@ public class OrderQueueSystem extends IteratingSystem {
                 break;
             case REPAIR:
                 repairExecutor.execute(playerId, actorUnitId, next.targetBuildingUnitId);
+                break;
+            case COLLECT:
+                collectExecutor.execute(playerId, actorUnitId, next.targetBuildingUnitId);
                 break;
         }
     }

@@ -78,6 +78,16 @@ public class UnitSnapshot {
     public float constructionProgress;
 
     /**
+     * Актуально только для обломков (building=true, buildingType ==
+     * WRECK.ordinal()) — лежат ли они под водой (см. javadoc
+     * WreckComponent.underwater), только для отрисовки другим оттенком.
+     * Сколько железа осталось собрать — НЕ отдельное поле тут, а те же
+     * health/maxHealth, что и у любой сущности (см. её же javadoc, зачем
+     * это сознательное переиспользование).
+     */
+    public boolean wreckUnderwater;
+
+    /**
      * Точки оставшегося маршрута (текущая цель direction.target + все
      * оставшиеся waypoints из PathComponent, если юнит обходит препятствие)
      * — только для отладочной отрисовки на клиенте. Пусто, если юнит

@@ -58,6 +58,18 @@ public class CombatSystem extends IteratingSystem {
         void onShotFired(UnitType attackerType, float fromX, float fromY, float toX, float toY);
     }
 
+    /**
+     * Уведомляет о гибели ЮНИТА (не здания — см. её единственный вызов
+     * ниже) в бою — GameServer.spawnWreck реагирует на это, оставляя на
+     * его месте обломки с частью потраченного на него железа. Не
+     * настоящее здание, потому что снос/разрушение построек уже устроено
+     * иначе (BuildingComponent, ConstructionComponent) и обломки для них
+     * пока не запрошены — только для юнитов.
+     */
+    public interface UnitDestroyedListener {
+        void onUnitDestroyed(UnitType destroyedType, float x, float y);
+    }
+
     private static final ComponentMapper<PositionComponent> POSITION =
             ComponentMapper.getFor(PositionComponent.class);
     private static final ComponentMapper<DirectionComponent> DIRECTION =
@@ -72,6 +84,7 @@ public class CombatSystem extends IteratingSystem {
     /** Тот же реестр unitId -> Entity, что и в GameServer — передаётся по ссылке, не копируется. */
     private final Map<Integer, Entity> unitsById;
     private final ShotFiredListener shotFiredListener;
+    private final UnitDestroyedListener unitDestroyedListener;
 
     /** Переиспользуемый вектор для точки подхода при погоне — не аллоцируем новый каждый тик на каждого атакующего. */
     private final Vector2 approachPoint = new Vector2();
@@ -81,10 +94,12 @@ public class CombatSystem extends IteratingSystem {
 
     private Engine engine;
 
-    public CombatSystem(Map<Integer, Entity> unitsById, ShotFiredListener shotFiredListener) {
+    public CombatSystem(Map<Integer, Entity> unitsById, ShotFiredListener shotFiredListener,
+                         UnitDestroyedListener unitDestroyedListener) {
         super(Family.all(AttackComponent.class, PositionComponent.class, DirectionComponent.class).get(), 0);
         this.unitsById = unitsById;
         this.shotFiredListener = shotFiredListener;
+        this.unitDestroyedListener = unitDestroyedListener;
     }
 
     @Override
@@ -187,9 +202,26 @@ public class CombatSystem extends IteratingSystem {
         }
 
         if (targetHealth.currentHealth <= 0) {
+            BuildingComponent targetBuilding = target.getComponent(BuildingComponent.class);
+            // Обломки оставляют только настоящие юниты, не здания (снос
+            // построек уже устроен отдельно, см. javadoc
+            // UnitDestroyedListener) — и, разумеется, не сами обломки
+            // (WreckComponent), если их вдруг умудрились "добить" боем,
+            // хотя по-хорошему их здоровье должна трогать только
+            // ScavengeSystem: тут её не видно, потому что targetBuilding
+            // != null уже отсеивает любую сущность с BuildingComponent,
+            // а обломки — это именно такая сущность.
+            if (targetBuilding == null && unitDestroyedListener != null) {
+                UnitTypeComponent targetType = UNIT_TYPE.get(target);
+                if (targetType != null) {
+                    unitDestroyedListener.onUnitDestroyed(targetType.type,
+                            targetPosition.position.x, targetPosition.position.y);
+                }
+            }
+
             engine.removeEntity(target);
             unitsById.remove(attack.targetUnitId);
-            if (target.getComponent(BuildingComponent.class) != null) {
+            if (targetBuilding != null) {
                 Pathfinding.removeBuildingObstacle(attack.targetUnitId);
             }
             attacker.remove(AttackComponent.class);

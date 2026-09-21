@@ -87,5 +87,10 @@
     "buildTime": 10,
     "ironCost": 100,
     "sightRadius": 200
+  },
+  {
+    "type": "WRECK",
+    "halfWidth": 15,
+    "halfHeight": 15
   }
 ]

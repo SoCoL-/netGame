@@ -19,6 +19,7 @@ import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.BuildOrderComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.CollectOrderComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
@@ -32,10 +33,12 @@ import ru.socol.supreme.shared.components.RepairOrderComponent;
 import ru.socol.supreme.shared.components.TurretComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
+import ru.socol.supreme.shared.components.WreckComponent;
 import ru.socol.supreme.shared.network.NetworkRegistration;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
+import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.FogSnapshot;
@@ -67,6 +70,7 @@ import ru.socol.supreme.shared.systems.OrderQueueSystem;
 import ru.socol.supreme.shared.systems.ProductionSystem;
 import ru.socol.supreme.shared.systems.RepairSystem;
 import ru.socol.supreme.shared.systems.ResourceExtractionSystem;
+import ru.socol.supreme.shared.systems.ScavengeSystem;
 import ru.socol.supreme.shared.systems.TurretAimSystem;
 
 import java.io.IOException;
@@ -183,16 +187,18 @@ public class GameServer {
         SpatialHashGrid collisionGrid = new SpatialHashGrid(BuildingDefinitions.maxInteractionRadius());
 
         engine.addSystem(new AggroSystem(unitsById, aggroGrid));
-        engine.addSystem(new CombatSystem(unitsById, this::handleShotFired));
+        engine.addSystem(new CombatSystem(unitsById, this::handleShotFired, this::spawnWreck));
         engine.addSystem(new TurretAimSystem(unitsById));
         engine.addSystem(new BuildSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new RepairSystem(unitsById, resourcesByPlayer));
+        engine.addSystem(new ScavengeSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit));
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new MovementSystem());
         engine.addSystem(new AircraftMovementSystem(unitsById));
-        engine.addSystem(new OrderQueueSystem(this::startAttackOrder, this::assignBuilderToBuild, this::assignBuilderToRepair));
+        engine.addSystem(new OrderQueueSystem(this::startAttackOrder, this::assignBuilderToBuild,
+                this::assignBuilderToRepair, this::assignBuilderToCollect));
         engine.addSystem(new CollisionSystem(unitsById, collisionGrid));
     }
 
@@ -729,12 +735,15 @@ public class GameServer {
         if (unit.getComponent(AttackComponent.class) != null) {
             unit.remove(AttackComponent.class);
         }
-        // И текущую стройку или ремонт — если это был строитель.
+        // И текущую стройку, ремонт или сбор обломков — если это был строитель.
         if (unit.getComponent(BuildOrderComponent.class) != null) {
             unit.remove(BuildOrderComponent.class);
         }
         if (unit.getComponent(RepairOrderComponent.class) != null) {
             unit.remove(RepairOrderComponent.class);
+        }
+        if (unit.getComponent(CollectOrderComponent.class) != null) {
+            unit.remove(CollectOrderComponent.class);
         }
 
         PositionComponent position = unit.getComponent(PositionComponent.class);
@@ -834,12 +843,26 @@ public class GameServer {
             return false; // нельзя атаковать своих (свои здания — тоже)
         }
 
-        // Ручной приказ на атаку отменяет текущую стройку или ремонт — как и обычный приказ на движение.
+        if (target.getComponent(WreckComponent.class) != null) {
+            // Обломки нейтральны (playerId == GameConstants.NEUTRAL_OWNER_ID
+            // — см. её javadoc), поэтому формально прошли бы проверку выше
+            // (никогда не равны playerId атакующего), но атаковать их
+            // нельзя — это не боевая цель, а источник железа для
+            // ScavengeSystem. Тот же клиентский запрет см. в
+            // GameScreen.isEnemy — тут вторая, серверная проверка на
+            // случай модифицированного клиента.
+            return false;
+        }
+
+        // Ручной приказ на атаку отменяет текущую стройку, ремонт или сбор обломков — как и обычный приказ на движение.
         if (attacker.getComponent(BuildOrderComponent.class) != null) {
             attacker.remove(BuildOrderComponent.class);
         }
         if (attacker.getComponent(RepairOrderComponent.class) != null) {
             attacker.remove(RepairOrderComponent.class);
+        }
+        if (attacker.getComponent(CollectOrderComponent.class) != null) {
+            attacker.remove(CollectOrderComponent.class);
         }
 
         AttackComponent attack = attacker.getComponent(AttackComponent.class);
@@ -940,12 +963,15 @@ public class GameServer {
             return; // уже достроено (или не здание вовсе) — нечего строить
         }
 
-        // Ручной приказ на стройку отменяет текущую атаку и текущий ремонт — как и обычный приказ на движение.
+        // Ручной приказ на стройку отменяет текущую атаку, текущий ремонт и текущий сбор обломков — как и обычный приказ на движение.
         if (builder.getComponent(AttackComponent.class) != null) {
             builder.remove(AttackComponent.class);
         }
         if (builder.getComponent(RepairOrderComponent.class) != null) {
             builder.remove(RepairOrderComponent.class);
+        }
+        if (builder.getComponent(CollectOrderComponent.class) != null) {
+            builder.remove(CollectOrderComponent.class);
         }
 
         BuildOrderComponent order = builder.getComponent(BuildOrderComponent.class);
@@ -1102,12 +1128,15 @@ public class GameServer {
             return; // не повреждено — нечего ремонтировать
         }
 
-        // Ручной приказ на ремонт отменяет текущую атаку и текущую стройку — как и обычный приказ на движение.
+        // Ручной приказ на ремонт отменяет текущую атаку, текущую стройку и текущий сбор обломков — как и обычный приказ на движение.
         if (builder.getComponent(AttackComponent.class) != null) {
             builder.remove(AttackComponent.class);
         }
         if (builder.getComponent(BuildOrderComponent.class) != null) {
             builder.remove(BuildOrderComponent.class);
+        }
+        if (builder.getComponent(CollectOrderComponent.class) != null) {
+            builder.remove(CollectOrderComponent.class);
         }
 
         RepairComponent repair = targetBuilding.getComponent(RepairComponent.class);
@@ -1130,6 +1159,157 @@ public class GameServer {
         // Тот же приём, что и в assignBuilderToBuild — (пере)выдача
         // приказа заставляет RepairSystem посчитать точку подхода заново
         // на следующем тике, не тащить устаревшую с прошлого захода.
+        order.hasApproachPoint = false;
+    }
+
+    /**
+     * Оставляет обломки на месте погибшего ЮНИТА (не здания — см. javadoc
+     * CombatSystem.UnitDestroyedListener) с частью потраченного на него
+     * железа, которую потом сможет собрать строитель (ScavengeSystem).
+     * Передаётся в CombatSystem как UnitDestroyedListener — вызывается
+     * оттуда сразу, как только там решили, что цель погибла, и до того,
+     * как её саму удалят из движка (см. её же вызов).
+     *
+     * Реальное количество железа — случайная доля (WRECK_IRON_PERCENT_MIN
+     * .. _MAX) от UnitDefinitions.ironCostFor(destroyedType), округлённая
+     * до целого; если получилось 0 (например, у совсем дешёвого юнита) —
+     * обломки не создаются вовсе, собирать было бы нечего. Обломки — не
+     * настоящее здание: без владельца (OwnerComponent.playerId ==
+     * GameConstants.NEUTRAL_OWNER_ID — см. её javadoc, почему это само по
+     * себе не делает их "врагом") и без ConstructionComponent — появляются
+     * сразу полностью "готовыми".
+     *
+     * Если (x, y) внутри прямоугольника воды (GameConstants.WATER_MIN/MAX
+     * X/Y — тот же прямоугольник, что и в CollisionSystem/Pathfinding) —
+     * обломки помечаются WreckComponent.underwater, сейчас только для
+     * отрисовки другим оттенком на клиенте. Строители всё равно не могут
+     * доехать до воды (Pathfinding/CollisionSystem считают её препятствием
+     * наравне со зданием), так что подводные обломки физически
+     * недостижимы, пока не появится отдельная поддержка "строитель умеет
+     * заходить в воду" — само появление обломков в воде это не меняет.
+     */
+    private void spawnWreck(UnitType destroyedType, float x, float y) {
+        int originalIronCost = UnitDefinitions.ironCostFor(destroyedType);
+        int ironAmount = Math.round(originalIronCost
+                * MathUtils.random(GameConstants.WRECK_IRON_PERCENT_MIN, GameConstants.WRECK_IRON_PERCENT_MAX));
+        if (ironAmount <= 0) {
+            return; // нечего оставлять — например, у юнита не было стоимости железом вовсе
+        }
+
+        Entity wreck = engine.createEntity();
+
+        PositionComponent position = engine.createComponent(PositionComponent.class);
+        position.position.set(x, y);
+
+        int unitId = unitIdSequence.getAndIncrement();
+        UnitComponent unitComponent = engine.createComponent(UnitComponent.class);
+        unitComponent.unitId = unitId;
+
+        OwnerComponent owner = engine.createComponent(OwnerComponent.class);
+        owner.playerId = GameConstants.NEUTRAL_OWNER_ID;
+
+        // См. javadoc WreckComponent — currentHealth/maxHealth тут значат
+        // "сколько железа осталось / было изначально", не HP.
+        HealthComponent ironStock = engine.createComponent(HealthComponent.class);
+        ironStock.maxHealth = ironAmount;
+        ironStock.currentHealth = ironAmount;
+
+        BuildingComponent buildingMarker = engine.createComponent(BuildingComponent.class);
+        buildingMarker.type = BuildingType.WRECK;
+
+        WreckComponent wreckMarker = engine.createComponent(WreckComponent.class);
+        wreckMarker.underwater = x >= GameConstants.WATER_MIN_X && x <= GameConstants.WATER_MAX_X
+                && y >= GameConstants.WATER_MIN_Y && y <= GameConstants.WATER_MAX_Y;
+
+        wreck.add(position).add(unitComponent).add(owner).add(ironStock).add(buildingMarker).add(wreckMarker);
+
+        engine.addEntity(wreck);
+        unitsById.put(unitId, wreck);
+        Pathfinding.addBuildingObstacle(unitId, x, y, BuildingType.WRECK);
+    }
+
+    synchronized void handleCollectOrder(Connection connection, CollectOrderRequest request) {
+        if (gameOver) {
+            return;
+        }
+
+        Integer playerId = connectionToPlayer.get(connection.getID());
+        if (playerId == null) {
+            return;
+        }
+
+        if (request.queue) {
+            Entity builder = unitsById.get(request.builderUnitId);
+            if (builder == null) {
+                return;
+            }
+            OwnerComponent owner = builder.getComponent(OwnerComponent.class);
+            if (owner == null || owner.playerId != playerId) {
+                return; // не ваш юнит
+            }
+
+            QueuedOrder order = new QueuedOrder();
+            order.type = QueuedOrder.Type.COLLECT;
+            order.targetBuildingUnitId = request.targetWreckUnitId;
+            enqueueOrder(builder, order);
+            return;
+        }
+
+        Entity builder = unitsById.get(request.builderUnitId);
+        if (builder != null) {
+            clearOrderQueue(builder);
+        }
+        assignBuilderToCollect(playerId, request.builderUnitId, request.targetWreckUnitId);
+    }
+
+    /**
+     * Назначает одного строителя собирать железо с конкретных обломков —
+     * общая логика для обоих путей выдачи приказа (ручной приказ
+     * handleCollectOrder и разбор очереди через OrderQueueSystem). Молча
+     * ничего не делает при любой проверке, которая не проходит — не ваш
+     * юнит, не строитель, цель не существует или не обломки. В отличие
+     * от assignBuilderToBuild/assignBuilderToRepair владение ЦЕЛЬЮ не
+     * проверяется — у обломков нет владельца, собрать их может строитель
+     * любого игрока.
+     */
+    private void assignBuilderToCollect(int playerId, int builderUnitId, int targetWreckUnitId) {
+        Entity builder = unitsById.get(builderUnitId);
+        Entity targetWreck = unitsById.get(targetWreckUnitId);
+        if (builder == null || targetWreck == null) {
+            return;
+        }
+
+        OwnerComponent builderOwner = builder.getComponent(OwnerComponent.class);
+        if (builderOwner == null || builderOwner.playerId != playerId) {
+            return; // не ваш юнит
+        }
+
+        UnitTypeComponent builderType = builder.getComponent(UnitTypeComponent.class);
+        if (builderType == null || builderType.type != UnitType.BUILDER) {
+            return; // собирать может только строитель
+        }
+
+        if (targetWreck.getComponent(WreckComponent.class) == null) {
+            return; // не обломки — нечего собирать
+        }
+
+        // Ручной приказ на сбор отменяет текущую атаку, текущую стройку и текущий ремонт — как и обычный приказ на движение.
+        if (builder.getComponent(AttackComponent.class) != null) {
+            builder.remove(AttackComponent.class);
+        }
+        if (builder.getComponent(BuildOrderComponent.class) != null) {
+            builder.remove(BuildOrderComponent.class);
+        }
+        if (builder.getComponent(RepairOrderComponent.class) != null) {
+            builder.remove(RepairOrderComponent.class);
+        }
+
+        CollectOrderComponent order = builder.getComponent(CollectOrderComponent.class);
+        if (order == null) {
+            order = engine.createComponent(CollectOrderComponent.class);
+            builder.add(order);
+        }
+        order.targetWreckUnitId = targetWreckUnitId;
         order.hasApproachPoint = false;
     }
 
@@ -1260,6 +1440,10 @@ public class GameServer {
 
             if (buildingMarker != null) {
                 unitSnapshot.buildingType = buildingMarker.type.ordinal();
+                if (buildingMarker.type == BuildingType.WRECK) {
+                    WreckComponent wreckMarker = unit.getComponent(WreckComponent.class);
+                    unitSnapshot.wreckUnderwater = wreckMarker != null && wreckMarker.underwater;
+                }
             } else {
                 UnitTypeComponent unitTypeComponent = unit.getComponent(UnitTypeComponent.class);
                 if (unitTypeComponent != null) {
@@ -1270,15 +1454,20 @@ public class GameServer {
                     unitSnapshot.buildTargetUnitId = buildOrder.targetBuildingUnitId;
                 }
                 // То же самое поле, что и для стройки — с точки зрения
-                // клиентского луча (GameScreen.drawBuildBeams) ремонт и
-                // стройка неотличимы, оба означают "строитель что-то
-                // делает вон с тем зданием" (см. javadoc
-                // RepairOrderComponent.inRange). Строитель не может
-                // одновременно строить и чинить, так что оба если
-                // сработают — не перезапишут друг друга неверно.
+                // клиентского луча (GameScreen.drawBuildBeams) ремонт,
+                // сбор обломков и стройка неотличимы, все три означают
+                // "строитель что-то делает вон с той сущностью" (см.
+                // javadoc RepairOrderComponent.inRange/
+                // CollectOrderComponent.inRange). Строитель не может
+                // одновременно заниматься несколькими из них, так что при
+                // срабатывании они не перезапишут друг друга неверно.
                 RepairOrderComponent repairOrder = unit.getComponent(RepairOrderComponent.class);
                 if (repairOrder != null && repairOrder.inRange) {
                     unitSnapshot.buildTargetUnitId = repairOrder.targetBuildingUnitId;
+                }
+                CollectOrderComponent collectOrder = unit.getComponent(CollectOrderComponent.class);
+                if (collectOrder != null && collectOrder.inRange) {
+                    unitSnapshot.buildTargetUnitId = collectOrder.targetWreckUnitId;
                 }
             }
 

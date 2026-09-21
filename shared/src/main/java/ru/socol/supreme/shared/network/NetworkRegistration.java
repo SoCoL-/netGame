@@ -4,6 +4,7 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryonet.EndPoint;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
+import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
@@ -64,5 +65,6 @@ public final class NetworkRegistration {
         kryo.register(BuildOrderRequest.class);
         kryo.register(DemolishBuildingRequest.class);
         kryo.register(RepairOrderRequest.class);
+        kryo.register(CollectOrderRequest.class);
     }
 }

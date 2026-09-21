@@ -11,6 +11,7 @@ import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.network.NetworkRegistration;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
+import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
@@ -142,6 +143,15 @@ public class GameClient implements Disposable {
         RepairOrderRequest request = new RepairOrderRequest();
         request.builderUnitId = builderUnitId;
         request.targetBuildingUnitId = targetBuildingUnitId;
+        request.queue = queue;
+        client.sendTCP(request);
+    }
+
+    /** queue — см. javadoc CollectOrderRequest.queue: shift-клик добавляет в очередь, не прерывая текущий приказ строителя. */
+    public void requestCollectOrder(int builderUnitId, int targetWreckUnitId, boolean queue) {
+        CollectOrderRequest request = new CollectOrderRequest();
+        request.builderUnitId = builderUnitId;
+        request.targetWreckUnitId = targetWreckUnitId;
         request.queue = queue;
         client.sendTCP(request);
     }

@@ -291,6 +291,23 @@ public final class BuildingDefinitions {
         turret.ironCost = 100;
         definitions.put(BuildingType.TURRET, turret);
 
+        // Обломки — не настоящее здание (см. javadoc BuildingType.WRECK),
+        // поэтому большинство полей тут не используются вовсе: buildTime/
+        // ironCost/electricityCost == 0 (игрок их не строит), sightRadius
+        // == 0 (не видят). Единственное, что реально читается —
+        // halfWidth/halfHeight (BuildingSizes/Pathfinding.addBuildingObstacle,
+        // размер препятствия) и maxHealth — тоже НЕ читается: настоящий
+        // запас железа задаётся напрямую на HealthComponent в момент
+        // создания (GameServer.spawnWreck), это поле оставлено 0 просто
+        // чтобы не вводить в заблуждение. Размер чуть больше UNIT_RADIUS
+        // (10) — заметно меньше самого маленького настоящего здания (25),
+        // обломки юнита не должны выглядеть/перекрывать как постройка.
+        BuildingDefinition wreck = new BuildingDefinition();
+        wreck.type = BuildingType.WRECK;
+        wreck.halfWidth = 15f;
+        wreck.halfHeight = 15f;
+        definitions.put(BuildingType.WRECK, wreck);
+
         return definitions;
     }
 }

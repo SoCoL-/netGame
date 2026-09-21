@@ -245,6 +245,42 @@ public final class GameConstants {
      */
     public static final float REPAIR_SECONDS_PER_PERCENT_DAMAGE = 0.1f;
 
+    /**
+     * Доля первоначальной стоимости железа погибшего юнита, которая
+     * остаётся в его обломках (GameServer.spawnWreck) — реальное
+     * значение каждый раз выбирается случайно между MIN и MAX, а не
+     * фиксированным процентом, чтобы одинаковые по цене юниты не
+     * оставляли одинаковые до единицы обломки.
+     */
+    public static final float WRECK_IRON_PERCENT_MIN = 0.4f;
+    public static final float WRECK_IRON_PERCENT_MAX = 0.6f;
+
+    /**
+     * Сколько железа в секунду собирает с обломков ОДИН строитель
+     * (ScavengeSystem.advanceCollection) — тот же порядок величины, что
+     * и добыча железной шахты (BuildingDefinitions: extractionRate = 20
+     * у IRON_MINE), чтобы сбор ощущался сравнимо полезным, а не
+     * мгновенным и не бесполезно медленным. Несколько строителей на
+     * одних обломках работают быстрее по тому же множителю
+     * EXTRA_BUILDER_SPEED_BONUS, что и стройка/ремонт.
+     */
+    public static final float WRECK_IRON_COLLECT_PER_SECOND = 20f;
+
+    /**
+     * playerId, обозначающий "ничей" — владелец обломков юнита
+     * (GameServer.spawnWreck/WreckComponent). Не совпадает ни с одним
+     * настоящим playerId (0 или 1, см. MAX_PLAYERS), поэтому обломки не
+     * считаются "своими" ни у одного игрока (isMine на клиенте, проверки
+     * владения на сервере) и никак не участвуют в checkGameOver
+     * (buildingIdByPlayer никогда не ссылается на обломки). Само по себе
+     * несовпадение с playerId НЕ делает обломки "врагом" — было бы так,
+     * автобой (AggroSystem) и ручная атака (GameServer.startAttackOrder/
+     * GameScreen.isEnemy) считали бы их законной целью только потому,
+     * что они "не мои". От этого их защищает отдельная явная проверка на
+     * WreckComponent в каждом из трёх мест, а не значение этой константы.
+     */
+    public static final int NEUTRAL_OWNER_ID = -1;
+
     /** Частота обновления симуляции на сервере. */
     public static final float SERVER_TICK_RATE = 1f / 30f;
 

@@ -16,6 +16,7 @@ import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
+import ru.socol.supreme.shared.components.WreckComponent;
 import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 
 import java.util.Map;
@@ -63,6 +64,15 @@ import java.util.Map;
  * производит, пока строится) — для всех остальных типов сущностей этот
  * фильтр ничего не меняет, у них ConstructionComponent с DirectionComponent
  * никогда не сочетаются.
+ *
+ * Обломки погибшего юнита (WreckComponent, BuildingType.WRECK — см. её
+ * javadoc) в эту Family вообще не попадают (у них нет DirectionComponent,
+ * как и у любого здания), но сами МОГЛИ бы стать чужой целью в цикле
+ * поиска ниже — у них нет OwnerComponent.playerId, равного playerId
+ * атакующего, а значит формально они "не свои". Явная проверка на
+ * WreckComponent в processEntity не даёт автобою считать их врагом:
+ * обломки нейтральны и не должны становиться мишенью просто потому, что
+ * технически "ничьи".
  *
  * Приоритет -10 — раньше CombatSystem (0) и MovementSystem (10), чтобы
  * свежедобавленный в этот тик AttackComponent сразу подхватила CombatSystem
@@ -148,6 +158,10 @@ public class AggroSystem extends IteratingSystem {
         for (Entity other : nearby) {
             if (other == entity) {
                 continue;
+            }
+
+            if (other.getComponent(WreckComponent.class) != null) {
+                continue; // обломки нейтральны — не цель для автобоя, см. javadoc класса
             }
 
             OwnerComponent otherOwner = OWNER.get(other);

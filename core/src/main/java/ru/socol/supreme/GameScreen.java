@@ -34,6 +34,7 @@ import ru.socol.supreme.network.GameClient;
 import ru.socol.supreme.systems.InterpolationSystem;
 import ru.socol.supreme.systems.RenderSystem;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.WreckComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
@@ -162,6 +163,7 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final Color ORDER_QUEUE_ATTACK_COLOR = Color.valueOf("FF5555");
     private static final Color ORDER_QUEUE_BUILD_COLOR = Color.valueOf("55DDFF");
     private static final Color ORDER_QUEUE_REPAIR_COLOR = Color.valueOf("77FF77");
+    private static final Color ORDER_QUEUE_COLLECT_COLOR = Color.valueOf("CC9944");
     private static final float ORDER_QUEUE_MARKER_RADIUS = 6f;
 
     // Голографический луч стройки — три слоя одного отрезка (см.
@@ -693,6 +695,18 @@ public class GameScreen extends InputAdapter implements Screen {
             if (position == null || owner == null) {
                 continue;
             }
+            if (entity.getComponent(WreckComponent.class) != null) {
+                // Обломки нейтральны (owner.playerId ==
+                // GameConstants.NEUTRAL_OWNER_ID, см. её javadoc) — не
+                // "чей-то" стратегический значок, у них вообще нет
+                // соответствующего playerColor. Без этой проверки
+                // PLAYER_COLORS[owner.playerId % ...] упал бы с
+                // отрицательным индексом (-1 % 2 == -1 в Java). Сами
+                // обломки в стратегическом виде не рисуются вовсе —
+                // некрупный, временный объект, тактического значка
+                // достаточно.
+                continue;
+            }
             if (isHiddenByFog(owner, position)) {
                 continue; // тот же принцип, что и в RenderSystem.isHiddenByFog — чужой значок в тумане вообще не рисуем
             }
@@ -907,6 +921,8 @@ public class GameScreen extends InputAdapter implements Screen {
                 return "Aircraft Factory";
             case TURRET:
                 return "Turret";
+            case WRECK:
+                return "Wreck";
             default:
                 return "";
         }
@@ -1117,6 +1133,8 @@ public class GameScreen extends InputAdapter implements Screen {
                 return ORDER_QUEUE_BUILD_COLOR;
             case REPAIR:
                 return ORDER_QUEUE_REPAIR_COLOR;
+            case COLLECT:
+                return ORDER_QUEUE_COLLECT_COLOR;
             default:
                 return ORDER_QUEUE_MOVE_COLOR;
         }
@@ -1707,6 +1725,11 @@ public class GameScreen extends InputAdapter implements Screen {
                 // формально тоже "isDamagedOwnBuilding" (у него ведь и HP
                 // меньше максимума, пока стройка не завершена).
                 issueRepairOrder(target.getComponent(UnitComponent.class).unitId, queue);
+            } else if (target != null && target.getComponent(WreckComponent.class) != null) {
+                // Разбитый корпус (isEnemy(target) для него уже false —
+                // см. её javadoc) — строители из выделения идут собирать
+                // с него железо (см. javadoc issueCollectOrder).
+                issueCollectOrder(target.getComponent(UnitComponent.class).unitId, queue);
             } else {
                 issueMoveOrder(world.x, world.y, queue);
             }
@@ -2044,11 +2067,36 @@ public class GameScreen extends InputAdapter implements Screen {
         }
     }
 
+    /** Зеркально issueRepairOrder, только для сбора железа с обломков (WreckComponent) — по одному CollectOrderRequest на каждого строителя в выделении, остальные юниты выделения (не строители) просто игнорируют этот клик. */
+    private void issueCollectOrder(int targetWreckUnitId, boolean queue) {
+        for (int unitId : selectedUnitIds) {
+            Entity unit = entityFactory.getEntity(unitId);
+            if (unit == null) {
+                continue;
+            }
+            UnitTypeComponent unitType = unit.getComponent(UnitTypeComponent.class);
+            if (unitType != null && unitType.type == UnitType.BUILDER) {
+                client.requestCollectOrder(unitId, targetWreckUnitId, queue);
+            }
+        }
+    }
+
     // ---- Вспомогательное ----
 
     private boolean isEnemy(Entity entity) {
         OwnerComponent owner = entity.getComponent(OwnerComponent.class);
-        return owner != null && owner.playerId != client.getPlayerId();
+        if (owner == null) {
+            return false;
+        }
+        // Обломки владеют GameConstants.NEUTRAL_OWNER_ID (-1, см. javadoc
+        // WreckComponent) — это не "чей-то", а нейтральный объект, поэтому
+        // формальное owner.playerId != client.getPlayerId() без этой
+        // проверки записало бы их во враги и правый клик уводил бы в
+        // issueAttackOrder вместо issueCollectOrder.
+        if (entity.getComponent(WreckComponent.class) != null) {
+            return false;
+        }
+        return owner.playerId != client.getPlayerId();
     }
 
     /**

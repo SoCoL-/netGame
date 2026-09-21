@@ -23,6 +23,7 @@ import ru.socol.supreme.shared.components.ProductionComponent;
 import ru.socol.supreme.shared.components.ResourceExtractorComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
+import ru.socol.supreme.shared.components.WreckComponent;
 import ru.socol.supreme.shared.network.messages.PathPoint;
 import ru.socol.supreme.shared.network.messages.QueuedOrderPoint;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
@@ -195,6 +196,13 @@ public class EntityFactory {
                 turretDisplay.dirX = snapshot.turretDirX;
                 turretDisplay.dirY = snapshot.turretDirY;
                 entity.add(turretDisplay);
+            } else if (type == BuildingType.WRECK) {
+                // underwater фиксируется один раз при создании и больше не
+                // меняется (см. её же javadoc) — обновлять на уже
+                // существующей сущности в applySnapshot не нужно.
+                WreckComponent wreckMarker = new WreckComponent();
+                wreckMarker.underwater = snapshot.wreckUnderwater;
+                entity.add(wreckMarker);
             }
         } else {
             UnitType type = UnitType.values()[snapshot.unitType];
