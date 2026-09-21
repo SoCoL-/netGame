@@ -259,10 +259,15 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float DEMOLISH_BUTTON_X = PANEL_X + PANEL_WIDTH - DEMOLISH_BUTTON_WIDTH - 15f;
     private static final float DEMOLISH_BUTTON_Y = PANEL_Y + PANEL_HEIGHT - DEMOLISH_BUTTON_HEIGHT - 15f;
 
-    // Чисто визуальный полёт стрелы — урон уже применён на сервере в момент
+    // Чисто визуальный полёт снаряда — урон уже применён на сервере в момент
     // выстрела (см. ProjectileFiredEvent), скорость тут только для картинки.
+    // Один и тот же отрезок изображает выстрел ЛЮБОГО дальнобойного
+    // (не ближнего боя) типа — стрелка, разведчика, штурмовика и турели,
+    // см. фильтр GameServer.handleShotFired, кто из типов вообще шлёт
+    // это событие. Жёлто-оранжевый — по просьбе пользователя, раньше был
+    // белым.
     private static final float ARROW_SPEED = 600f; // world units в секунду
-    private static final Color ARROW_COLOR = Color.WHITE;
+    private static final Color ARROW_COLOR = Color.valueOf("FFC107");
     private static final float ARROW_VISUAL_LENGTH = 8f; // половина длины отрезка, изображающего стрелу
     // Смещение точки вылета вдоль линии огня (см. onProjectileFired) — у
     // наземной техники снаряд должен визуально вылетать из дула башни

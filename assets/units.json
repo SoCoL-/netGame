@@ -5,7 +5,7 @@
     "health": 20,
     "fireRate": 4,
     "damage": 2,
-    "attackRadius": 70,
+    "attackRadius": 140,
     "ironCost": 0,
     "electricityCost": 0,
     "buildTime": 10,

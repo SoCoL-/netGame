@@ -55,7 +55,7 @@ public class GameClient implements Disposable {
 
         void onGameOver(GameOverMessage message);
 
-        /** Чисто косметическое: лучник выстрелил — нарисовать летящую стрелу. Урон уже применён на сервере. */
+        /** Чисто косметическое: дальнобойный юнит выстрелил (см. javadoc ProjectileFiredEvent, кто именно) — нарисовать летящий снаряд. Урон уже применён на сервере. */
         void onProjectileFired(ProjectileFiredEvent event);
 
         /** Не удалось подключиться (таймаут/сеть/сервер недоступен) — сообщение для отображения игроку. */

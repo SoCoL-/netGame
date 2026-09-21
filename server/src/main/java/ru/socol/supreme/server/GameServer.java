@@ -1353,11 +1353,11 @@ public class GameServer {
         Pathfinding.removeBuildingObstacle(request.buildingUnitId);
     }
 
-    // ---- Визуальный эффект полёта стрелы (см. CombatSystem.ShotFiredListener) ----
+    // ---- Визуальный эффект полёта снаряда (см. CombatSystem.ShotFiredListener) ----
 
     private void handleShotFired(UnitType attackerType, float fromX, float fromY, float toX, float toY) {
-        if (attackerType != UnitType.ARCHER) {
-            return; // визуальный эффект нужен только лучникам — у воина видимого снаряда нет
+        if (!isRangedShooter(attackerType)) {
+            return; // ближний бой (воин, строитель) — видимого снаряда нет, только урон
         }
         ProjectileFiredEvent event = new ProjectileFiredEvent();
         event.fromX = fromX;
@@ -1365,6 +1365,26 @@ public class GameServer {
         event.toX = toX;
         event.toY = toY;
         server.sendToAllTCP(event);
+    }
+
+    /**
+     * Дальнобойные типы, чья атака визуализируется на клиенте летящим
+     * снарядом (см. GameScreen.ARROW_COLOR) — раньше это был только
+     * лучник, теперь любой, кто стреляет не вплотную: разведчик,
+     * штурмовик, турель. Воин и строитель — ближний бой, у них
+     * ProjectileFiredEvent не шлём вовсе, видимый снаряд для удара в
+     * упор выглядел бы странно.
+     */
+    private static boolean isRangedShooter(UnitType type) {
+        switch (type) {
+            case ARCHER:
+            case SCOUT:
+            case ATTACK_AIRCRAFT:
+            case TURRET:
+                return true;
+            default:
+                return false;
+        }
     }
 
     // ---- Условие победы ----

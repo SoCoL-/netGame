@@ -281,6 +281,18 @@ public final class GameConstants {
      */
     public static final int NEUTRAL_OWNER_ID = -1;
 
+    /**
+     * Множитель урона по турели (BuildingType.TURRET/UnitType.TURRET) —
+     * применяется в CombatSystem только когда ЦЕЛЬ атаки турель, не когда
+     * турель сама атакует (её собственный урон — обычный
+     * UnitDefinitions.damageFor(TURRET), без этого множителя). Балансная
+     * правка по просьбе пользователя: турель не стоит ресурсов и не
+     * занимает лимит юнитов (см. javadoc UnitType.TURRET), поэтому саму
+     * турель сделали более уязвимой к урону, чтобы бесплатная стационарная
+     * защита не была неубиваемой.
+     */
+    public static final float TURRET_DAMAGE_MULTIPLIER = 1.5f;
+
     /** Частота обновления симуляции на сервере. */
     public static final float SERVER_TICK_RATE = 1f / 30f;
 

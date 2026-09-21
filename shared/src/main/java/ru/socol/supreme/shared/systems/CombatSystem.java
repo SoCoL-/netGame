@@ -6,6 +6,7 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.math.Vector2;
+import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AircraftComponent;
@@ -27,7 +28,9 @@ import java.util.Map;
  * радиусе — юнит останавливается и стреляет по кулдауну FIRE_INTERVAL,
  * снимая урон (UnitDefinitions.damageFor, тоже по типу атакующего)
  * здоровья. При 0 HP цель удаляется из движка и из общего реестра юнитов
- * сервера.
+ * сервера. Если ЦЕЛЬ — турель (UnitType.TURRET), этот урон домножается на
+ * GameConstants.TURRET_DAMAGE_MULTIPLIER (см. её javadoc) — от типа
+ * атакующего это не зависит вовсе, множитель только для того, ПО КОМУ бьют.
  *
  * У авиации (AircraftComponent) есть ещё одно условие для выстрела — цель
  * должна быть в конусе ±firingArcDegrees впереди по курсу (своя половина
@@ -139,7 +142,7 @@ public class CombatSystem extends IteratingSystem {
             // для Pathfinding (см. PATH_CLEARANCE) — атакующий, направленный
             // прямо в центр здания, просто никуда не пошёл бы. Точка в
             // attackRange от цели гарантированно снаружи любого препятствия,
-            // потому что attackRange (70 у воина, 210 у стрелка) всегда
+            // потому что attackRange (140 у воина, 210 у стрелка) всегда
             // больше BUILDING_HALF_SIZE + PATH_CLEARANCE.
             // targetPosition читается заново каждый тик — если цель
             // сдвинулась в другую клетку сетки, путь пересчитается сам.
@@ -193,7 +196,15 @@ public class CombatSystem extends IteratingSystem {
         attack.cooldown = UnitDefinitions.fireIntervalFor(attackerType);
 
         HealthComponent targetHealth = HEALTH.get(target);
-        targetHealth.currentHealth -= UnitDefinitions.damageFor(attackerType);
+        UnitTypeComponent targetTypeComponent = UNIT_TYPE.get(target);
+        int damage = UnitDefinitions.damageFor(attackerType);
+        if (targetTypeComponent != null && targetTypeComponent.type == UnitType.TURRET) {
+            // Турель как ЦЕЛЬ получает усиленный урон от любой атаки,
+            // независимо от типа атакующего — см. javadoc
+            // GameConstants.TURRET_DAMAGE_MULTIPLIER, почему.
+            damage = Math.round(damage * GameConstants.TURRET_DAMAGE_MULTIPLIER);
+        }
+        targetHealth.currentHealth -= damage;
 
         if (shotFiredListener != null) {
             shotFiredListener.onShotFired(attackerType,
@@ -211,12 +222,9 @@ public class CombatSystem extends IteratingSystem {
             // ScavengeSystem: тут её не видно, потому что targetBuilding
             // != null уже отсеивает любую сущность с BuildingComponent,
             // а обломки — это именно такая сущность.
-            if (targetBuilding == null && unitDestroyedListener != null) {
-                UnitTypeComponent targetType = UNIT_TYPE.get(target);
-                if (targetType != null) {
-                    unitDestroyedListener.onUnitDestroyed(targetType.type,
-                            targetPosition.position.x, targetPosition.position.y);
-                }
+            if (targetBuilding == null && unitDestroyedListener != null && targetTypeComponent != null) {
+                unitDestroyedListener.onUnitDestroyed(targetTypeComponent.type,
+                        targetPosition.position.x, targetPosition.position.y);
             }
 
             engine.removeEntity(target);
