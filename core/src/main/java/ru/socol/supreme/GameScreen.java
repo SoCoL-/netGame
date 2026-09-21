@@ -299,6 +299,16 @@ public class GameScreen extends InputAdapter implements Screen {
 
     private final Set<Integer> selectedUnitIds = new HashSet<>();
     private Integer selectedBuildingId = null;
+    /**
+     * Клик по обломкам (WreckComponent) — отдельное поле, не
+     * selectedBuildingId: у обломков нет владельца (см. javadoc
+     * WreckComponent), панель для них своя, простая, без кнопок очереди
+     * и без "Demolish" (см. drawWreckInfoPanel) — в отличие от
+     * drawBuildingInfoPanel, который для isMine-зданий. Взаимоисключимо
+     * с selectedBuildingId и с выделением юнитов — везде, где один из
+     * них устанавливается или сбрасывается, остальные тоже сбрасываются.
+     */
+    private Integer selectedWreckId = null;
 
     /**
      * Группы выделения по горячим клавишам (см. keyDown): Shift+1..Shift+9
@@ -475,6 +485,9 @@ public class GameScreen extends InputAdapter implements Screen {
                     selectedUnitIds.removeIf(unitId -> entityFactory.getEntity(unitId) == null);
                     if (selectedBuildingId != null && entityFactory.getEntity(selectedBuildingId) == null) {
                         selectedBuildingId = null; // здание пропало — закрываем панель
+                    }
+                    if (selectedWreckId != null && entityFactory.getEntity(selectedWreckId) == null) {
+                        selectedWreckId = null; // обломки собраны/пропали — закрываем панель
                     }
                     for (PlayerResources resources : snapshot.playerResources) {
                         if (resources.playerId == client.getPlayerId()) {
@@ -1373,7 +1386,9 @@ public class GameScreen extends InputAdapter implements Screen {
      * вообще ничего, тогда плашка просто не рисуется.
      */
     private void drawInfoPanel() {
-        if (selectedBuildingId != null) {
+        if (selectedWreckId != null) {
+            drawWreckInfoPanel();
+        } else if (selectedBuildingId != null) {
             drawBuildingInfoPanel();
         } else if (allSelectedAreBuilders()) {
             drawBuilderInfoPanel();
@@ -1510,6 +1525,40 @@ public class GameScreen extends InputAdapter implements Screen {
         uiFont.setColor(Color.WHITE);
         uiFont.draw(spriteBatch, unitTypeLabel(unitType), PANEL_X + 15f, NAME_TEXT_Y);
         uiFont.draw(spriteBatch, "HP: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
+        spriteBatch.end();
+
+        shapeRenderer.setProjectionMatrix(camera.combined);
+        spriteBatch.setProjectionMatrix(camera.combined);
+    }
+
+    /**
+     * Обломки (WreckComponent): название и оставшееся железо, без
+     * HP-строки (у обломков HealthComponent как раз и хранит железо, а
+     * не HP — см. javadoc WreckComponent) и без единой кнопки — их нельзя
+     * ни снести, ни что-либо у них заказать. Показываем cur/max, как и
+     * HP зданий, чтобы было видно, сколько железа осталось от исходного.
+     */
+    private void drawWreckInfoPanel() {
+        Entity wreck = entityFactory.getEntity(selectedWreckId);
+        if (wreck == null) {
+            selectedWreckId = null; // обломки пропали между кадрами — просто закрываем панель
+            return;
+        }
+        HealthComponent ironStock = wreck.getComponent(HealthComponent.class);
+
+        shapeRenderer.setProjectionMatrix(hudCamera.combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        drawPanelBackground();
+        shapeRenderer.end();
+
+        spriteBatch.setProjectionMatrix(hudCamera.combined);
+        spriteBatch.begin();
+        uiFont.setColor(Color.WHITE);
+        uiFont.draw(spriteBatch, "Обломки", PANEL_X + 15f, NAME_TEXT_Y);
+        if (ironStock != null) {
+            uiFont.draw(spriteBatch, "Iron: " + ironStock.currentHealth + "/" + ironStock.maxHealth,
+                    PANEL_X + 15f, HP_TEXT_Y);
+        }
         spriteBatch.end();
 
         shapeRenderer.setProjectionMatrix(camera.combined);
@@ -1840,6 +1889,20 @@ public class GameScreen extends InputAdapter implements Screen {
         if (clicked == null) {
             setSelection(Collections.emptySet());
             selectedBuildingId = null;
+            selectedWreckId = null;
+            return;
+        }
+
+        if (clicked.getComponent(WreckComponent.class) != null) {
+            // Обломки нейтральны (owner.playerId == NEUTRAL_OWNER_ID) — ни
+            // "свои", ни "чужие", isMine/isBuilding ниже тут ни при чём:
+            // отдельная простая панель (см. drawWreckInfoPanel), не
+            // выделение юнитов и не панель здания. Повторный клик по уже
+            // открытым обломкам закрывает панель, как и у своих зданий.
+            setSelection(Collections.emptySet());
+            selectedBuildingId = null;
+            int wreckUnitId = clicked.getComponent(UnitComponent.class).unitId;
+            selectedWreckId = (selectedWreckId != null && selectedWreckId == wreckUnitId) ? null : wreckUnitId;
             return;
         }
 
@@ -1850,6 +1913,7 @@ public class GameScreen extends InputAdapter implements Screen {
         if (isMine && isBuilding) {
             int buildingUnitId = clicked.getComponent(UnitComponent.class).unitId;
             setSelection(Collections.emptySet());
+            selectedWreckId = null;
             // Повторный клик по уже открытому зданию закрывает панель, иначе
             // — открывает. Панель теперь показывается для ЛЮБОГО своего
             // здания (не только производящего) — раз в ней появилась кнопка
@@ -1863,6 +1927,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
         if (isMine) { // свой юнит
             selectedBuildingId = null;
+            selectedWreckId = null;
             int unitId = clicked.getComponent(UnitComponent.class).unitId;
             if (addToSelection && !selectedUnitIds.isEmpty()) {
                 this.addToSelection(unitId);
@@ -1874,12 +1939,15 @@ public class GameScreen extends InputAdapter implements Screen {
 
         // Клик по чужому юниту или чужому зданию — выделение юнитов не
         // трогаем (двигать/командовать чужим всё равно нельзя), но панель
-        // постройки своего здания закрываем — раз клик был не по ней.
+        // постройки своего здания и панель обломков закрываем — раз клик
+        // был не по ним.
         selectedBuildingId = null;
+        selectedWreckId = null;
     }
 
     private void handleBoxSelect(float x1, float y1, float x2, float y2) {
         selectedBuildingId = null; // начали выделять юнитов рамкой — панель постройки не нужна
+        selectedWreckId = null; // и панель обломков тоже
 
         float minX = Math.min(x1, x2);
         float maxX = Math.max(x1, x2);
@@ -1993,6 +2061,7 @@ public class GameScreen extends InputAdapter implements Screen {
         }
 
         selectedBuildingId = null;
+        selectedWreckId = null;
         setSelection(alive);
         activeControlGroupNumber = groupNumber;
     }
