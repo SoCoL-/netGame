@@ -155,13 +155,15 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float RALLY_DASH_LENGTH = 15f;
     private static final float RALLY_GAP_LENGTH = 10f;
 
-    // Цепочка очереди приказов выделенного юнита — линия одного цвета
-    // (отличного от точки сбора, чтобы не путать два разных пунктира на
-    // экране), маркеры на каждой точке красятся по типу приказа.
-    private static final Color ORDER_QUEUE_LINE_COLOR = Color.valueOf("FFD966");
+    // Цепочка очереди приказов выделенного юнита — и сама пунктирная линия
+    // (каждый сегмент), и маркер на каждой точке красятся по типу приказа,
+    // к которому ведёт этот сегмент/точка (см. drawOrderQueue,
+    // orderQueueColorFor) — единого "нейтрального" цвета линии больше нет,
+    // раньше он путал: убегающая вперёд линия не говорила, что за приказ
+    // её ждёт на другом конце.
     private static final Color ORDER_QUEUE_MOVE_COLOR = Color.WHITE;
     private static final Color ORDER_QUEUE_ATTACK_COLOR = Color.valueOf("FF5555");
-    private static final Color ORDER_QUEUE_BUILD_COLOR = Color.valueOf("55DDFF");
+    private static final Color ORDER_QUEUE_BUILD_COLOR = Color.valueOf("FF9933");
     private static final Color ORDER_QUEUE_REPAIR_COLOR = Color.valueOf("77FF77");
     private static final Color ORDER_QUEUE_COLLECT_COLOR = Color.valueOf("CC9944");
     private static final float ORDER_QUEUE_MARKER_RADIUS = 6f;
@@ -1103,14 +1105,20 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     /**
-     * Цепочка отложенных приказов выделенного юнита — пунктирная линия
-     * через все точки по порядку (юнит -> первая -> вторая -> ...) и
-     * маркер на каждой, цвет маркера зависит от типа приказа
-     * (ORDER_QUEUE_MOVE_COLOR/ATTACK_COLOR/BUILD_COLOR). Только для ОДНОГО
-     * выделенного юнита — как и у здания с точкой сбора: у нескольких
-     * выделенных юнитов очереди почти наверняка разные, единую цепочку
-     * рисовать было бы бессмысленно. Ничего не рисует, если очередь пуста
-     * или юнита сейчас не видно среди своих же сущностей.
+     * Цепочка приказов выделенного юнита — пунктирная линия через все
+     * точки по порядку (юнит -> первая -> вторая -> ...) и маркер на
+     * каждой; и сегмент линии, и маркер красятся по типу приказа, к
+     * которому ведёт эта точка (orderQueueColorFor) — белый для
+     * перемещения, оранжевый для стройки, красный для атаки и т.д. (см.
+     * ORDER_QUEUE_*_COLOR). ПЕРВАЯ точка — это ТЕКУЩИЙ выполняемый приказ
+     * (см. серверный GameServer.currentOrderPointFor), не следующий из
+     * очереди — линия всегда начинается от места юнита прямо к его
+     * настоящей текущей цели, даже если приказ вообще один, без всякой
+     * очереди позади. Только для ОДНОГО выделенного юнита — как и у
+     * здания с точкой сбора: у нескольких выделенных юнитов очереди
+     * почти наверняка разные, единую цепочку рисовать было бы
+     * бессмысленно. Ничего не рисует, если у юнита нет активного приказа
+     * и очередь пуста, или юнита сейчас не видно среди своих же сущностей.
      */
     private void drawOrderQueue() {
         if (selectedUnitIds.size() != 1) {
@@ -1128,18 +1136,19 @@ public class GameScreen extends InputAdapter implements Screen {
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         for (QueuedOrderPoint point : display.points) {
-            drawDashedLine(fromX, fromY, point.x, point.y, ORDER_QUEUE_LINE_COLOR);
+            drawDashedLine(fromX, fromY, point.x, point.y, orderQueueColorFor(point.type));
             fromX = point.x;
             fromY = point.y;
         }
         for (QueuedOrderPoint point : display.points) {
-            shapeRenderer.setColor(orderQueueMarkerColor(point.type));
+            shapeRenderer.setColor(orderQueueColorFor(point.type));
             shapeRenderer.circle(point.x, point.y, ORDER_QUEUE_MARKER_RADIUS);
         }
         shapeRenderer.end();
     }
 
-    private Color orderQueueMarkerColor(int typeOrdinal) {
+    /** Цвет и сегмента линии, и маркера точки очереди — один и тот же, по типу приказа (см. javadoc drawOrderQueue). */
+    private Color orderQueueColorFor(int typeOrdinal) {
         QueuedOrder.Type[] types = QueuedOrder.Type.values();
         if (typeOrdinal < 0 || typeOrdinal >= types.length) {
             return ORDER_QUEUE_MOVE_COLOR;

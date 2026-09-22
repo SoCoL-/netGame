@@ -1523,7 +1523,18 @@ public class GameServer {
 
             // Только для отрисовки цепочки очереди на клиенте (GameScreen
             // .drawOrderQueue) — см. javadoc QueuedOrderPoint, почему тут
-            // координаты, а не id цели.
+            // координаты, а не id цели. Первой точкой — ТЕКУЩИЙ
+            // выполняемый приказ (currentOrderPointFor), если он есть:
+            // раньше цепочка начиналась сразу со ВТОРОГО приказа (первого
+            // элемента orderQueue.queue, а очередь держит только ещё НЕ
+            // начатые приказы — см. javadoc OrderQueueComponent), из-за
+            // чего пунктирная линия к текущей цели вообще не рисовалась,
+            // а к следующей — рисовалась от игрока неверно, будто это и
+            // есть первая цель.
+            QueuedOrderPoint currentOrderPoint = currentOrderPointFor(unit, direction);
+            if (currentOrderPoint != null) {
+                unitSnapshot.queuedOrders.add(currentOrderPoint);
+            }
             OrderQueueComponent orderQueue = unit.getComponent(OrderQueueComponent.class);
             if (orderQueue != null) {
                 for (QueuedOrder order : orderQueue.queue) {
@@ -1576,6 +1587,65 @@ public class GameServer {
         }
 
         server.sendToAllTCP(snapshot);
+    }
+
+    /**
+     * Точка ТЕКУЩЕГО выполняемого приказа юнита — той самой сущности или
+     * места, к которому он идёт/атакует/строит/чинит/собирает ПРЯМО
+     * СЕЙЧАС, а не следующего приказа из очереди (для тех — обычный цикл
+     * по OrderQueueComponent.queue в broadcastSnapshot). Порядок проверки
+     * — как везде в GameServer/AggroSystem: Attack, потом Build, Repair,
+     * Collect (одновременно у юнита может быть только один из этих
+     * компонентов, см. симметричные проверки-удаления во всех
+     * assignBuilderToBuild/assignBuilderToRepair/assignBuilderToCollect/
+     * startAttackOrder/handleMoveUnit), и только если
+     * нет ни одного — обычное перемещение (DirectionComponent.moving),
+     * если оно вообще активно. У боевых/строительных приказов берём ЖИВУЮ
+     * позицию цели из unitsById, а не сохранённую точку подхода
+     * (DirectionComponent.target) — так линия на клиенте продолжает
+     * указывать точно на цель, даже если та сама движется, и остаётся
+     * верной уже после того, как юнит остановился (DirectionComponent
+     * .moving стал false, но сам приказ ещё выполняется). null, если у
+     * юнита прямо сейчас вообще нет активного приказа (например, здание,
+     * или юнит только что закончил приказ и ещё не взял следующий из
+     * очереди на этом тике) — тогда на клиенте просто не рисуется первый
+     * сегмент линии, а очередь (если она есть) рисуется как раньше.
+     */
+    private QueuedOrderPoint currentOrderPointFor(Entity unit, DirectionComponent direction) {
+        AttackComponent attack = unit.getComponent(AttackComponent.class);
+        if (attack != null) {
+            return currentOrderPointForTarget(attack.targetUnitId, QueuedOrder.Type.ATTACK);
+        }
+        BuildOrderComponent buildOrder = unit.getComponent(BuildOrderComponent.class);
+        if (buildOrder != null) {
+            return currentOrderPointForTarget(buildOrder.targetBuildingUnitId, QueuedOrder.Type.BUILD);
+        }
+        RepairOrderComponent repairOrder = unit.getComponent(RepairOrderComponent.class);
+        if (repairOrder != null) {
+            return currentOrderPointForTarget(repairOrder.targetBuildingUnitId, QueuedOrder.Type.REPAIR);
+        }
+        CollectOrderComponent collectOrder = unit.getComponent(CollectOrderComponent.class);
+        if (collectOrder != null) {
+            return currentOrderPointForTarget(collectOrder.targetWreckUnitId, QueuedOrder.Type.COLLECT);
+        }
+        if (direction != null && direction.moving) {
+            // Обычное перемещение без боевого/строительного компонента —
+            // DirectionComponent.target тут и есть настоящая точка
+            // назначения (handleMoveUnit ставит её напрямую, не через
+            // точку подхода), в отличие от случая погони выше.
+            return new QueuedOrderPoint(direction.target.x, direction.target.y, QueuedOrder.Type.MOVE.ordinal());
+        }
+        return null;
+    }
+
+    /** Общая часть currentOrderPointFor для приказов, нацеленных на другую сущность (не на голую точку, как MOVE) — ищет её живую позицию по unitsById. */
+    private QueuedOrderPoint currentOrderPointForTarget(int targetUnitId, QueuedOrder.Type type) {
+        Entity target = unitsById.get(targetUnitId);
+        PositionComponent targetPosition = target != null ? target.getComponent(PositionComponent.class) : null;
+        if (targetPosition == null) {
+            return null; // цель уже пропала — приказ сам скоро снимется на сервере, просто не показываем её сейчас
+        }
+        return new QueuedOrderPoint(targetPosition.position.x, targetPosition.position.y, type.ordinal());
     }
 
     /**
