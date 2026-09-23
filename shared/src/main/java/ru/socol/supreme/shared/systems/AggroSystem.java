@@ -50,6 +50,13 @@ import java.util.Map;
  * BuildOrderComponent — см. GameServer.startAttackOrder), иначе стройка
  * ни на что не отвлекалась бы каждый раз, когда рядом пробежал враг.
  *
+ * Кандидат в цели дополнительно фильтруется по стихии (UnitDefinitions
+ * .canTarget/isAirUnit): наземные юниты и турель не считают врагом
+ * воздушную цель, разведчик — наоборот, наземную и здания. Штурмовик
+ * ограничений не имеет. То же самое правило, той же парой методов,
+ * проверяет GameServer.startAttackOrder для ручного/очередного приказа —
+ * см. её javadoc, почему это единое правило, а не два разных.
+ *
  * Family намеренно ИСКЛЮЧАЕТ AttackComponent — уже атакующие юниты цель не
  * пересматривают каждый тик, этим занимается только CombatSystem. Здания
  * автоматически не участвуют: у них нет DirectionComponent, а он
@@ -167,6 +174,12 @@ public class AggroSystem extends IteratingSystem {
             OwnerComponent otherOwner = OWNER.get(other);
             if (otherOwner == null || otherOwner.playerId == owner.playerId) {
                 continue; // свой юнит/здание — не цель
+            }
+
+            UnitTypeComponent otherTypeComponent = UNIT_TYPE.get(other);
+            boolean otherIsAir = otherTypeComponent != null && UnitDefinitions.isAirUnit(otherTypeComponent.type);
+            if (!UnitDefinitions.canTarget(myType, otherIsAir)) {
+                continue; // разделение целей по стихиям — см. её javadoc: наземный не видит воздух, разведчик не видит землю
             }
 
             float distanceSq = position.position.dst2(POSITION.get(other).position);

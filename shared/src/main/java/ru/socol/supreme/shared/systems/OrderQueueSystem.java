@@ -7,6 +7,7 @@ import com.badlogic.ashley.systems.IteratingSystem;
 import ru.socol.supreme.shared.QueuedOrder;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.BuildOrderComponent;
+import ru.socol.supreme.shared.components.CollectOrderComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.OrderQueueComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
@@ -16,12 +17,18 @@ import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
 /**
- * Как только юнит освобождается (не атакует, не строит и не в пути) и в
- * его OrderQueueComponent есть отложенный приказ — забирает первый
- * элемент очереди и запускает его тем же путём, каким запускается обычный
+ * Как только юнит освобождается (не атакует, не строит, не чинит, не
+ * собирает обломки и не в пути — все четыре Order-компонента и
+ * DirectionComponent.moving проверяются в idle ниже) и в его
+ * OrderQueueComponent есть отложенный приказ — забирает первый элемент
+ * очереди и запускает его тем же путём, каким запускается обычный
  * немедленный приказ. Юнит без очереди (пустой OrderQueueComponent, или
  * его нет вовсе — Family требует компонент, но не то, что он непуст)
  * просто пропускается каждый тик почти бесплатно (queue.isEmpty()).
+ * CollectOrderComponent раньше не входил в эту проверку — строитель,
+ * собирающий железо с обломков, при этом формально считался "свободным",
+ * и следующий отложенный приказ забирал очередь и прерывал сбор почти
+ * сразу же, а не по его завершении.
  *
  * MOVE запускается прямо здесь (Pathfinding.setDestination — статический
  * метод, доступен без обратного вызова); ATTACK, BUILD, REPAIR и COLLECT
@@ -87,6 +94,7 @@ public class OrderQueueSystem extends IteratingSystem {
         boolean idle = entity.getComponent(AttackComponent.class) == null
                 && entity.getComponent(BuildOrderComponent.class) == null
                 && entity.getComponent(RepairOrderComponent.class) == null
+                && entity.getComponent(CollectOrderComponent.class) == null
                 && !DIRECTION.get(entity).moving;
         if (!idle) {
             return;

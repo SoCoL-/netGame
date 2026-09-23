@@ -818,7 +818,8 @@ public class GameServer {
      * приказа (handleAttackUnit) и для разбора очереди (OrderQueueSystem,
      * куда передаётся как OrderExecutor через метод-ссылку). Возвращает
      * false, если приказ невалиден прямо сейчас (атакующий/цель пропали,
-     * цель своя, атакующий — здание) — вызывающий код очереди просто
+     * цель своя, атакующий — здание, обломки, несовместимая стихия —
+     * см. UnitDefinitions.canTarget) — вызывающий код очереди просто
      * отбрасывает этот результат: юнит останется бездействовать до
      * следующего тика и попробует взять уже СЛЕДУЮЩИЙ элемент очереди.
      */
@@ -851,6 +852,24 @@ public class GameServer {
             // ScavengeSystem. Тот же клиентский запрет см. в
             // GameScreen.isEnemy — тут вторая, серверная проверка на
             // случай модифицированного клиента.
+            return false;
+        }
+
+        // Разделение целей по стихиям (см. UnitDefinitions.canTarget) —
+        // наземные юниты и турель не могут атаковать воздушные цели,
+        // разведчик не может атаковать наземные (включая здания — у них
+        // UnitTypeComponent нет вовсе, isAirUnit для них всегда false).
+        // То же правило теми же двумя методами проверяет AggroSystem для
+        // автоагрессии — см. её javadoc, единое правило для обоих путей
+        // назначения цели. Клиент это тоже не проверяет (GameScreen
+        // .isEnemy пропускает любого чужого, невзирая на стихию) — это
+        // единственная, серверная, проверка, симметричная проверке на
+        // обломки чуть выше.
+        UnitTypeComponent attackerTypeComponent = attacker.getComponent(UnitTypeComponent.class);
+        UnitType attackerType = attackerTypeComponent != null ? attackerTypeComponent.type : UnitType.WARRIOR;
+        UnitTypeComponent targetTypeComponent = target.getComponent(UnitTypeComponent.class);
+        boolean targetIsAir = targetTypeComponent != null && UnitDefinitions.isAirUnit(targetTypeComponent.type);
+        if (!UnitDefinitions.canTarget(attackerType, targetIsAir)) {
             return false;
         }
 

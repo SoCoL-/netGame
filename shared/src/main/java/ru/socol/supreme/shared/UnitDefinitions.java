@@ -122,6 +122,44 @@ public final class UnitDefinitions {
         return DEFINITIONS.get(type).canHover;
     }
 
+    /**
+     * Летает ли этот тип юнита — тот же признак, которым GameServer.createUnit
+     * решает, ставить ли на сущность AircraftComponent (turnRadius > 0, см.
+     * его же комментарий): наземный юнит поворачивается мгновенно и радиус
+     * разворота ему не нужен, у любой авиации это число всегда положительное.
+     * Используется для разделения целей по стихиям (см. canTarget) —
+     * отдельного поля/enum "домен" в данных нет, стихия юнита целиком
+     * выводится из этого числа, чтобы не дублировать одну и ту же
+     * информацию двумя разными способами.
+     */
+    public static boolean isAirUnit(UnitType type) {
+        return turnRadiusFor(type) > 0f;
+    }
+
+    /**
+     * Разделение целей по стихиям: наземные юниты (WARRIOR, ARCHER,
+     * BUILDER) и турель (UnitType.TURRET — стационарная, тоже наземная)
+     * могут атаковать только наземные цели (targetIsAir == false — сюда же
+     * попадают и здания, у них домена вовсе нет, воздушными они не
+     * бывают); разведчик (SCOUT) — только воздушные; штурмовик
+     * (ATTACK_AIRCRAFT) — единственный тип, которому можно атаковать и то,
+     * и другое. Используется и в AggroSystem (автоагрессия — кандидат
+     * просто не рассматривается как враг, если стихии не совпадают), и в
+     * GameServer.startAttackOrder (ручной/очередной приказ на атаку —
+     * невалиден и отклоняется точно так же, как атака своего юнита или
+     * обломков), чтобы у обоих путей назначения цели было одно и то же
+     * правило, а не два независимых по смыслу.
+     */
+    public static boolean canTarget(UnitType attackerType, boolean targetIsAir) {
+        if (attackerType == UnitType.ATTACK_AIRCRAFT) {
+            return true;
+        }
+        if (attackerType == UnitType.SCOUT) {
+            return targetIsAir;
+        }
+        return !targetIsAir;
+    }
+
     /** Половина угла конуса стрельбы вперёд, градусы — актуально только для авиации (см. CombatSystem). 0 у наземных типов — не используется, им ориентация не важна. */
     public static float firingArcDegreesFor(UnitType type) {
         return DEFINITIONS.get(type).firingArcDegrees;
