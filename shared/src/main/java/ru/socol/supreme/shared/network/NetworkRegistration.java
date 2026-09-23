@@ -11,6 +11,8 @@ import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
+import ru.socol.supreme.shared.network.messages.PatrolPoint;
+import ru.socol.supreme.shared.network.messages.PatrolUnitRequest;
 import ru.socol.supreme.shared.network.messages.PathPoint;
 import ru.socol.supreme.shared.network.messages.FogSnapshot;
 import ru.socol.supreme.shared.network.messages.QueuedOrderPoint;
@@ -66,5 +68,7 @@ public final class NetworkRegistration {
         kryo.register(DemolishBuildingRequest.class);
         kryo.register(RepairOrderRequest.class);
         kryo.register(CollectOrderRequest.class);
+        kryo.register(PatrolPoint.class);
+        kryo.register(PatrolUnitRequest.class);
     }
 }

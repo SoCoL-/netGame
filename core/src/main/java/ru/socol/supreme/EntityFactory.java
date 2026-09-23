@@ -12,6 +12,7 @@ import ru.socol.supreme.components.BuildBeamComponent;
 import ru.socol.supreme.components.DebugPathComponent;
 import ru.socol.supreme.components.InterpolationComponent;
 import ru.socol.supreme.components.OrderQueueDisplayComponent;
+import ru.socol.supreme.components.PatrolDisplayComponent;
 import ru.socol.supreme.components.TurretDisplayComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
@@ -25,6 +26,7 @@ import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.components.WreckComponent;
 import ru.socol.supreme.shared.network.messages.PathPoint;
+import ru.socol.supreme.shared.network.messages.PatrolPoint;
 import ru.socol.supreme.shared.network.messages.QueuedOrderPoint;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
 
@@ -146,6 +148,17 @@ public class EntityFactory {
                     orderQueueDisplay.points.add(new QueuedOrderPoint(point.x, point.y, point.type));
                 }
             }
+
+            PatrolDisplayComponent patrolDisplay = entity.getComponent(PatrolDisplayComponent.class);
+            if (patrolDisplay != null) {
+                // Та же логика, что и у orderQueueDisplay выше —
+                // перезаписываем целиком, включая пустой список, когда
+                // юнит перестаёт патрулировать.
+                patrolDisplay.points.clear();
+                for (PatrolPoint point : snapshot.patrolPoints) {
+                    patrolDisplay.points.add(new PatrolPoint(point.x, point.y));
+                }
+            }
         }
 
         entitiesByUnitId.entrySet().removeIf(entry -> {
@@ -235,6 +248,12 @@ public class EntityFactory {
                 orderQueueDisplay.points.add(new QueuedOrderPoint(point.x, point.y, point.type));
             }
             entity.add(orderQueueDisplay);
+
+            PatrolDisplayComponent patrolDisplay = new PatrolDisplayComponent();
+            for (PatrolPoint point : snapshot.patrolPoints) {
+                patrolDisplay.points.add(new PatrolPoint(point.x, point.y));
+            }
+            entity.add(patrolDisplay);
 
             if (snapshot.buildTargetUnitId != 0) {
                 entity.add(new BuildBeamComponent(snapshot.buildTargetUnitId));

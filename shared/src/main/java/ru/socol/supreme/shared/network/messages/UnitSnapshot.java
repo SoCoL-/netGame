@@ -98,6 +98,16 @@ public class UnitSnapshot {
     /** Отложенные приказы юнита (если есть) — только для отрисовки цепочки очереди (GameScreen.drawOrderQueue), см. javadoc QueuedOrderPoint. Пусто, если очередь пуста или её нет вовсе. */
     public List<QueuedOrderPoint> queuedOrders = new ArrayList<>();
 
+    /**
+     * Весь замкнутый маршрут патрулирования (PatrolComponent.waypoints),
+     * если юнит патрулирует — только для отрисовки на клиенте
+     * (GameScreen.drawPatrolRoute), см. javadoc PatrolPoint. В отличие от
+     * queuedOrders тут нет разделения на "текущую" и "будущие" точки —
+     * весь список равноправен и никогда не тратится, юнит идёт по кругу
+     * бесконечно. Пусто, если юнит сейчас не патрулирует.
+     */
+    public List<PatrolPoint> patrolPoints = new ArrayList<>();
+
     public UnitSnapshot() {
     }
 }

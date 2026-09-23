@@ -18,6 +18,8 @@ import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
+import ru.socol.supreme.shared.network.messages.PatrolPoint;
+import ru.socol.supreme.shared.network.messages.PatrolUnitRequest;
 import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
 import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
@@ -27,6 +29,7 @@ import ru.socol.supreme.shared.network.messages.SetRallyPointRequest;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * Тонкая обёртка над KryoNet Client: держит соединение с сервером и
@@ -211,6 +214,19 @@ public class GameClient implements Disposable {
         request.unitId = unitId;
         request.targetUnitId = targetUnitId;
         request.queue = queue;
+        client.sendTCP(request);
+    }
+
+    /**
+     * Нет queue-варианта — см. javadoc PatrolUnitRequest, почему у
+     * патруля нет смысла в shift-клике "добавить в очередь". waypoints —
+     * весь маршрут целиком, накопленный за время расстановки (см.
+     * GameScreen.finishPatrolPlacement).
+     */
+    public void requestPatrolUnit(int unitId, List<PatrolPoint> waypoints) {
+        PatrolUnitRequest request = new PatrolUnitRequest();
+        request.unitId = unitId;
+        request.waypoints = waypoints;
         client.sendTCP(request);
     }
 

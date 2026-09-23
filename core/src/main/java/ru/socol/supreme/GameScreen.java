@@ -29,6 +29,7 @@ import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.components.BuildBeamComponent;
 import ru.socol.supreme.components.DebugPathComponent;
 import ru.socol.supreme.components.OrderQueueDisplayComponent;
+import ru.socol.supreme.components.PatrolDisplayComponent;
 import ru.socol.supreme.components.SelectedComponent;
 import ru.socol.supreme.network.GameClient;
 import ru.socol.supreme.systems.InterpolationSystem;
@@ -46,6 +47,7 @@ import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.FogSnapshot;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
+import ru.socol.supreme.shared.network.messages.PatrolPoint;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueuedOrderPoint;
@@ -168,6 +170,17 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final Color ORDER_QUEUE_COLLECT_COLOR = Color.valueOf("CC9944");
     private static final float ORDER_QUEUE_MARKER_RADIUS = 6f;
 
+    // Маршрут патрулирования — сплошной замкнутый цикл точек (см.
+    // PatrolComponent, никогда не "тратится", в отличие от очереди
+    // обычных приказов выше). Один и тот же цвет и для уже назначенного
+    // маршрута патрулирующего юнита (drawPatrolRoute), и для сегментов
+    // предпросмотра между уже поставленными точками во время расстановки
+    // (drawPatrolPlacementPreview) — PATROL_ROUTE_PREVIEW_COLOR чуть
+    // тусклее и используется только для "хвоста" до курсора и линии,
+    // замыкающей цикл, которых в настоящем маршруте ещё не существует.
+    private static final Color PATROL_ROUTE_COLOR = Color.valueOf("CC66FF");
+    private static final Color PATROL_ROUTE_PREVIEW_COLOR = new Color(0.8f, 0.4f, 1f, 0.55f);
+
     // Голографический луч стройки — три слоя одного отрезка (см.
     // drawSingleBuildBeam) плюс "бегущие" сегменты вдоль него. Цвета —
     // свои Color-объекты, не общие константы вроде Color.CYAN: alpha у
@@ -260,6 +273,25 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float DEMOLISH_BUTTON_HEIGHT = 34f;
     private static final float DEMOLISH_BUTTON_X = PANEL_X + PANEL_WIDTH - DEMOLISH_BUTTON_WIDTH - 15f;
     private static final float DEMOLISH_BUTTON_Y = PANEL_Y + PANEL_HEIGHT - DEMOLISH_BUTTON_HEIGHT - 15f;
+
+    // Кнопка "Patrol" — тот же угол плашки, что и "Demolish" выше (тот же
+    // размер, та же формула позиции), но для панели ЮНИТА, не здания:
+    // здание и юнит(ы) никогда не выделены одновременно (drawInfoPanel
+    // рисует ровно одну из панелей), так что эти два набора кнопок
+    // физически никогда не пересекаются на экране, а действие построен по
+    // тому же принципу — фиксированный угол панели, независимый от ряда
+    // кнопок построек/очереди под ним (тот ряд и без того заполнен под
+    // завязку у строителя — 7 кнопок BUILDABLE_TYPES впритык умещаются в
+    // HUD_WIDTH, восьмую туда уже не втиснуть). Рисуется во всех трёх
+    // панелях юнита (drawBuilderInfoPanel/drawUnitInfoPanel/
+    // drawMultiSelectionPanel) — патрулировать может любой юнит, не
+    // только боевой.
+    private static final float PATROL_BUTTON_WIDTH = 110f;
+    private static final float PATROL_BUTTON_HEIGHT = 34f;
+    private static final float PATROL_BUTTON_X = PANEL_X + PANEL_WIDTH - PATROL_BUTTON_WIDTH - 15f;
+    private static final float PATROL_BUTTON_Y = PANEL_Y + PANEL_HEIGHT - PATROL_BUTTON_HEIGHT - 15f;
+    private static final Color PATROL_BUTTON_COLOR = Color.LIGHT_GRAY;
+    private static final Color PATROL_BUTTON_ACTIVE_COLOR = Color.valueOf("CC66FF");
 
     // Чисто визуальный полёт снаряда — урон уже применён на сервере в момент
     // выстрела (см. ProjectileFiredEvent), скорость тут только для картинки.
@@ -403,6 +435,19 @@ public class GameScreen extends InputAdapter implements Screen {
     // валидность решает buildGhostValid.
     private int ironMineSnapDepositIndex = -1;
     private boolean buildGhostValid = false;
+
+    // Расстановка маршрута патрулирования — по кнопке Patrol в панели
+    // выделения (см. drawPatrolButton/isInsidePatrolButton). Пока
+    // placingPatrol == true, ЛКМ по карте добавляет очередную точку в
+    // patrolPoints (мировые координаты, в порядке добавления), ПКМ по
+    // карте или повторный клик по самой кнопке — завершает расстановку и
+    // отправляет накопленный маршрут (см. touchDown/finishPatrolPlacement),
+    // ESCAPE — отменяет её целиком, ничего не отправляя (см. keyDown), тем
+    // же приёмом, что и placingBuildingType выше. Само выделение
+    // (selectedUnitIds) не трогается всё это время — маршрут в итоге уйдёт
+    // именно тем юнитам, что были выделены в момент нажатия кнопки.
+    private boolean placingPatrol = false;
+    private final List<Vector2> patrolPoints = new ArrayList<>();
 
     // Свои ресурсы — обновляются из каждого снапшота (см. onWorldSnapshot).
     // float, не int — потребление/добыча считаются дробно (например,
@@ -805,6 +850,7 @@ public class GameScreen extends InputAdapter implements Screen {
         // прятались под его серой плашкой.
         drawRallyPoints();
         drawOrderQueue();
+        drawPatrolRoute();
         if (debugMode) {
             drawDebugPaths();
         }
@@ -818,6 +864,9 @@ public class GameScreen extends InputAdapter implements Screen {
             if (placingBuildingType != null) {
                 updateBuildGhost();
                 drawBuildGhost();
+            }
+            if (placingPatrol) {
+                drawPatrolPlacementPreview();
             }
             drawResourcePanel(); // всегда видна во время игры, не только когда что-то выбрано
             // Единая контекстная плашка — сама решает, что показать (или
@@ -1165,6 +1214,102 @@ public class GameScreen extends InputAdapter implements Screen {
             default:
                 return ORDER_QUEUE_MOVE_COLOR;
         }
+    }
+
+    /**
+     * Замкнутый маршрут патрулирования выделенного юнита — все точки по
+     * кругу, включая сегмент, замыкающий цикл от последней точки обратно
+     * к первой (в отличие от drawOrderQueue тут нет "текущей" и "будущих"
+     * точек — весь список равноправен, юнит идёт по нему бесконечно, см.
+     * PatrolComponent/PatrolDisplayComponent). Как и drawOrderQueue —
+     * только для ОДНОГО выделенного юнита. Белая пунктирная линия к
+     * ближайшей точке маршрута (см. drawOrderQueue/currentOrderPointFor —
+     * она рисуется и тут тоже, независимо от этого метода, пока юнит в
+     * пути: PatrolSystem двигает его тем же DirectionComponent.target, что
+     * и обычный приказ на движение) остаётся поверх этого контура — не
+     * мешает, просто подсвечивает, к какой из точек цикла юнит идёт
+     * ПРЯМО СЕЙЧАС. Ничего не рисует меньше чем для двух точек — цикл не
+     * из чего замкнуть.
+     */
+    private void drawPatrolRoute() {
+        if (selectedUnitIds.size() != 1) {
+            return;
+        }
+        Entity unit = entityFactory.getEntity(selectedUnitIds.iterator().next());
+        PatrolDisplayComponent display = unit != null ? unit.getComponent(PatrolDisplayComponent.class) : null;
+        if (display == null || display.points.size() < 2) {
+            return;
+        }
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        for (int i = 0; i < display.points.size(); i++) {
+            PatrolPoint from = display.points.get(i);
+            PatrolPoint to = display.points.get((i + 1) % display.points.size());
+            drawDashedLine(from.x, from.y, to.x, to.y, PATROL_ROUTE_COLOR);
+        }
+        for (PatrolPoint point : display.points) {
+            shapeRenderer.setColor(PATROL_ROUTE_COLOR);
+            shapeRenderer.circle(point.x, point.y, ORDER_QUEUE_MARKER_RADIUS);
+        }
+        shapeRenderer.end();
+    }
+
+    /**
+     * Предпросмотр маршрута патруля во время расстановки (placingPatrol)
+     * — пунктирные линии через уже поставленные точки по порядку, потом
+     * "хвостом" до курсора (ещё не подтверждённая точка — подсказка, куда
+     * легла бы следующая, кликни игрок прямо сейчас), и дальше от курсора
+     * обратно к самой первой точке, замыкая предполагаемый цикл — другим,
+     * более тусклым цветом (PATROL_ROUTE_PREVIEW_COLOR), чтобы не путать
+     * с уже настоящими сегментами маршрута. Ничего не рисует, пока не
+     * поставили ни одной точки.
+     */
+    private void drawPatrolPlacementPreview() {
+        if (patrolPoints.isEmpty()) {
+            return;
+        }
+        Vector3 cursorWorld = camera.unproject(new Vector3(Gdx.input.getX(), Gdx.input.getY(), 0));
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        float fromX = patrolPoints.get(0).x;
+        float fromY = patrolPoints.get(0).y;
+        for (int i = 1; i < patrolPoints.size(); i++) {
+            Vector2 point = patrolPoints.get(i);
+            drawDashedLine(fromX, fromY, point.x, point.y, PATROL_ROUTE_COLOR);
+            fromX = point.x;
+            fromY = point.y;
+        }
+        drawDashedLine(fromX, fromY, cursorWorld.x, cursorWorld.y, PATROL_ROUTE_PREVIEW_COLOR);
+        drawDashedLine(cursorWorld.x, cursorWorld.y, patrolPoints.get(0).x, patrolPoints.get(0).y, PATROL_ROUTE_PREVIEW_COLOR);
+        for (Vector2 point : patrolPoints) {
+            shapeRenderer.setColor(PATROL_ROUTE_COLOR);
+            shapeRenderer.circle(point.x, point.y, ORDER_QUEUE_MARKER_RADIUS);
+        }
+        shapeRenderer.end();
+    }
+
+    /**
+     * Завершает расстановку точек патруля — по ПКМ на карте или
+     * повторному клику по кнопке Patrol (см. touchDown), отправляет
+     * накопленный маршрут на сервер для КАЖДОГО юнита из текущего
+     * выделения (то же самое выделение, что было в момент нажатия кнопки
+     * — оно не менялось всё это время, ровно как и панель строителя во
+     * время размещения здания) и выходит из режима расстановки. Пустой
+     * маршрут (ни одной точки не поставили) просто отменяет режим —
+     * отправлять нечего, как и ESCAPE (см. keyDown).
+     */
+    private void finishPatrolPlacement() {
+        if (!patrolPoints.isEmpty()) {
+            List<PatrolPoint> waypoints = new ArrayList<>();
+            for (Vector2 point : patrolPoints) {
+                waypoints.add(new PatrolPoint(point.x, point.y));
+            }
+            for (int unitId : selectedUnitIds) {
+                client.requestPatrolUnit(unitId, waypoints);
+            }
+        }
+        placingPatrol = false;
+        patrolPoints.clear();
     }
 
     /** Пунктирная линия — общая для точки сбора (RALLY_POINT_COLOR) и цепочки очереди приказов (см. drawOrderQueue), цвет передаёт вызывающий код, не жёстко зашит внутри. */
@@ -1532,6 +1677,7 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.setProjectionMatrix(hudCamera.combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         drawPanelBackground();
+        drawPatrolButtonShape();
         shapeRenderer.end();
 
         spriteBatch.setProjectionMatrix(hudCamera.combined);
@@ -1539,6 +1685,7 @@ public class GameScreen extends InputAdapter implements Screen {
         uiFont.setColor(Color.WHITE);
         uiFont.draw(spriteBatch, unitTypeLabel(unitType), PANEL_X + 15f, NAME_TEXT_Y);
         uiFont.draw(spriteBatch, "HP: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
+        drawPatrolButtonLabel();
         spriteBatch.end();
 
         shapeRenderer.setProjectionMatrix(camera.combined);
@@ -1594,6 +1741,7 @@ public class GameScreen extends InputAdapter implements Screen {
         for (int i = 0; i < BUILDABLE_TYPES.length; i++) {
             shapeRenderer.rect(actionButtonX(i), ACTION_BUTTON_Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT);
         }
+        drawPatrolButtonShape();
         shapeRenderer.end();
 
         spriteBatch.setProjectionMatrix(hudCamera.combined);
@@ -1612,6 +1760,7 @@ public class GameScreen extends InputAdapter implements Screen {
         for (int i = 0; i < BUILDABLE_TYPES.length; i++) {
             uiFont.draw(spriteBatch, buildingTypeLabel(BUILDABLE_TYPES[i]), actionButtonX(i) + 10f, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 14f);
         }
+        drawPatrolButtonLabel();
         spriteBatch.end();
 
         shapeRenderer.setProjectionMatrix(camera.combined);
@@ -1623,12 +1772,14 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.setProjectionMatrix(hudCamera.combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         drawPanelBackground();
+        drawPatrolButtonShape();
         shapeRenderer.end();
 
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
         uiFont.setColor(Color.WHITE);
         uiFont.draw(spriteBatch, selectedUnitIds.size() + " units selected", PANEL_X + 15f, NAME_TEXT_Y);
+        drawPatrolButtonLabel();
         spriteBatch.end();
 
         shapeRenderer.setProjectionMatrix(camera.combined);
@@ -1672,6 +1823,32 @@ public class GameScreen extends InputAdapter implements Screen {
                 && hudY >= DEMOLISH_BUTTON_Y && hudY <= DEMOLISH_BUTTON_Y + DEMOLISH_BUTTON_HEIGHT;
     }
 
+    /** Тот же приём, что и isInsideDemolishButton, только для кнопки Patrol — см. её же константы. */
+    private boolean isInsidePatrolButton(float hudX, float hudY) {
+        return hudX >= PATROL_BUTTON_X && hudX <= PATROL_BUTTON_X + PATROL_BUTTON_WIDTH
+                && hudY >= PATROL_BUTTON_Y && hudY <= PATROL_BUTTON_Y + PATROL_BUTTON_HEIGHT;
+    }
+
+    /**
+     * Рисует саму кнопку Patrol — форму (в шейп-проходе панели) и подпись
+     * (в спрайт-проходе панели). Вызывается из всех трёх панелей юнита
+     * (drawBuilderInfoPanel/drawUnitInfoPanel/drawMultiSelectionPanel), по
+     * одному разу каждая половина внутри уже открытых shapeRenderer/
+     * spriteBatch этой панели — отдельных begin/end на саму кнопку нет.
+     * Во время расстановки (placingPatrol) подсвечивается другим цветом и
+     * меняет подпись на "Done" — подсказка, что клик по ней сейчас
+     * завершит маршрут, а не начнёт новый (то же самое делает ПКМ по
+     * карте, см. touchDown/finishPatrolPlacement).
+     */
+    private void drawPatrolButtonShape() {
+        shapeRenderer.setColor(placingPatrol ? PATROL_BUTTON_ACTIVE_COLOR : PATROL_BUTTON_COLOR);
+        shapeRenderer.rect(PATROL_BUTTON_X, PATROL_BUTTON_Y, PATROL_BUTTON_WIDTH, PATROL_BUTTON_HEIGHT);
+    }
+
+    private void drawPatrolButtonLabel() {
+        uiFont.draw(spriteBatch, placingPatrol ? "Done" : "Patrol", PATROL_BUTTON_X + 12f, PATROL_BUTTON_Y + PATROL_BUTTON_HEIGHT - 10f);
+    }
+
     // ---- Ввод ----
 
     @Override
@@ -1680,7 +1857,47 @@ public class GameScreen extends InputAdapter implements Screen {
             return true;
         }
 
+        if (placingPatrol) {
+            // Режим расстановки точек патруля — поглощает КАЖДЫЙ клик,
+            // пока он активен (та же идея, что и placingBuildingType
+            // ниже, но реагирует на ОБЕ кнопки мыши, не только левую):
+            // ЛКМ по карте добавляет очередную точку маршрута, ПКМ —
+            // завершает расстановку и отправляет накопленный маршрут (то
+            // же самое делает повторный клик по самой кнопке Patrol —
+            // см. проверку isInsidePatrolButton ниже и
+            // finishPatrolPlacement). Выделение, рамка и обычные приказы
+            // в этом режиме не должны срабатывать вовсе.
+            if (button == Input.Buttons.LEFT) {
+                Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
+                if (isInsidePatrolButton(hudPoint.x, hudPoint.y)) {
+                    finishPatrolPlacement();
+                    return true;
+                }
+                Vector3 world = camera.unproject(new Vector3(screenX, screenY, 0));
+                patrolPoints.add(new Vector2(world.x, world.y));
+            } else if (button == Input.Buttons.RIGHT) {
+                finishPatrolPlacement();
+            }
+            return true;
+        }
+
         if (button == Input.Buttons.LEFT) {
+            // Клик по кнопке Patrol в панели выделения юнита(ов) —
+            // начинает расстановку точек маршрута (см. javadoc поля
+            // placingPatrol), проверяем ПЕРВЫМ, ещё до кнопок построек
+            // ниже, по той же причине, по которой те проверяются раньше
+            // проверки "уже что-то размещаем": здание и юниты никогда не
+            // выделены одновременно, так что эта проверка никак не
+            // мешает проверке ниже, и наоборот.
+            if (selectedBuildingId == null && selectedWreckId == null && !selectedUnitIds.isEmpty()) {
+                Vector3 hudPoint = hudCamera.unproject(new Vector3(screenX, screenY, 0));
+                if (isInsidePatrolButton(hudPoint.x, hudPoint.y)) {
+                    placingPatrol = true;
+                    patrolPoints.clear();
+                    return true;
+                }
+            }
+
             // Клик по кнопке постройки в панели выделенного строителя (или
             // группы строителей) — проверяем ПЕРВЫМ, ещё до проверки "уже
             // что-то размещаем": так можно переключить тип здания на лету
@@ -1868,6 +2085,13 @@ public class GameScreen extends InputAdapter implements Screen {
             // работать независимо, если одну из них потом всё же уберут.
             if (placingBuildingType != null) {
                 placingBuildingType = null;
+            }
+            // Тот же приём для расстановки точек патруля — отменяет её
+            // целиком, ничего не отправляя на сервер (см. javadoc
+            // placingPatrol).
+            if (placingPatrol) {
+                placingPatrol = false;
+                patrolPoints.clear();
             }
             return true;
         }

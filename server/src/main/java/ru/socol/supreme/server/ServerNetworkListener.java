@@ -8,6 +8,7 @@ import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
+import ru.socol.supreme.shared.network.messages.PatrolUnitRequest;
 import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
 import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
@@ -47,6 +48,8 @@ public class ServerNetworkListener extends Listener {
             gameServer.handleRepairOrder(connection, (RepairOrderRequest) object);
         } else if (object instanceof CollectOrderRequest) {
             gameServer.handleCollectOrder(connection, (CollectOrderRequest) object);
+        } else if (object instanceof PatrolUnitRequest) {
+            gameServer.handlePatrolUnit(connection, (PatrolUnitRequest) object);
         }
     }
 

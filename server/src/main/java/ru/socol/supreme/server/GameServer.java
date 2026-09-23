@@ -26,6 +26,7 @@ import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OrderQueueComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PathComponent;
+import ru.socol.supreme.shared.components.PatrolComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
 import ru.socol.supreme.shared.components.RepairComponent;
@@ -47,6 +48,8 @@ import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PathPoint;
+import ru.socol.supreme.shared.network.messages.PatrolPoint;
+import ru.socol.supreme.shared.network.messages.PatrolUnitRequest;
 import ru.socol.supreme.shared.network.messages.PlaceIronMineRequest;
 import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
@@ -67,6 +70,7 @@ import ru.socol.supreme.shared.systems.CombatSystem;
 import ru.socol.supreme.shared.systems.ConstructionSystem;
 import ru.socol.supreme.shared.systems.MovementSystem;
 import ru.socol.supreme.shared.systems.OrderQueueSystem;
+import ru.socol.supreme.shared.systems.PatrolSystem;
 import ru.socol.supreme.shared.systems.ProductionSystem;
 import ru.socol.supreme.shared.systems.RepairSystem;
 import ru.socol.supreme.shared.systems.ResourceExtractionSystem;
@@ -199,6 +203,7 @@ public class GameServer {
         engine.addSystem(new AircraftMovementSystem(unitsById));
         engine.addSystem(new OrderQueueSystem(this::startAttackOrder, this::assignBuilderToBuild,
                 this::assignBuilderToRepair, this::assignBuilderToCollect));
+        engine.addSystem(new PatrolSystem());
         engine.addSystem(new CollisionSystem(unitsById, collisionGrid));
     }
 
@@ -720,6 +725,13 @@ public class GameServer {
         float targetX = clamp(request.targetX, 0f, GameConstants.MAP_WIDTH);
         float targetY = clamp(request.targetY, 0f, GameConstants.MAP_HEIGHT);
 
+        // Любая другая команда отменяет патруль целиком, даже если это
+        // всего лишь shift-клик в очередь (queue=true ниже) — см. javadoc
+        // PatrolComponent, почему это касается и queue-варианта тоже.
+        if (unit.getComponent(PatrolComponent.class) != null) {
+            unit.remove(PatrolComponent.class);
+        }
+
         if (request.queue) {
             QueuedOrder order = new QueuedOrder();
             order.type = QueuedOrder.Type.MOVE;
@@ -797,6 +809,12 @@ public class GameServer {
             }
             if (attacker.getComponent(DirectionComponent.class) == null) {
                 return; // здание атаковать не может
+            }
+
+            // Любая другая команда отменяет патруль целиком, даже
+            // поставленная в очередь — см. javadoc PatrolComponent.
+            if (attacker.getComponent(PatrolComponent.class) != null) {
+                attacker.remove(PatrolComponent.class);
             }
 
             QueuedOrder order = new QueuedOrder();
@@ -883,6 +901,13 @@ public class GameServer {
         if (attacker.getComponent(CollectOrderComponent.class) != null) {
             attacker.remove(CollectOrderComponent.class);
         }
+        // И патруль — см. javadoc PatrolComponent, "любая другая команда
+        // отменяет патруль"; это не касается АВТОагрессии (AggroSystem),
+        // которая AttackComponent назначает сама и патруль не трогает —
+        // тут только ручной или очередной приказ игрока.
+        if (attacker.getComponent(PatrolComponent.class) != null) {
+            attacker.remove(PatrolComponent.class);
+        }
 
         AttackComponent attack = attacker.getComponent(AttackComponent.class);
         if (attack == null) {
@@ -930,6 +955,12 @@ public class GameServer {
             OwnerComponent owner = builder.getComponent(OwnerComponent.class);
             if (owner == null || owner.playerId != playerId) {
                 return; // не ваш юнит
+            }
+
+            // Любая другая команда отменяет патруль целиком, даже
+            // поставленная в очередь — см. javadoc PatrolComponent.
+            if (builder.getComponent(PatrolComponent.class) != null) {
+                builder.remove(PatrolComponent.class);
             }
 
             QueuedOrder order = new QueuedOrder();
@@ -992,6 +1023,10 @@ public class GameServer {
         if (builder.getComponent(CollectOrderComponent.class) != null) {
             builder.remove(CollectOrderComponent.class);
         }
+        // И патруль — см. javadoc PatrolComponent, "любая другая команда отменяет патруль".
+        if (builder.getComponent(PatrolComponent.class) != null) {
+            builder.remove(PatrolComponent.class);
+        }
 
         BuildOrderComponent order = builder.getComponent(BuildOrderComponent.class);
         if (order == null) {
@@ -1044,6 +1079,11 @@ public class GameServer {
                 if (owner == null || owner.playerId != playerId) {
                     continue; // не ваш юнит
                 }
+                // Любая другая команда отменяет патруль целиком, даже
+                // поставленная в очередь — см. javadoc PatrolComponent.
+                if (builder.getComponent(PatrolComponent.class) != null) {
+                    builder.remove(PatrolComponent.class);
+                }
                 QueuedOrder order = new QueuedOrder();
                 order.type = QueuedOrder.Type.BUILD;
                 order.targetBuildingUnitId = newBuildingUnitId;
@@ -1084,6 +1124,12 @@ public class GameServer {
             OwnerComponent owner = builder.getComponent(OwnerComponent.class);
             if (owner == null || owner.playerId != playerId) {
                 return; // не ваш юнит
+            }
+
+            // Любая другая команда отменяет патруль целиком, даже
+            // поставленная в очередь — см. javadoc PatrolComponent.
+            if (builder.getComponent(PatrolComponent.class) != null) {
+                builder.remove(PatrolComponent.class);
             }
 
             QueuedOrder order = new QueuedOrder();
@@ -1156,6 +1202,10 @@ public class GameServer {
         }
         if (builder.getComponent(CollectOrderComponent.class) != null) {
             builder.remove(CollectOrderComponent.class);
+        }
+        // И патруль — см. javadoc PatrolComponent, "любая другая команда отменяет патруль".
+        if (builder.getComponent(PatrolComponent.class) != null) {
+            builder.remove(PatrolComponent.class);
         }
 
         RepairComponent repair = targetBuilding.getComponent(RepairComponent.class);
@@ -1267,6 +1317,12 @@ public class GameServer {
                 return; // не ваш юнит
             }
 
+            // Любая другая команда отменяет патруль целиком, даже
+            // поставленная в очередь — см. javadoc PatrolComponent.
+            if (builder.getComponent(PatrolComponent.class) != null) {
+                builder.remove(PatrolComponent.class);
+            }
+
             QueuedOrder order = new QueuedOrder();
             order.type = QueuedOrder.Type.COLLECT;
             order.targetBuildingUnitId = request.targetWreckUnitId;
@@ -1322,6 +1378,10 @@ public class GameServer {
         if (builder.getComponent(RepairOrderComponent.class) != null) {
             builder.remove(RepairOrderComponent.class);
         }
+        // И патруль — см. javadoc PatrolComponent, "любая другая команда отменяет патруль".
+        if (builder.getComponent(PatrolComponent.class) != null) {
+            builder.remove(PatrolComponent.class);
+        }
 
         CollectOrderComponent order = builder.getComponent(CollectOrderComponent.class);
         if (order == null) {
@@ -1330,6 +1390,94 @@ public class GameServer {
         }
         order.targetWreckUnitId = targetWreckUnitId;
         order.hasApproachPoint = false;
+    }
+
+    /**
+     * Приказ на патрулирование: юнит request.unitId будет бесконечно
+     * ходить по замкнутому маршруту request.waypoints — по кнопке Patrol
+     * в панели выделения и точкам, расставленным кликами по карте (см.
+     * GameScreen — placingPatrol/finishPatrolPlacement). Всегда
+     * немедленный приказ — см. javadoc PatrolUnitRequest, почему тут нет
+     * queue-варианта вовсе. Пустой (или null) список игнорируется —
+     * патрулировать нечем.
+     *
+     * Как и любой другой немедленный приказ, отменяет всё, чем юнит
+     * занимался (очередь, атака, стройка/ремонт/сбор, если это был
+     * строитель) — а сам, в свою очередь, отменяется ЛЮБЫМ другим
+     * приказом, см. javadoc PatrolComponent.
+     */
+    synchronized void handlePatrolUnit(Connection connection, PatrolUnitRequest request) {
+        if (gameOver) {
+            return;
+        }
+
+        Integer playerId = connectionToPlayer.get(connection.getID());
+        if (playerId == null) {
+            return;
+        }
+
+        Entity unit = unitsById.get(request.unitId);
+        if (unit == null) {
+            return;
+        }
+
+        OwnerComponent owner = unit.getComponent(OwnerComponent.class);
+        if (owner == null || owner.playerId != playerId) {
+            return; // нельзя приказать патрулировать чужой юнит
+        }
+
+        DirectionComponent direction = unit.getComponent(DirectionComponent.class);
+        if (direction == null) {
+            return; // здание патрулировать не может
+        }
+
+        if (request.waypoints == null || request.waypoints.isEmpty()) {
+            return; // пустой маршрут — патрулировать нечем
+        }
+
+        clearOrderQueue(unit);
+        if (unit.getComponent(AttackComponent.class) != null) {
+            unit.remove(AttackComponent.class);
+        }
+        if (unit.getComponent(BuildOrderComponent.class) != null) {
+            unit.remove(BuildOrderComponent.class);
+        }
+        if (unit.getComponent(RepairOrderComponent.class) != null) {
+            unit.remove(RepairOrderComponent.class);
+        }
+        if (unit.getComponent(CollectOrderComponent.class) != null) {
+            unit.remove(CollectOrderComponent.class);
+        }
+
+        PatrolComponent patrol = unit.getComponent(PatrolComponent.class);
+        if (patrol == null) {
+            patrol = engine.createComponent(PatrolComponent.class);
+            unit.add(patrol);
+        } else {
+            patrol.waypoints.clear();
+        }
+        for (PatrolPoint point : request.waypoints) {
+            float x = clamp(point.x, 0f, GameConstants.MAP_WIDTH);
+            float y = clamp(point.y, 0f, GameConstants.MAP_HEIGHT);
+            patrol.waypoints.add(new Vector2(x, y));
+        }
+        patrol.currentIndex = 0;
+
+        // Выдаём движение к первой точке маршрута немедленно, а не ждём
+        // следующего тика PatrolSystem — как и у любого другого
+        // немедленного приказа (handleMoveUnit и т.д.), иначе юнит долю
+        // секунды продолжал бы по инерции старое движение или стоял бы
+        // там, где его застал предыдущий приказ. Логика "взять точку,
+        // сдвинуть currentIndex по кругу, выдать Pathfinding
+        // .setDestination" — та же самая, что и в PatrolSystem
+        // .processEntity, продублирована тут по той же причине, по
+        // которой этот приём вообще принят в проекте: каждый обработчик
+        // приказа самодостаточен, а не завязан на порядок срабатывания
+        // систем в этом же тике.
+        PositionComponent position = unit.getComponent(PositionComponent.class);
+        Vector2 firstWaypoint = patrol.waypoints.get(patrol.currentIndex);
+        patrol.currentIndex = (patrol.currentIndex + 1) % patrol.waypoints.size();
+        Pathfinding.setDestination(unit, position, direction, firstWaypoint.x, firstWaypoint.y);
     }
 
     /**
@@ -1573,6 +1721,19 @@ public class GameServer {
                         py = targetPosition.position.y;
                     }
                     unitSnapshot.queuedOrders.add(new QueuedOrderPoint(px, py, order.type.ordinal()));
+                }
+            }
+
+            // Только для отрисовки замкнутого маршрута патруля на клиенте
+            // (GameScreen.drawPatrolRoute) — см. javadoc PatrolPoint. Весь
+            // список целиком, а не только текущая цель: в отличие от
+            // очереди обычных приказов маршрут патруля не тратится, он
+            // крутится по кругу, так что текущая точка тут не важнее
+            // любой другой точки цикла.
+            PatrolComponent patrol = unit.getComponent(PatrolComponent.class);
+            if (patrol != null) {
+                for (Vector2 waypoint : patrol.waypoints) {
+                    unitSnapshot.patrolPoints.add(new PatrolPoint(waypoint.x, waypoint.y));
                 }
             }
 
