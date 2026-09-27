@@ -35,6 +35,7 @@ import ru.socol.supreme.network.GameClient;
 import ru.socol.supreme.systems.InterpolationSystem;
 import ru.socol.supreme.systems.RenderSystem;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.WreckComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
@@ -1698,6 +1699,12 @@ public class GameScreen extends InputAdapter implements Screen {
      * не HP — см. javadoc WreckComponent) и без единой кнопки — их нельзя
      * ни снести, ни что-либо у них заказать. Показываем cur/max, как и
      * HP зданий, чтобы было видно, сколько железа осталось от исходного.
+     *
+     * Если это ИМЕННЫЕ обломки здания (BuildingRubbleComponent) — заголовок
+     * называет, каким зданием они были ("Обломки: Казарма лучников" и т.п.,
+     * через тот же buildingTypeLabel, что и меню постройки), а не просто
+     * "Обломки" — отсюда и "именные" в задаче: игрок видит, какое здание
+     * тут можно отстроить со скидкой (см. javadoc GameServer.spawnBuilding).
      */
     private void drawWreckInfoPanel() {
         Entity wreck = entityFactory.getEntity(selectedWreckId);
@@ -1706,6 +1713,8 @@ public class GameScreen extends InputAdapter implements Screen {
             return;
         }
         HealthComponent ironStock = wreck.getComponent(HealthComponent.class);
+        BuildingRubbleComponent rubbleMarker = wreck.getComponent(BuildingRubbleComponent.class);
+        String title = rubbleMarker != null ? "Обломки: " + buildingTypeLabel(rubbleMarker.originalType) : "Обломки";
 
         shapeRenderer.setProjectionMatrix(hudCamera.combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
@@ -1715,7 +1724,7 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
         uiFont.setColor(Color.WHITE);
-        uiFont.draw(spriteBatch, "Обломки", PANEL_X + 15f, NAME_TEXT_Y);
+        uiFont.draw(spriteBatch, title, PANEL_X + 15f, NAME_TEXT_Y);
         if (ironStock != null) {
             uiFont.draw(spriteBatch, "Iron: " + ironStock.currentHealth + "/" + ironStock.maxHealth,
                     PANEL_X + 15f, HP_TEXT_Y);

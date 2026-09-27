@@ -4,6 +4,7 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 
@@ -70,6 +71,19 @@ public final class BuildingPlacement {
 
             BuildingComponent buildingMarker = entity.getComponent(BuildingComponent.class);
             if (buildingMarker != null) {
+                // Именные обломки ровно ТОГО ЖЕ типа здания, что мы сейчас
+                // строим, — не препятствие, а место, где стройка их
+                // поглотит целиком со скидкой (см. GameServer.spawnBuilding
+                // /findMatchingRubble и javadoc BuildingRubbleComponent).
+                // Обломки любого ДРУГОГО типа (включая обычные обломки
+                // юнита, у которых этого компонента вовсе нет) по-прежнему
+                // блокируют место как обычное препятствие — условие ниже их
+                // не касается.
+                BuildingRubbleComponent rubble = entity.getComponent(BuildingRubbleComponent.class);
+                if (rubble != null && rubble.originalType == type) {
+                    continue;
+                }
+
                 float otherHalfWidth = BuildingSizes.halfWidth(entity);
                 float otherHalfHeight = BuildingSizes.halfHeight(entity);
                 if (rectsOverlap(minX, minY, maxX, maxY,

@@ -6,6 +6,7 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.math.Vector2;
+import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
@@ -79,6 +80,18 @@ public class CombatSystem extends IteratingSystem {
         void onUnitDestroyed(UnitType destroyedType, float x, float y);
     }
 
+    /**
+     * Уведомляет о гибели ЗДАНИЯ (не обломков — см. проверку ниже) в бою —
+     * GameServer.spawnBuildingRubble реагирует, оставляя на его месте
+     * именные обломки (BuildingRubbleComponent) с частью потраченного на
+     * него железа и с правом отстроиться на этом месте со скидкой. Второй,
+     * не связанный с этим триггер того же spawnBuildingRubble —
+     * добровольный снос (GameServer.handleDemolishBuilding), не бой.
+     */
+    public interface BuildingDestroyedListener {
+        void onBuildingDestroyed(BuildingType destroyedType, float x, float y);
+    }
+
     private static final ComponentMapper<PositionComponent> POSITION =
             ComponentMapper.getFor(PositionComponent.class);
     private static final ComponentMapper<DirectionComponent> DIRECTION =
@@ -94,6 +107,7 @@ public class CombatSystem extends IteratingSystem {
     private final Map<Integer, Entity> unitsById;
     private final ShotFiredListener shotFiredListener;
     private final UnitDestroyedListener unitDestroyedListener;
+    private final BuildingDestroyedListener buildingDestroyedListener;
 
     /** Переиспользуемый вектор для точки подхода при погоне — не аллоцируем новый каждый тик на каждого атакующего. */
     private final Vector2 approachPoint = new Vector2();
@@ -104,11 +118,13 @@ public class CombatSystem extends IteratingSystem {
     private Engine engine;
 
     public CombatSystem(Map<Integer, Entity> unitsById, ShotFiredListener shotFiredListener,
-                         UnitDestroyedListener unitDestroyedListener) {
+                         UnitDestroyedListener unitDestroyedListener,
+                         BuildingDestroyedListener buildingDestroyedListener) {
         super(Family.all(AttackComponent.class, PositionComponent.class, DirectionComponent.class).get(), 0);
         this.unitsById = unitsById;
         this.shotFiredListener = shotFiredListener;
         this.unitDestroyedListener = unitDestroyedListener;
+        this.buildingDestroyedListener = buildingDestroyedListener;
     }
 
     @Override
@@ -242,16 +258,24 @@ public class CombatSystem extends IteratingSystem {
 
         if (targetHealth.currentHealth <= 0) {
             BuildingComponent targetBuilding = target.getComponent(BuildingComponent.class);
-            // Обломки оставляют только настоящие юниты, не здания (снос
-            // построек уже устроен отдельно, см. javadoc
-            // UnitDestroyedListener) — и, разумеется, не сами обломки
-            // (WreckComponent), если их вдруг умудрились "добить" боем,
-            // хотя по-хорошему их здоровье должна трогать только
-            // ScavengeSystem: тут её не видно, потому что targetBuilding
-            // != null уже отсеивает любую сущность с BuildingComponent,
-            // а обломки — это именно такая сущность.
+            // Обычные обломки юнита — только для настоящих юнитов, не для
+            // зданий (у зданий теперь свои, именные — см. ветку ниже) — и,
+            // разумеется, не для самих обломков (WreckComponent), если их
+            // вдруг умудрились "добить" боем, хотя по-хорошему их здоровье
+            // должна трогать только ScavengeSystem: тут её не видно, потому
+            // что targetBuilding != null уже отсеивает любую сущность с
+            // BuildingComponent, а обломки — это именно такая сущность.
             if (targetBuilding == null && unitDestroyedListener != null && targetTypeComponent != null) {
                 unitDestroyedListener.onUnitDestroyed(targetTypeComponent.type,
+                        targetPosition.position.x, targetPosition.position.y);
+            } else if (targetBuilding != null && targetBuilding.type != BuildingType.WRECK
+                    && buildingDestroyedListener != null) {
+                // Настоящее здание (не сами обломки) погибло в бою —
+                // GameServer.spawnBuildingRubble оставляет на его месте
+                // именные обломки (второй, не связанный с боем триггер того
+                // же метода — добровольный снос, см. GameServer
+                // .handleDemolishBuilding).
+                buildingDestroyedListener.onBuildingDestroyed(targetBuilding.type,
                         targetPosition.position.x, targetPosition.position.y);
             }
 

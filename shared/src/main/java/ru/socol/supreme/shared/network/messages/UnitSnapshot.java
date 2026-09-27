@@ -88,6 +88,18 @@ public class UnitSnapshot {
     public boolean wreckUnderwater;
 
     /**
+     * Актуально только для обломков (building=true, buildingType ==
+     * WRECK.ordinal()) — ordinal() типа здания, которым эти обломки были до
+     * уничтожения (BuildingRubbleComponent.originalType), если это ИМЕННЫЕ
+     * обломки здания (GameServer.spawnBuildingRubble); -1 (значение по
+     * умолчанию) — обычные обломки юнита (GameServer.spawnWreck), без
+     * компонента вовсе. Ровно как wreckUnderwater выше, фиксируется на
+     * клиенте один раз при создании сущности (EntityFactory) и больше не
+     * обновляется — см. javadoc BuildingRubbleComponent.originalType.
+     */
+    public int rubbleOriginalBuildingType = -1;
+
+    /**
      * Точки оставшегося маршрута (текущая цель direction.target + все
      * оставшиеся waypoints из PathComponent, если юнит обходит препятствие)
      * — только для отладочной отрисовки на клиенте. Пусто, если юнит

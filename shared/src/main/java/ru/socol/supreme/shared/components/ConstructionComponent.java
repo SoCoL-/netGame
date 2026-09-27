@@ -28,17 +28,35 @@ public class ConstructionComponent implements Component, Pool.Poolable {
     /** Полное время постройки — нужно на клиенте, чтобы посчитать долю прогресса для прогресс-бара. */
     public float totalTime;
 
+    /**
+     * Множитель суммарной стоимости железа/электричества этой стройки —
+     * BuildSystem.advanceConstruction читает его каждый тик, умножая на
+     * BuildingDefinitions.ironCostFor/electricityCostFor(type) ПЕРЕД тем,
+     * как посчитать долю за этот тик (см. её же javadoc, почему это
+     * необходимо: одного лишь уменьшения totalTime недостаточно, чтобы
+     * снизить суммарную стоимость). 1 — обычная стройка без скидки;
+     * GameConstants.BUILDING_RUBBLE_REBUILD_DISCOUNT — стройка поверх
+     * именных обломков того же типа здания (см. GameServer.spawnBuilding
+     * /BuildingRubbleComponent). Значение НЕ пересылается по сети отдельно
+     * — на клиенте оно не нужно (клиент не считает стоимость ресурсов,
+     * только читает totalTime/remaining для прогресс-бара, которые сами
+     * уже учитывают скидку через уменьшенный totalTime).
+     */
+    public float costMultiplier;
+
     public ConstructionComponent() {
     }
 
     public ConstructionComponent(float totalTime) {
         this.totalTime = totalTime;
         this.remaining = totalTime;
+        this.costMultiplier = 1f;
     }
 
     @Override
     public void reset() {
         remaining = 0f;
         totalTime = 0f;
+        costMultiplier = 1f;
     }
 }

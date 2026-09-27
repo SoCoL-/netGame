@@ -627,11 +627,25 @@ public class RenderSystem extends IteratingSystem {
     private void drawHealthBar(PositionComponent position, HealthComponent health, float yOffset, float barWidth) {
         float barX = position.position.x - barWidth / 2f;
         float barY = position.position.y + yOffset;
-        // health.maxHealth, а не общая константа — у здания и юнита разный максимум.
-        float healthFraction = MathUtils.clamp((float) health.currentHealth / health.maxHealth, 0f, 1f);
 
         setColor(Color.DARK_GRAY);
         shapeRenderer.rect(barX, barY, barWidth, HEALTH_BAR_HEIGHT);
+
+        // Именные обломки здания (BuildingRubbleComponent), у которого
+        // ironCostFor(type) == 0 по умолчанию, — HealthComponent тут значит
+        // "железо осталось/было" (см. javadoc WreckComponent), а не HP, и
+        // maxHealth == 0 для них — легитимное "собирать нечего", не ошибка.
+        // Без этой проверки currentHealth / 0 ниже даёт NaN, которое
+        // MathUtils.clamp пропускает не меняя, а shapeRenderer.rect с
+        // NaN-шириной падает/рисует мусор. Просто серая полоска без
+        // зелёной/красной заливки — достаточный и корректный результат для
+        // "тут нечего показывать в процентах".
+        if (health.maxHealth <= 0) {
+            return;
+        }
+
+        // health.maxHealth, а не общая константа — у здания и юнита разный максимум.
+        float healthFraction = MathUtils.clamp((float) health.currentHealth / health.maxHealth, 0f, 1f);
 
         setColor(healthFraction > 0.3f ? Color.GREEN : Color.RED);
         shapeRenderer.rect(barX, barY, barWidth * healthFraction, HEALTH_BAR_HEIGHT);

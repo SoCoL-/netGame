@@ -159,8 +159,11 @@ public class BuildSystem extends EntitySystem {
 
         BuildingComponent buildingMarker = target.getComponent(BuildingComponent.class);
         BuildingType buildingType = buildingMarker != null ? buildingMarker.type : BuildingType.HOME;
-        int totalIronCost = BuildingDefinitions.ironCostFor(buildingType);
-        int totalElectricityCost = BuildingDefinitions.electricityCostFor(buildingType);
+        // costMultiplier — скидка за стройку поверх именных обломков того
+        // же типа здания, см. её же javadoc в ConstructionComponent и
+        // javadoc GameServer.spawnBuilding — 1 для обычной стройки без скидки.
+        int totalIronCost = Math.round(BuildingDefinitions.ironCostFor(buildingType) * construction.costMultiplier);
+        int totalElectricityCost = Math.round(BuildingDefinitions.electricityCostFor(buildingType) * construction.costMultiplier);
 
         if (totalIronCost > 0 || totalElectricityCost > 0) {
             OwnerComponent owner = target.getComponent(OwnerComponent.class);

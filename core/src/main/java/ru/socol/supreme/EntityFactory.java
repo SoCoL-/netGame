@@ -15,6 +15,7 @@ import ru.socol.supreme.components.OrderQueueDisplayComponent;
 import ru.socol.supreme.components.PatrolDisplayComponent;
 import ru.socol.supreme.components.TurretDisplayComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
@@ -216,6 +217,18 @@ public class EntityFactory {
                 WreckComponent wreckMarker = new WreckComponent();
                 wreckMarker.underwater = snapshot.wreckUnderwater;
                 entity.add(wreckMarker);
+
+                // Именные обломки здания (BuildingRubbleComponent) — ровно
+                // как underwater выше, originalType фиксируется один раз при
+                // создании сущности и больше не меняется (см. её же javadoc),
+                // так что и тут ничего не делается в applySnapshot.
+                // rubbleOriginalBuildingType == -1 — обычные обломки юнита,
+                // без этого компонента вовсе.
+                if (snapshot.rubbleOriginalBuildingType >= 0) {
+                    BuildingRubbleComponent rubbleMarker = new BuildingRubbleComponent();
+                    rubbleMarker.originalType = BuildingType.values()[snapshot.rubbleOriginalBuildingType];
+                    entity.add(rubbleMarker);
+                }
             }
         } else {
             UnitType type = UnitType.values()[snapshot.unitType];

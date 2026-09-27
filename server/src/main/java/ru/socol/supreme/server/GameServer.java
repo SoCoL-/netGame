@@ -19,6 +19,7 @@ import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.BuildOrderComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.CollectOrderComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
@@ -191,7 +192,7 @@ public class GameServer {
         SpatialHashGrid collisionGrid = new SpatialHashGrid(BuildingDefinitions.maxInteractionRadius());
 
         engine.addSystem(new AggroSystem(unitsById, aggroGrid));
-        engine.addSystem(new CombatSystem(unitsById, this::handleShotFired, this::spawnWreck));
+        engine.addSystem(new CombatSystem(unitsById, this::handleShotFired, this::spawnWreck, this::spawnBuildingRubble));
         engine.addSystem(new TurretAimSystem(unitsById));
         engine.addSystem(new BuildSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new RepairSystem(unitsById, resourcesByPlayer));
@@ -456,6 +457,25 @@ public class GameServer {
 
         if (buildTime > 0f) {
             ConstructionComponent construction = engine.createComponent(ConstructionComponent.class);
+            // costMultiplier ставим явно, а не полагаемся на дефолт
+            // Java-поля из пула (см. её же javadoc в ConstructionComponent
+            // — обычная стройка без скидки должна стоить 100%, а не
+            // случайно оказаться бесплатной).
+            construction.costMultiplier = 1f;
+            // Если на этом месте лежат ИМЕННЫЕ обломки ровно этого же типа
+            // здания (BuildingPlacement.canPlaceBuilding уже пропустил такое
+            // перекрытие) — стройка поглощает их целиком взамен на скидку по
+            // времени и суммарной стоимости ресурсов (см. javadoc
+            // GameConstants.BUILDING_RUBBLE_REBUILD_DISCOUNT и
+            // BuildSystem.advanceConstruction, как costMultiplier там
+            // учитывается). Их несобранное железо при этом пропадает
+            // невозвратно — см. javadoc BuildingRubbleComponent.
+            Entity matchingRubble = findMatchingRubble(type, x, y);
+            if (matchingRubble != null) {
+                construction.costMultiplier = GameConstants.BUILDING_RUBBLE_REBUILD_DISCOUNT;
+                buildTime *= GameConstants.BUILDING_RUBBLE_REBUILD_DISCOUNT;
+                removeRubble(matchingRubble);
+            }
             construction.totalTime = buildTime;
             construction.remaining = buildTime;
             building.add(construction);
@@ -1309,6 +1329,115 @@ public class GameServer {
         Pathfinding.addBuildingObstacle(unitId, x, y, BuildingType.WRECK);
     }
 
+    /**
+     * Именные обломки уничтоженного ЗДАНИЯ — вызывается из ДВУХ независимых
+     * мест: CombatSystem (гибель в бою, через BuildingDestroyedListener) и
+     * handleDemolishBuilding (добровольный снос) — оба триггера
+     * равноправны, см. javadoc BuildingRubbleComponent. В отличие от
+     * spawnWreck (обломки юнита), тут НЕТ раннего выхода при нулевом
+     * железе: сущность создаётся всегда, потому что её ценность — не
+     * только в собираемом железе, но и в самом факте "это именно обломки
+     * ЭТОГО типа здания" (скидка на отстройку, см. spawnBuilding ниже) —
+     * она нужна, даже когда собирать нечего.
+     *
+     * Как и обычные обломки, несёт BuildingComponent(WRECK) + WreckComponent
+     * (переиспользует всю их инфраструктуру препятствий/коллизий/сети,
+     * сбора железа ScavengeSystem и клика-панели на клиенте — см. javadoc
+     * WreckComponent) — BuildingRubbleComponent поверх них лишь добавляет
+     * originalType. Без underwater-варианта: здание нельзя поставить на
+     * воду (BuildingPlacement блокирует это ещё на этапе постройки), так
+     * что уничтоженное здание физически не может остаться в воде.
+     */
+    private void spawnBuildingRubble(BuildingType destroyedType, float x, float y) {
+        int ironAmount = Math.round(BuildingDefinitions.ironCostFor(destroyedType)
+                * GameConstants.BUILDING_RUBBLE_IRON_PERCENT);
+
+        Entity rubble = engine.createEntity();
+
+        PositionComponent position = engine.createComponent(PositionComponent.class);
+        position.position.set(x, y);
+
+        int unitId = unitIdSequence.getAndIncrement();
+        UnitComponent unitComponent = engine.createComponent(UnitComponent.class);
+        unitComponent.unitId = unitId;
+
+        OwnerComponent owner = engine.createComponent(OwnerComponent.class);
+        owner.playerId = GameConstants.NEUTRAL_OWNER_ID;
+
+        // См. javadoc WreckComponent — currentHealth/maxHealth тут значат
+        // "сколько железа осталось / было изначально", не HP (может быть
+        // 0, если у этого типа здания ironCostFor == 0 — RenderSystem
+        // .drawHealthBar защищён от деления на 0 в этом случае).
+        HealthComponent ironStock = engine.createComponent(HealthComponent.class);
+        ironStock.maxHealth = ironAmount;
+        ironStock.currentHealth = ironAmount;
+
+        BuildingComponent buildingMarker = engine.createComponent(BuildingComponent.class);
+        buildingMarker.type = BuildingType.WRECK;
+
+        WreckComponent wreckMarker = engine.createComponent(WreckComponent.class);
+
+        BuildingRubbleComponent rubbleMarker = engine.createComponent(BuildingRubbleComponent.class);
+        rubbleMarker.originalType = destroyedType;
+
+        rubble.add(position).add(unitComponent).add(owner).add(ironStock)
+                .add(buildingMarker).add(wreckMarker).add(rubbleMarker);
+
+        engine.addEntity(rubble);
+        unitsById.put(unitId, rubble);
+        Pathfinding.addBuildingObstacle(unitId, x, y, BuildingType.WRECK);
+    }
+
+    /**
+     * Ищет именные обломки типа type, чья позиция попадает в footprint
+     * новой стройки этого же типа в точке (x, y) — см. javadoc
+     * BuildingRubbleComponent, зачем: найденные поглощаются целиком
+     * (removeRubble) взамен на скидку постройки (spawnBuilding). Проверка
+     * по позиции обломков внутри footprint-прямоугольника НОВОГО здания
+     * (а не наоборот, не по собственному, уменьшенному footprint обломков
+     * — см. javadoc RenderSystem.drawWreck, почему у обломков он всегда
+     * маленький) — так игрок гарантированно накрывает именно свои старые
+     * обломки, если строит на том же месте, откуда они появились.
+     * BuildingPlacement.canPlaceBuilding пропускает такое перекрытие
+     * отдельной проверкой того же условия (originalType == type) — эта и
+     * та проверки должны находить одни и те же обломки, чтобы то, что
+     * разрешил canPlaceBuilding, здесь не осталось "заблокированным".
+     */
+    private Entity findMatchingRubble(BuildingType type, float x, float y) {
+        float halfWidth = BuildingDefinitions.halfWidthFor(type);
+        float halfHeight = BuildingDefinitions.halfHeightFor(type);
+        float minX = x - halfWidth;
+        float minY = y - halfHeight;
+        float maxX = x + halfWidth;
+        float maxY = y + halfHeight;
+
+        for (Entity entity : unitsById.values()) {
+            BuildingRubbleComponent rubble = entity.getComponent(BuildingRubbleComponent.class);
+            if (rubble == null || rubble.originalType != type) {
+                continue;
+            }
+            PositionComponent position = entity.getComponent(PositionComponent.class);
+            if (position == null) {
+                continue;
+            }
+            if (position.position.x >= minX && position.position.x <= maxX
+                    && position.position.y >= minY && position.position.y <= maxY) {
+                return entity;
+            }
+        }
+        return null;
+    }
+
+    /** Поглощение именных обломков стройкой того же типа (spawnBuilding) — убирает их отовсюду, тем же способом, что и снос настоящего здания. Их несобранное железо при этом пропадает невозвратно, см. javadoc BuildingRubbleComponent. */
+    private void removeRubble(Entity rubble) {
+        UnitComponent unitComponent = rubble.getComponent(UnitComponent.class);
+        engine.removeEntity(rubble);
+        if (unitComponent != null) {
+            unitsById.remove(unitComponent.unitId);
+            Pathfinding.removeBuildingObstacle(unitComponent.unitId);
+        }
+    }
+
     synchronized void handleCollectOrder(Connection connection, CollectOrderRequest request) {
         if (gameOver) {
             return;
@@ -1523,13 +1652,28 @@ public class GameServer {
             return; // не ваше здание
         }
 
-        if (building.getComponent(BuildingComponent.class) == null) {
+        BuildingComponent buildingMarker = building.getComponent(BuildingComponent.class);
+        if (buildingMarker == null) {
             return; // не здание вовсе (защита от модифицированного клиента)
         }
+
+        // Читаем позицию и тип ДО удаления сущности — после removeEntity её
+        // компоненты уже возвращены в пул движка и могут быть переиспользованы
+        // под другую сущность (см. PooledEngine), брать что-либо из building
+        // после этой строки нельзя.
+        PositionComponent demolishedPosition = building.getComponent(PositionComponent.class);
+        BuildingType demolishedType = buildingMarker.type;
 
         engine.removeEntity(building);
         unitsById.remove(request.buildingUnitId);
         Pathfinding.removeBuildingObstacle(request.buildingUnitId);
+
+        // Второй, не связанный с боем триггер именных обломков (см. javadoc
+        // spawnBuildingRubble) — по прямому запросу пользователя обломки
+        // должны появляться и при добровольном сносе, не только в бою.
+        if (demolishedPosition != null) {
+            spawnBuildingRubble(demolishedType, demolishedPosition.position.x, demolishedPosition.position.y);
+        }
     }
 
     // ---- Визуальный эффект полёта снаряда (см. CombatSystem.ShotFiredListener) ----
@@ -1677,6 +1821,9 @@ public class GameServer {
                 if (buildingMarker.type == BuildingType.WRECK) {
                     WreckComponent wreckMarker = unit.getComponent(WreckComponent.class);
                     unitSnapshot.wreckUnderwater = wreckMarker != null && wreckMarker.underwater;
+                    BuildingRubbleComponent rubbleMarker = unit.getComponent(BuildingRubbleComponent.class);
+                    unitSnapshot.rubbleOriginalBuildingType =
+                            rubbleMarker != null ? rubbleMarker.originalType.ordinal() : -1;
                 }
             } else {
                 UnitTypeComponent unitTypeComponent = unit.getComponent(UnitTypeComponent.class);
