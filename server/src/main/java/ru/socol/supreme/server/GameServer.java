@@ -230,6 +230,14 @@ public class GameServer {
             float deltaTime = (now - lastTimeNanos) / 1_000_000_000f;
             lastTimeNanos = now;
 
+            // Строим снапшот (если пора) ВНУТРИ synchronized, а отправляем
+            // его (см. ниже) уже СНАРУЖИ — см. подробный javadoc
+            // buildWorldSnapshot, почему разделено именно так: сама
+            // Kryo-сериализация и запись в сокет каждому клиенту не трогают
+            // общее состояние сервера, так что незачем держать их под тем
+            // же локом, что и engine.update()/сетевые обработчики.
+            WorldSnapshot snapshotToSend = null;
+
             // synchronized: CombatSystem/ProductionSystem внутри engine.update()
             // мутируют unitsById — тот же объект, что меняют handleQueueUnit /
             // handleMoveUnit / handleAttackUnit / handleDisconnect из сетевого
@@ -244,9 +252,13 @@ public class GameServer {
                     timeSinceLastFogUpdate += deltaTime;
                     if (snapshotAccumulator >= GameConstants.SNAPSHOT_RATE) {
                         snapshotAccumulator = 0f;
-                        broadcastSnapshot();
+                        snapshotToSend = buildWorldSnapshot();
                     }
                 }
+            }
+
+            if (snapshotToSend != null) {
+                server.sendToAllTCP(snapshotToSend);
             }
 
             sleep(GameConstants.SERVER_TICK_RATE);
@@ -1587,7 +1599,42 @@ public class GameServer {
 
     // ---- Рассылка снапшота ----
 
+    /**
+     * Удобная обёртка для РЕДКИХ, разовых рассылок снапшота вне основного
+     * игрового цикла (сейчас единственный вызов — checkGameOver, финальный
+     * кадр после конца игры) — строит снапшот и сразу же его отправляет,
+     * одним вызовом. Основной, частый путь рассылки (runLoop, 15 раз в
+     * секунду — GameConstants.SNAPSHOT_RATE) эту обёртку намеренно НЕ
+     * использует, см. javadoc buildWorldSnapshot, почему.
+     */
     private void broadcastSnapshot() {
+        server.sendToAllTCP(buildWorldSnapshot());
+    }
+
+    /**
+     * Строит WorldSnapshot и попутно обновляет всё серверное состояние,
+     * которое рассылка с собой тянет (счётчики тумана войны, ставки
+     * ресурсов) — эта часть обязана идти под тем же synchronized-локом,
+     * что и engine.update()/сетевые обработчики, потому что читает и
+     * пишет то же самое общее состояние (unitsById, resourcesByPlayer,
+     * fogTimeSinceVisible). А вот САМА отправка (server.sendToAllTCP —
+     * Kryo-сериализация плюс запись в сокет на каждого клиента) уже не
+     * трогает ничего общего: снапшот к этому моменту — самостоятельный,
+     * ни от чего больше не зависящий объект. Раньше сериализация и запись
+     * в сокет всех клиентов происходили ПРЯМО ВНУТРИ synchronized-блока
+     * runLoop, то есть на время рассылки (15 раз/сек) блокировали не
+     * только следующий тик симуляции, но и приём приказов игроков
+     * (handleMoveUnit и другие handleXxx — тоже synchronized): любая
+     * задержка на сети или на GC от аллокаций внутри этого метода была
+     * заметна как микрофриз всей игры сразу для всех.
+     *
+     * Поэтому runLoop вызывает этот метод (а не broadcastSnapshot())
+     * внутри своего synchronized(this), а server.sendToAllTCP(...) —
+     * уже ПОСЛЕ выхода из блока, когда лок никого не блокирует. Разовые
+     * редкие вызовы (checkGameOver) этой экономии не требуют — там
+     * достаточно удобной обёртки broadcastSnapshot() целиком.
+     */
+    private WorldSnapshot buildWorldSnapshot() {
         updateFogOfWar(timeSinceLastFogUpdate);
         timeSinceLastFogUpdate = 0f;
 
@@ -1746,12 +1793,22 @@ public class GameServer {
         // номинальный GameConstants.SNAPSHOT_RATE — см. её javadoc, почему
         // это раньше давало скачущую ставку вместо стабильного числа.
         for (PlayerResources resources : resourcesByPlayer.values()) {
+            // Переиспользуем уже лежащий в мапе float[2] вместо того, чтобы
+            // аллоцировать новый на каждого игрока при каждой рассылке (15
+            // раз/сек) — этот метод и так уже возвращает довольно много
+            // мусора на каждый вызов (сам WorldSnapshot, UnitSnapshot на
+            // каждого юнита и т.д.), любая аллокация, без которой можно
+            // обойтись, здесь не бесплатна.
             float[] previous = previousResourceValues.get(resources.playerId);
-            if (previous != null && timeSinceLastResourceRateUpdate > 0f) {
+            if (previous == null) {
+                previous = new float[2];
+                previousResourceValues.put(resources.playerId, previous);
+            } else if (timeSinceLastResourceRateUpdate > 0f) {
                 resources.ironRate = (resources.iron - previous[0]) / timeSinceLastResourceRateUpdate;
                 resources.electricityRate = (resources.electricity - previous[1]) / timeSinceLastResourceRateUpdate;
             }
-            previousResourceValues.put(resources.playerId, new float[]{resources.iron, resources.electricity});
+            previous[0] = resources.iron;
+            previous[1] = resources.electricity;
         }
         timeSinceLastResourceRateUpdate = 0f;
         snapshot.playerResources.addAll(resourcesByPlayer.values());
@@ -1766,7 +1823,7 @@ public class GameServer {
             snapshot.fog.add(fogSnapshot);
         }
 
-        server.sendToAllTCP(snapshot);
+        return snapshot;
     }
 
     /**

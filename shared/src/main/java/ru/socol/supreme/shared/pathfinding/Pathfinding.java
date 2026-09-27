@@ -47,9 +47,9 @@ import java.util.Set;
  * прямая линия реально пересекает препятствие, так что даже наивный A* без
  * оптимизаций тут более чем достаточно быстрый.
  *
- * Про потокобезопасность: BLOCKED и activeBuildings — мутабельное
- * статическое состояние без собственной синхронизации внутри этого
- * класса, потому что она тут не нужна — единственный вызывающий,
+ * Про потокобезопасность: BLOCKED, activeBuildings и buildingsByCell —
+ * мутабельное статическое состояние без собственной синхронизации внутри
+ * этого класса, потому что она тут не нужна — единственный вызывающий,
  * GameServer, уже всё делает под одним и тем же synchronized-монитором
  * (сетевые обработчики и основной игровой цикл), так же, как и с
  * unitsById/resourcesByPlayer.
@@ -64,6 +64,27 @@ public final class Pathfinding {
 
     /** unitId здания -> его footprint (уже раздутый на PATH_CLEARANCE) — нужен, чтобы знать, какие клетки пересчитать при removeBuildingObstacle. */
     private static final Map<Integer, Footprint> activeBuildings = new HashMap<>();
+
+    /**
+     * Пространственный индекс тех же footprint'ов по клеткам сетки —
+     * используется ТОЛЬКО isInsideAnyBuilding, чтобы точечная проверка не
+     * перебирала вообще все здания на карте (activeBuildings.values()),
+     * а только те, что накрывают ровно ту клетку, где лежит запрошенная
+     * точка. Без этого индекса hasLineOfSight (шаг луча — половина клетки,
+     * см. её javadoc) на каждом шаге заново сканировала бы ВСЕ здания —
+     * а её саму CombatSystem дёргает КАЖДЫЙ тик на каждого атакующего в
+     * погоне, так что стоимость одной точечной проверки умножается срезу
+     * на два счётчика, растущих по ходу партии: число шагов луча и число
+     * построенных зданий.
+     *
+     * Тот же приём, что и SpatialHashGrid.insertRect (см. её javadoc):
+     * один footprint регистрируется во ВСЕХ клетках, которые он
+     * перекрывает, а не в одной — но, в отличие от SpatialHashGrid, здесь
+     * не круговой запрос по радиусу, а всегда ровно одна точная клетка
+     * (cellX/cellY самой точки), так что обычная Map по ключу клетки, без
+     * отдельного класса, вполне достаточна.
+     */
+    private static final Map<Long, List<Footprint>> buildingsByCell = new HashMap<>();
 
     /**
      * Кэш препятствий по клеткам для A* (см. findPath) — вода плюс
@@ -99,6 +120,7 @@ public final class Pathfinding {
         Footprint footprint = new Footprint(centerX, centerY, type);
         activeBuildings.put(unitId, footprint);
         recomputeCellsFor(footprint);
+        indexFootprint(footprint);
     }
 
     /**
@@ -113,6 +135,7 @@ public final class Pathfinding {
         Footprint footprint = activeBuildings.remove(unitId);
         if (footprint != null) {
             recomputeCellsFor(footprint);
+            deindexFootprint(footprint);
         }
     }
 
@@ -133,6 +156,39 @@ public final class Pathfinding {
         for (int cx = minX; cx <= maxX; cx++) {
             for (int cy = minY; cy <= maxY; cy++) {
                 BLOCKED[cx][cy] = isBlocked(cellCenterX(cx), cellCenterY(cy));
+            }
+        }
+    }
+
+    /** Прописывает footprint во все клетки buildingsByCell, которые он перекрывает — см. её javadoc. Тот же диапазон клеток, что и recomputeCellsFor, но для другой сетки. */
+    private static void indexFootprint(Footprint footprint) {
+        int minX = cellX(footprint.centerX - footprint.halfWidth);
+        int maxX = cellX(footprint.centerX + footprint.halfWidth);
+        int minY = cellY(footprint.centerY - footprint.halfHeight);
+        int maxY = cellY(footprint.centerY + footprint.halfHeight);
+        for (int cx = minX; cx <= maxX; cx++) {
+            for (int cy = minY; cy <= maxY; cy++) {
+                buildingsByCell.computeIfAbsent(key(cx, cy), unused -> new ArrayList<>()).add(footprint);
+            }
+        }
+    }
+
+    /** Обратная операция indexFootprint — убирает footprint из тех же клеток при сносе здания, чистя опустевшие bucket'ы, чтобы buildingsByCell не пух бесконечно за долгую партию. */
+    private static void deindexFootprint(Footprint footprint) {
+        int minX = cellX(footprint.centerX - footprint.halfWidth);
+        int maxX = cellX(footprint.centerX + footprint.halfWidth);
+        int minY = cellY(footprint.centerY - footprint.halfHeight);
+        int maxY = cellY(footprint.centerY + footprint.halfHeight);
+        for (int cx = minX; cx <= maxX; cx++) {
+            for (int cy = minY; cy <= maxY; cy++) {
+                long cellKey = key(cx, cy);
+                List<Footprint> bucket = buildingsByCell.get(cellKey);
+                if (bucket != null) {
+                    bucket.remove(footprint);
+                    if (bucket.isEmpty()) {
+                        buildingsByCell.remove(cellKey);
+                    }
+                }
             }
         }
     }
@@ -169,8 +225,22 @@ public final class Pathfinding {
                 && y >= GameConstants.WATER_MIN_Y - margin && y <= GameConstants.WATER_MAX_Y + margin;
     }
 
+    /**
+     * Проверяет только здания, зарегистрированные в buildingsByCell для
+     * клетки, накрывающей саму точку (x, y) — не все здания на карте (см.
+     * javadoc buildingsByCell, почему это важно: эту функцию гоняет
+     * hasLineOfSight на каждом шаге луча, а её — CombatSystem каждый тик
+     * на каждого атакующего в погоне). Само сравнение с точными границами
+     * footprint внутри не изменилось — координаты по-прежнему точные, не
+     * огрубляются до клетки, только КАНДИДАТЫ на проверку теперь берутся
+     * из индекса, а не перебором всех activeBuildings.
+     */
     private static boolean isInsideAnyBuilding(float x, float y) {
-        for (Footprint footprint : activeBuildings.values()) {
+        List<Footprint> bucket = buildingsByCell.get(key(cellX(x), cellY(y)));
+        if (bucket == null) {
+            return false;
+        }
+        for (Footprint footprint : bucket) {
             if (x >= footprint.centerX - footprint.halfWidth && x <= footprint.centerX + footprint.halfWidth
                     && y >= footprint.centerY - footprint.halfHeight && y <= footprint.centerY + footprint.halfHeight) {
                 return true;
