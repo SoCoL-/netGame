@@ -21,6 +21,7 @@ import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
 
 import java.io.IOException;
+import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -125,6 +126,16 @@ class ArtilleryTest {
         game.handleArtilleryFire(player0, request);
     }
 
+    /** Разброс выключен: nextFloat() == 0 даёт нулевой радиус отклонения — снаряд падает точно в цель. */
+    private void disableSpread() {
+        game.setArtilleryRandom(new Random() {
+            @Override
+            public float nextFloat() {
+                return 0f;
+            }
+        });
+    }
+
     /** Отдаёт приказ и ждёт, пока башня довернётся, выстрелит и снаряд упадёт. */
     private void fireAndWaitForImpact(int towerId, float x, float y) {
         fire(towerId, x, y);
@@ -167,6 +178,7 @@ class ArtilleryTest {
         assertEquals(10f, BuildingDefinitions.activeConsumptionRateFor(ARTILLERY), 0.001f);
         assertEquals(5f, BuildingDefinitions.idleConsumptionRateFor(ARTILLERY), 0.001f);
         assertEquals(200, BuildingDefinitions.shotElectricityCostFor(ARTILLERY));
+        assertEquals(20f, BuildingDefinitions.shellSpreadPercentFor(ARTILLERY), 0.001f);
     }
 
     @Test
@@ -263,6 +275,7 @@ class ArtilleryTest {
         artilleryOf(towerId).shells = 3;
         resources().electricity = 1000f;
         assertFalse(isRevealedForPlayer0(AHEAD_X, AHEAD_Y), "цель — в неисследованной области");
+        disableSpread();
 
         fire(towerId, AHEAD_X, AHEAD_Y);
 
@@ -406,11 +419,40 @@ class ArtilleryTest {
         assertTrue(artilleryOf(towerId).pendingTargets.isEmpty());
     }
 
+    // ---- Разброс ----
+
+    @Test
+    void shellsLandWithinSpreadCircleAroundTarget() {
+        game.setArtilleryRandom(new Random(42));
+        int towerId = buildTower();
+        int shots = BuildingDefinitions.shellCapacityFor(ARTILLERY);
+        artilleryOf(towerId).shells = shots;
+        resources().electricity = 100000f;
+        float distance = (float) Math.hypot(AHEAD_X - TOWER_X, AHEAD_Y - TOWER_Y);
+        float maxDeviation = distance * BuildingDefinitions.shellSpreadPercentFor(ARTILLERY) / 100f;
+
+        for (int i = 0; i < shots; i++) {
+            fire(towerId, AHEAD_X, AHEAD_Y);
+        }
+        tickFor(1f);
+
+        assertEquals(shots, player0.sentOf(ProjectileFiredEvent.class).size());
+        float largestDeviation = 0f;
+        for (ProjectileFiredEvent event : player0.sentOf(ProjectileFiredEvent.class)) {
+            float deviation = (float) Math.hypot(event.toX - AHEAD_X, event.toY - AHEAD_Y);
+            assertTrue(deviation <= maxDeviation + 0.01f,
+                    "отклонение " + deviation + " больше " + maxDeviation + " (20% дистанции)");
+            largestDeviation = Math.max(largestDeviation, deviation);
+        }
+        assertTrue(largestDeviation > 1f, "разброс реально есть — снаряды падают не точно в цель");
+    }
+
     // ---- Взрыв ----
 
     @Test
     void shellDamagesTargetsInSplashOnlyWhenItLands() {
         int towerId = buildTower();
+        disableSpread();
         artilleryOf(towerId).shells = 2;
         resources().electricity = 1000f;
         UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal()); // взрыв задевает и своих
@@ -433,6 +475,7 @@ class ArtilleryTest {
     @Test
     void killedByShellUnitLeavesWreck() {
         int towerId = buildTower();
+        disableSpread();
         artilleryOf(towerId).shells = 1;
         resources().electricity = 1000f;
         UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal());
@@ -447,6 +490,7 @@ class ArtilleryTest {
     @Test
     void shellMissesTargetsOutsideSplash() {
         int towerId = buildTower();
+        disableSpread();
         artilleryOf(towerId).shells = 1;
         resources().electricity = 1000f;
         UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal());

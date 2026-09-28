@@ -206,6 +206,11 @@ public final class BuildingDefinitions {
         return DEFINITIONS.get(type).firingConeDegrees;
     }
 
+    /** Разброс артиллерии, проценты от дистанции выстрела. */
+    public static float shellSpreadPercentFor(BuildingType type) {
+        return DEFINITIONS.get(type).shellSpreadPercent;
+    }
+
     /** Скорость поворота ствола артиллерии, градусы в секунду. */
     public static float barrelTurnSpeedFor(BuildingType type) {
         return DEFINITIONS.get(type).barrelTurnSpeed;
@@ -361,6 +366,7 @@ public final class BuildingDefinitions {
         artillery.shellSpeed = 800f;
         artillery.firingConeDegrees = 20f;
         artillery.barrelTurnSpeed = 60f; // от края до края (180°) — за 3 секунды
+        artillery.shellSpreadPercent = 20f;
         definitions.put(BuildingType.ARTILLERY, artillery);
 
         // Обломки — не настоящее здание (см. javadoc BuildingType.WRECK),

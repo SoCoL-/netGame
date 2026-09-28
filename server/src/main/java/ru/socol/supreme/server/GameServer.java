@@ -82,6 +82,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -1894,6 +1895,11 @@ public class GameServer {
         event.artillery = true;
         event.flightTime = flightTime;
         broadcastToSession(event);
+    }
+
+    /** Подменить случайность разброса артиллерии — только для тестов (например, стрелять без разброса). */
+    void setArtilleryRandom(Random random) {
+        artillerySystem.setRandom(random);
     }
 
     /** Снарядов артиллерии в полёте — только для тестов. */

@@ -131,6 +131,14 @@ public class BuildingDefinition {
     /** Скорость поворота ствола, градусы в секунду (60 — разворот на 180° за 3 с). */
     public float barrelTurnSpeed;
 
+    /**
+     * Разброс, проценты от дистанции выстрела: снаряд падает в случайной
+     * точке круга с центром в точке прицеливания и радиусом
+     * shellSpreadPercent% от расстояния башня–цель (20 — промах до 400 ед.
+     * при стрельбе на 2000).
+     */
+    public float shellSpreadPercent;
+
     public BuildingDefinition() {
         // требуется Json для десериализации
     }

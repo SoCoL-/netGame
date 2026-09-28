@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 
 /**
  * Артиллерия: стройка снарядов внутри башни и полёт уже выпущенных.
@@ -46,7 +47,9 @@ import java.util.Map;
  * и как только цель оказывается в конусе стрельбы (±firingConeDegrees/2
  * от ствола), башня стреляет — если есть снаряд и shotElectricityCost
  * электричества; нет электричества — ждёт, как и стройка снаряда. Снаряд
- * летит точно в указанную точку.
+ * падает не точно в указанную точку, а в случайную точку круга вокруг неё
+ * радиусом shellSpreadPercent% от дистанции выстрела (равномерно по
+ * площади круга).
  *
  * Полёт. Урон наносится не в момент выстрела, а при падении, через
  * расстояние / shellSpeed секунд. Взрыв задевает всё в радиусе
@@ -96,6 +99,7 @@ public class ArtillerySystem extends IteratingSystem {
     private final CombatSystem.BuildingDestroyedListener buildingDestroyedListener;
     private final ShellLaunchedListener shellLaunchedListener;
     private final List<Shell> shellsInFlight = new ArrayList<>();
+    private Random random = new Random();
     private Engine engine;
 
     public ArtillerySystem(Map<Integer, Entity> unitsById, Map<Integer, PlayerResources> resourcesByPlayer,
@@ -169,10 +173,24 @@ public class ArtillerySystem extends IteratingSystem {
         artillery.pendingTargets.remove(0);
         artillery.shells--;
         resources.electricity = Math.max(0f, resources.electricity - shotCost);
-        float flightTime = launch(type, position.x, position.y, target.x, target.y);
+
+        // Разброс: случайная точка круга радиусом spread вокруг цели. sqrt —
+        // чтобы точки ложились равномерно по площади, а не кучковались в центре.
+        float spread = position.dst(target) * BuildingDefinitions.shellSpreadPercentFor(type) / 100f;
+        float offsetRadius = spread * (float) Math.sqrt(random.nextFloat());
+        float offsetAngle = random.nextFloat() * MathUtils.PI2;
+        float landX = MathUtils.clamp(target.x + MathUtils.cos(offsetAngle) * offsetRadius, 0f, GameConstants.MAP_WIDTH);
+        float landY = MathUtils.clamp(target.y + MathUtils.sin(offsetAngle) * offsetRadius, 0f, GameConstants.MAP_HEIGHT);
+
+        float flightTime = launch(type, position.x, position.y, landX, landY);
         if (shellLaunchedListener != null) {
-            shellLaunchedListener.onShellLaunched(position.x, position.y, target.x, target.y, flightTime);
+            shellLaunchedListener.onShellLaunched(position.x, position.y, landX, landY, flightTime);
         }
+    }
+
+    /** Источник случайности для разброса — тесты подменяют его, чтобы стрелять точно. */
+    public void setRandom(Random random) {
+        this.random = random;
     }
 
     /** Разница углов to - from, приведённая к (-PI, PI] — кратчайший поворот. */

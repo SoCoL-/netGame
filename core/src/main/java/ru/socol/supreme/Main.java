@@ -51,6 +51,9 @@ public class Main extends Game implements GameClient.GameClientListener {
      */
     private LobbyRoomScreen roomScreen;
 
+    /** Зелёный счётчик FPS в правом верхнем углу — поверх любого экрана. */
+    private FpsCounter fpsCounter;
+
     public Main(String serverHost) {
         // ВАЖНО: этот конструктор выполняется как аргумент "new Main(...)"
         // ДО того, как отработает конструктор Lwjgl3Application — то есть
@@ -66,9 +69,28 @@ public class Main extends Game implements GameClient.GameClientListener {
     public void create() {
         System.out.println("Main.create() started, serverHost = " + serverHost);
         Gdx.app.log("StartApp", "serverHost: " + serverHost);
+        fpsCounter = new FpsCounter();
         browserScreen = new LobbyBrowserScreen(client);
         setScreen(browserScreen);
         client.connect(serverHost, this);
+    }
+
+    @Override
+    public void render() {
+        super.render();
+        fpsCounter.draw();
+    }
+
+    @Override
+    public void resize(int width, int height) {
+        super.resize(width, height);
+        fpsCounter.resize(width, height);
+    }
+
+    @Override
+    public void dispose() {
+        super.dispose();
+        fpsCounter.dispose();
     }
 
     // ---- GameClient.GameClientListener — вызывается из сетевого потока KryoNet, см. постановку каждого метода ниже про Gdx.app.postRunnable ----
