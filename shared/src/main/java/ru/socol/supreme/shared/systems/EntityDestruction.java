@@ -8,6 +8,7 @@ import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
@@ -78,8 +79,13 @@ final class EntityDestruction {
     }
 
     /**
-     * Взрыв разрушенного здания: урон всем зданиям (кроме обломков), до
-     * ближайшей точки которых от (x, y) не дальше radius. Юнитов не задевает.
+     * Взрыв разрушенного здания: урон всем зданиям и руинам зданий, до
+     * ближайшей точки которых от (x, y) не дальше radius. Юнитов и обломки
+     * юнитов не задевает. У руин "здоровье" — это остаток железа (см.
+     * WreckComponent): взрыв его уменьшает, при нуле руины исчезают.
+     * Собственные руины взорвавшегося здания (они уже созданы слушателем в
+     * его центре, (x, y)) не трогаем — иначе они сгорали бы в том же
+     * взрыве, и отстроиться на их месте со скидкой было бы невозможно.
      * Погибшие здания уничтожаются тем же destroy — и если среди них есть
      * взрывающиеся, цепочка продолжается.
      */
@@ -91,14 +97,21 @@ final class EntityDestruction {
         // destroy удаляет из unitsById, по которому мы сейчас итерируемся.
         List<Entity> killed = new ArrayList<>();
         for (Entity entity : unitsById.values()) {
-            if (entity.getComponent(BuildingComponent.class) == null
-                    || entity.getComponent(WreckComponent.class) != null) {
-                continue; // только настоящие здания
+            if (entity.getComponent(BuildingComponent.class) == null) {
+                continue; // юниты взрыв не задевает
+            }
+            boolean isWreck = entity.getComponent(WreckComponent.class) != null;
+            boolean isRuins = entity.getComponent(BuildingRubbleComponent.class) != null;
+            if (isWreck && !isRuins) {
+                continue; // обломки юнитов не задевает — только здания и их руины
             }
             PositionComponent position = entity.getComponent(PositionComponent.class);
             HealthComponent health = entity.getComponent(HealthComponent.class);
             if (position == null || health == null) {
                 continue;
+            }
+            if (isRuins && position.position.x == x && position.position.y == y) {
+                continue; // собственные руины взорвавшегося здания
             }
             float halfWidth = BuildingSizes.halfWidth(entity);
             float halfHeight = BuildingSizes.halfHeight(entity);
@@ -107,7 +120,8 @@ final class EntityDestruction {
             if (Vector2.dst2(x, y, closestX, closestY) > radius * radius) {
                 continue;
             }
-            health.currentHealth -= damage;
+            // Не ниже нуля — у руин это остаток железа, отрицательным он не бывает.
+            health.currentHealth = Math.max(0, health.currentHealth - damage);
             if (health.currentHealth <= 0) {
                 killed.add(entity);
             }

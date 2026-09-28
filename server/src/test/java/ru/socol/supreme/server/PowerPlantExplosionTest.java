@@ -165,6 +165,41 @@ class PowerPlantExplosionTest {
         assertEquals(2, rubble, "обе станции оставили именные руины");
     }
 
+    /** Сносит только что поставленную турель в (x, y) — на её месте остаются именные руины с железом. */
+    private void leaveTurretRuins(float x, float y) {
+        int turretId = placeFinished(BuildingType.TURRET, x, y);
+        DemolishBuildingRequest demolish = new DemolishBuildingRequest();
+        demolish.buildingUnitId = turretId;
+        game.handleDemolishBuilding(player0, demolish);
+    }
+
+    /** Руины здания type в точке (x, y), или null. */
+    private UnitSnapshot ruinsAt(BuildingType type, float x, float y) {
+        for (UnitSnapshot unit : game.buildWorldSnapshot().units) {
+            if (unit.rubbleOriginalBuildingType == type.ordinal() && unit.x == x && unit.y == y) {
+                return unit;
+            }
+        }
+        return null;
+    }
+
+    @Test
+    void blastDamagesRuinsInRadiusButKeepsPlantsOwnRuins() {
+        float nearX = PLANT_X + PLANT_HALF + STORAGE_HALF + 10f;
+        float farX = PLANT_X - PLANT_HALF - STORAGE_HALF - 40f;
+        leaveTurretRuins(nearX, PLANT_Y);
+        leaveTurretRuins(farX, PLANT_Y);
+        int farIron = ruinsAt(BuildingType.TURRET, farX, PLANT_Y).health;
+        assertTrue(farIron > 0, "в руинах турели есть железо");
+        int plantId = placeFinished(BuildingType.POWER_PLANT, PLANT_X, PLANT_Y);
+
+        destroyInCombat(plantId);
+
+        assertNull(ruinsAt(BuildingType.TURRET, nearX, PLANT_Y), "руины в радиусе взрыва уничтожены");
+        assertEquals(farIron, ruinsAt(BuildingType.TURRET, farX, PLANT_Y).health, "руины вне радиуса не тронуты");
+        assertNotNull(ruinsAt(BuildingType.POWER_PLANT, PLANT_X, PLANT_Y), "собственные руины станции остаются");
+    }
+
     @Test
     void demolishingPowerPlantDoesNotExplode() {
         int plantId = placeFinished(BuildingType.POWER_PLANT, PLANT_X, PLANT_Y);
