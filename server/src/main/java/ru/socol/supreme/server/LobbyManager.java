@@ -101,8 +101,10 @@ public class LobbyManager {
      * LobbyRoomScreen), либо, если отсчёт дошёл до нуля, стартует матч.
      * Не трогает набор ключей lobbiesById (startMatch меняет только сами
      * объекты Lobby) — безопасно перебирать values() без ConcurrentModificationException.
+     * Package-private ради тестов (LobbyManagerTest) — они прокручивают
+     * отсчёт вручную, без фонового потока countdownLoop.
      */
-    private synchronized void tickCountdowns() {
+    synchronized void tickCountdowns() {
         for (Lobby lobby : lobbiesById.values()) {
             if (lobby.phase != LobbyPhase.STARTING) {
                 continue;

@@ -299,30 +299,13 @@ public class GameServer {
             float deltaTime = (now - lastTimeNanos) / 1_000_000_000f;
             lastTimeNanos = now;
 
-            // Строим снапшот (если пора) ВНУТРИ synchronized, а отправляем
-            // его (см. ниже) уже СНАРУЖИ — см. подробный javadoc
+            // Строим снапшот (если пора) ВНУТРИ synchronized (см. tick), а
+            // отправляем его уже СНАРУЖИ — см. подробный javadoc
             // buildWorldSnapshot, почему разделено именно так: сама
             // Kryo-сериализация и запись в сокет каждому клиенту не трогают
             // общее состояние сервера, так что незачем держать их под тем
             // же локом, что и engine.update()/сетевые обработчики.
-            WorldSnapshot snapshotToSend = null;
-
-            // synchronized: CombatSystem/ProductionSystem внутри engine.update()
-            // мутируют unitsById — тот же объект, что меняют handleQueueUnit /
-            // handleMoveUnit / handleAttackUnit / handleDisconnect из сетевого
-            // потока KryoNet. Без этой синхронизации это гонка данных.
-            synchronized (this) {
-                engine.update(deltaTime);
-                checkGameOver();
-
-                snapshotAccumulator += deltaTime;
-                timeSinceLastResourceRateUpdate += deltaTime;
-                timeSinceLastFogUpdate += deltaTime;
-                if (snapshotAccumulator >= GameConstants.SNAPSHOT_RATE) {
-                    snapshotAccumulator = 0f;
-                    snapshotToSend = buildWorldSnapshot();
-                }
-            }
+            WorldSnapshot snapshotToSend = tick(deltaTime);
 
             if (snapshotToSend != null) {
                 broadcastToSession(snapshotToSend);
@@ -338,6 +321,48 @@ public class GameServer {
         // комнату лобби. Блокирует только поток ЭТОГО матча — на
         // остальные лобби и на сетевой поток KryoNet не влияет.
         sleep(GameConstants.POST_GAME_OVER_DELAY_SECONDS);
+    }
+
+    /**
+     * Один шаг симуляции: engine.update, проверка конца игры и, если
+     * накопилось SNAPSHOT_RATE, построение снапшота (но не его отправка —
+     * см. runLoop). Возвращает снапшот, который пора разослать, или null.
+     *
+     * synchronized: CombatSystem/ProductionSystem внутри engine.update()
+     * мутируют unitsById — тот же объект, что меняют handleQueueUnit /
+     * handleMoveUnit / handleAttackUnit / handleDisconnect из сетевого
+     * потока KryoNet. Без этой синхронизации это гонка данных.
+     *
+     * Package-private, а не просто часть runLoop, ради тестов
+     * (GameServerTest): они шагают симуляцию вручную, с заданным
+     * deltaTime, без отдельного потока и без Thread.sleep.
+     */
+    synchronized WorldSnapshot tick(float deltaTime) {
+        engine.update(deltaTime);
+        checkGameOver();
+
+        snapshotAccumulator += deltaTime;
+        timeSinceLastResourceRateUpdate += deltaTime;
+        timeSinceLastFogUpdate += deltaTime;
+        if (snapshotAccumulator >= GameConstants.SNAPSHOT_RATE) {
+            snapshotAccumulator = 0f;
+            return buildWorldSnapshot();
+        }
+        return null;
+    }
+
+    /** true после того, как checkGameOver объявил победителя или ничью — дальше handleXxx молча игнорируют приказы. */
+    boolean isGameOver() {
+        return gameOver;
+    }
+
+    /**
+     * Живая сущность (юнит, здание или обломки) по unitId, или null.
+     * Только для тестов — например, чтобы "повредить" здание перед
+     * проверкой приказа на ремонт, не разыгрывая для этого целый бой.
+     */
+    synchronized Entity unitById(int unitId) {
+        return unitsById.get(unitId);
     }
 
     /**
@@ -394,15 +419,23 @@ public class GameServer {
             OwnerComponent owner = unit.getComponent(OwnerComponent.class);
             boolean owned = owner != null && owner.playerId == finalPlayerId;
             if (owned) {
+                // Всё, что нужно от компонентов, — ДО removeEntity: после неё
+                // PooledEngine уже снял и сбросил их (getComponent вернёт
+                // null), и препятствие-здание осталось бы в Pathfinding навсегда.
+                boolean isBuilding = unit.getComponent(BuildingComponent.class) != null;
+                int unitId = unit.getComponent(UnitComponent.class).unitId;
                 engine.removeEntity(unit);
-                if (unit.getComponent(BuildingComponent.class) != null) {
-                    Pathfinding.removeBuildingObstacle(unit.getComponent(UnitComponent.class).unitId);
+                if (isBuilding) {
+                    Pathfinding.removeBuildingObstacle(unitId);
                 }
             }
             return owned;
         });
 
-        buildingIdByPlayer.remove(playerId);
+        // buildingIdByPlayer НЕ чистим: именно по этой записи checkGameOver
+        // замечает, что дома игрока больше нет в unitsById, и объявляет
+        // победу сопернику. Раньше запись удалялась здесь же — и матч с
+        // отключившимся игроком не заканчивался никогда.
         resourcesByPlayer.remove(playerId);
         previousResourceValues.remove(playerId);
     }
@@ -1513,11 +1546,16 @@ public class GameServer {
 
     /** Поглощение именных обломков стройкой того же типа (spawnBuilding) — убирает их отовсюду, тем же способом, что и снос настоящего здания. Их несобранное железо при этом пропадает невозвратно, см. javadoc BuildingRubbleComponent. */
     private void removeRubble(Entity rubble) {
+        // unitId копируем ДО removeEntity — после неё UnitComponent уже
+        // сброшен пулом (unitId == 0), и из unitsById удалилась бы не та
+        // запись: "пустая" сущность обломков оставалась бы там и роняла
+        // buildWorldSnapshot с NullPointerException.
         UnitComponent unitComponent = rubble.getComponent(UnitComponent.class);
+        Integer unitId = unitComponent != null ? unitComponent.unitId : null;
         engine.removeEntity(rubble);
-        if (unitComponent != null) {
-            unitsById.remove(unitComponent.unitId);
-            Pathfinding.removeBuildingObstacle(unitComponent.unitId);
+        if (unitId != null) {
+            unitsById.remove(unitId);
+            Pathfinding.removeBuildingObstacle(unitId);
         }
     }
 
@@ -1740,11 +1778,15 @@ public class GameServer {
             return; // не здание вовсе (защита от модифицированного клиента)
         }
 
-        // Читаем позицию и тип ДО удаления сущности — после removeEntity её
-        // компоненты уже возвращены в пул движка и могут быть переиспользованы
-        // под другую сущность (см. PooledEngine), брать что-либо из building
-        // после этой строки нельзя.
+        // Копируем координаты и тип ДО удаления сущности — после removeEntity
+        // её компоненты уже возвращены в пул движка и сброшены
+        // (PositionComponent.reset() обнуляет позицию), поэтому держать тут
+        // ссылку на сам компонент нельзя: раньше из-за этого обломки
+        // снесённого здания появлялись в точке (0, 0), а не на его месте.
         PositionComponent demolishedPosition = building.getComponent(PositionComponent.class);
+        boolean hasPosition = demolishedPosition != null;
+        float demolishedX = hasPosition ? demolishedPosition.position.x : 0f;
+        float demolishedY = hasPosition ? demolishedPosition.position.y : 0f;
         BuildingType demolishedType = buildingMarker.type;
 
         engine.removeEntity(building);
@@ -1754,8 +1796,8 @@ public class GameServer {
         // Второй, не связанный с боем триггер именных обломков (см. javadoc
         // spawnBuildingRubble) — по прямому запросу пользователя обломки
         // должны появляться и при добровольном сносе, не только в бою.
-        if (demolishedPosition != null) {
-            spawnBuildingRubble(demolishedType, demolishedPosition.position.x, demolishedPosition.position.y);
+        if (hasPosition) {
+            spawnBuildingRubble(demolishedType, demolishedX, demolishedY);
         }
     }
 
@@ -1860,8 +1902,11 @@ public class GameServer {
      * уже ПОСЛЕ выхода из блока, когда лок никого не блокирует. Разовые
      * редкие вызовы (checkGameOver) этой экономии не требуют — там
      * достаточно удобной обёртки broadcastSnapshot() целиком.
+     *
+     * Package-private ради тестов (GameServerTest) — снапшот для них
+     * основной способ посмотреть на состояние мира "глазами клиента".
      */
-    private WorldSnapshot buildWorldSnapshot() {
+    synchronized WorldSnapshot buildWorldSnapshot() {
         updateFogOfWar(timeSinceLastFogUpdate);
         timeSinceLastFogUpdate = 0f;
 

@@ -36,3 +36,21 @@ jar {
     file(archiveFile).setExecutable(true, false)
   }
 }
+
+// Юнит-тесты сервера (server/src/test) — GameServer и LobbyManager без
+// настоящей сети: соединения подменяются FakeConnection, симуляция
+// шагается вручную (GameServer.tick). Тот же JUnit 5, что и у core.
+// Рабочая директория — server/ (Gradle по умолчанию), как и у
+// :server:run, так что тесты видят те же units.json/buildings.json, что
+// и запущенный сервер; сами тесты от конкретных чисел баланса не зависят.
+dependencies {
+  testImplementation platform("org.junit:junit-bom:$junitVersion")
+  testImplementation "org.junit.jupiter:junit-jupiter"
+  // Gradle 9 больше не подкладывает JUnit Platform launcher сам — без
+  // него test падает с "Failed to load JUnit Platform".
+  testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+test {
+  useJUnitPlatform()
+}

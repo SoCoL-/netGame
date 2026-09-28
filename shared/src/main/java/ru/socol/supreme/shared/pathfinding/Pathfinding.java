@@ -247,7 +247,7 @@ public final class Pathfinding {
     /**
      * Прямоугольник воды (с той же PATH_CLEARANCE-инфляцией, что и
      * остальные проверки препятствий в этом классе) — публичный, помимо
-     * внутреннего использования в A*/isBlocked, ещё и для боевых правил:
+     * внутреннего использования в A* и isBlocked, ещё и для боевых правил:
      * CombatSystem/AggroSystem/GameServer.startAttackOrder проверяют им,
      * что цель атаки СЕЙЧАС не спряталась под водой (см. javadoc
      * UnitDefinitions.canTarget, почему это отдельная, третья проверка

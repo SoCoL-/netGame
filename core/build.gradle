@@ -23,6 +23,9 @@ dependencies {
   // остальные зависимости.
   testImplementation platform("org.junit:junit-bom:$junitVersion")
   testImplementation "org.junit.jupiter:junit-jupiter"
+  // Gradle 9 больше не подкладывает JUnit Platform launcher сам — без
+  // него test падает с "Failed to load JUnit Platform".
+  testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
 
 jar {
