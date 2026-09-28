@@ -130,10 +130,14 @@ public class CombatSystem extends IteratingSystem {
 
     private Engine engine;
 
+    /** Поиск пути этого матча — см. javadoc Pathfinding, почему не статический. */
+    private final Pathfinding pathfinding;
+
     public CombatSystem(Map<Integer, Entity> unitsById, ShotFiredListener shotFiredListener,
                          UnitDestroyedListener unitDestroyedListener,
-                         BuildingDestroyedListener buildingDestroyedListener) {
+                         BuildingDestroyedListener buildingDestroyedListener, Pathfinding pathfinding) {
         super(Family.all(AttackComponent.class, PositionComponent.class, DirectionComponent.class).get(), 0);
+        this.pathfinding = pathfinding;
         this.unitsById = unitsById;
         this.shotFiredListener = shotFiredListener;
         this.unitDestroyedListener = unitDestroyedListener;
@@ -229,7 +233,7 @@ public class CombatSystem extends IteratingSystem {
             float approachDistance = Math.max(0f, attackRange - GameConstants.ARRIVE_THRESHOLD);
             approachPoint.set(myPosition.position).sub(targetPosition.position).nor()
                     .scl(approachDistance).add(targetPosition.position);
-            Pathfinding.setDestination(attacker, myPosition, direction, approachPoint.x, approachPoint.y);
+            pathfinding.setDestination(attacker, myPosition, direction, approachPoint.x, approachPoint.y);
             return;
         }
 
@@ -323,7 +327,7 @@ public class CombatSystem extends IteratingSystem {
             engine.removeEntity(target);
             unitsById.remove(attack.targetUnitId);
             if (targetBuilding != null) {
-                Pathfinding.removeBuildingObstacle(attack.targetUnitId);
+                pathfinding.removeBuildingObstacle(attack.targetUnitId);
             }
             attacker.remove(AttackComponent.class);
         }

@@ -30,42 +30,39 @@ import java.util.Set;
  * реактивно в любом состоянии, тут для консистентности так же) и
  * removeBuildingObstacle, когда здание пропадает из игры (гибель в бою,
  * снос, отключение игрока) — так A* реально огибает ЛЮБОЕ здание на
- * карте, не только дом, как было раньше.
+ * карте, не только дом.
  *
- * Работает только на сервере — как и MovementSystem/CombatSystem, живёт в
- * shared, но реально используется только GameServer.handleMoveUnit и
- * CombatSystem при погоне. Клиент ничего об этом не знает: он просто видит
- * результат — позицию юнита в очередном снапшоте, которая естественным
- * образом обходит препятствия, потому что сервер туда юнита никогда не ведёт.
- * add/removeBuildingObstacle клиент тоже никогда не вызывает — у него свой
- * собственный, всегда пустой список зданий-препятствий (статические поля
- * этого класса не расшарены между клиентом и сервером, это разные
- * процессы), так что отладочная сетка (isWaterCell) остаётся какой и
- * была — только про воду, никак не про здания.
+ * Один экземпляр на матч. Реестр зданий-препятствий — состояние
+ * конкретного матча, поэтому каждый GameServer создаёт свой Pathfinding и
+ * передаёт его системам, которым нужно прокладывать маршруты. Раньше
+ * реестр был статическим и общим на весь процесс: при нескольких
+ * одновременных матчах (а нумерация unitId в каждом начинается с 1) их
+ * здания перезаписывали и снимали препятствия друг друга, а юниты одного
+ * матча обходили здания другого. Всё, что зависит только от воды
+ * (isInsideWater, isWaterCell), по-прежнему статическое — вода одна и та
+ * же для всех матчей, и клиент пользуется этим для отладочной сетки, не
+ * создавая экземпляр.
+ *
+ * Работает только на сервере. Клиент видит лишь результат — позицию юнита
+ * в очередном снапшоте, которая естественным образом обходит препятствия.
  *
  * Дешёвый случай (прямая видимость до цели свободна) вообще не запускает
- * A* — вызывающий код как и раньше просто идёт по прямой. Сетка 160x160
- * (при клетке 50 и карте 8000x8000) и поиск запускается только когда
- * прямая линия реально пересекает препятствие, так что даже наивный A* без
- * оптимизаций тут более чем достаточно быстрый.
+ * A* — вызывающий код просто идёт по прямой. Сетка 160x160 (при клетке 50
+ * и карте 8000x8000), и поиск запускается только когда прямая линия
+ * реально пересекает препятствие, так что наивного A* тут достаточно.
  *
- * Про потокобезопасность: BLOCKED, activeBuildings и buildingsByCell —
- * мутабельное статическое состояние без собственной синхронизации внутри
- * этого класса, потому что она тут не нужна — единственный вызывающий,
- * GameServer, уже всё делает под одним и тем же synchronized-монитором
- * (сетевые обработчики и основной игровой цикл), так же, как и с
- * unitsById/resourcesByPlayer.
+ * Про потокобезопасность: собственной синхронизации нет, и она не нужна —
+ * экземпляр принадлежит одному GameServer, а тот всё делает под своим
+ * synchronized-монитором (сетевые обработчики и игровой цикл), так же,
+ * как и с unitsById/resourcesByPlayer.
  */
 public final class Pathfinding {
-
-    private Pathfinding() {
-    }
 
     private static final int GRID_WIDTH = (int) Math.ceil(GameConstants.MAP_WIDTH / GameConstants.PATH_GRID_CELL_SIZE);
     private static final int GRID_HEIGHT = (int) Math.ceil(GameConstants.MAP_HEIGHT / GameConstants.PATH_GRID_CELL_SIZE);
 
     /** unitId здания -> его footprint (уже раздутый на PATH_CLEARANCE) — нужен, чтобы знать, какие клетки пересчитать при removeBuildingObstacle. */
-    private static final Map<Integer, Footprint> activeBuildings = new HashMap<>();
+    private final Map<Integer, Footprint> activeBuildings = new HashMap<>();
 
     /**
      * Пространственный индекс тех же footprint'ов по клеткам сетки —
@@ -86,7 +83,7 @@ public final class Pathfinding {
      * (cellX/cellY самой точки), так что обычная Map по ключу клетки, без
      * отдельного класса, вполне достаточна.
      */
-    private static final Map<Long, List<Footprint>> buildingsByCell = new HashMap<>();
+    private final Map<Long, List<Footprint>> buildingsByCell = new HashMap<>();
 
     /**
      * Кэш препятствий по клеткам для A* (см. findPath) — ТОЛЬКО footprint
@@ -99,13 +96,13 @@ public final class Pathfinding {
      * используется не эта сетка, а isBlocked — она считает по точным
      * координатам, не огрубляя до клетки.
      */
-    private static final boolean[][] BLOCKED = new boolean[GRID_WIDTH][GRID_HEIGHT];
+    private final boolean[][] blocked = new boolean[GRID_WIDTH][GRID_HEIGHT];
 
     /**
      * Клетки воды — считается РОВНО ОДИН РАЗ при старте и никогда не
-     * пересчитывается (в отличие от BLOCKED выше): в отличие от зданий,
+     * пересчитывается (в отличие от blocked выше): в отличие от зданий,
      * прямоугольник воды (GameConstants.WATER_*) фиксирован на всю партию.
-     * Отдельная от BLOCKED сетка нужна ровно затем, чтобы её можно было
+     * Отдельная от blocked сетка нужна ровно затем, чтобы её можно было
      * проигнорировать целиком для юнита, умеющего плавать под водой
      * (UnitDefinitions.canEnterWater — сейчас только строитель), не трогая
      * при этом обычную непроходимость зданий, которая касается вообще всех
@@ -123,9 +120,9 @@ public final class Pathfinding {
         return blocked;
     }
 
-    /** BLOCKED[cx][cy] (здания) с учётом воды только для тех, кому она вообще препятствие — общий приём и для A* (findPath), и для проверки "срезания" угла. */
-    private static boolean isCellBlocked(int cx, int cy, boolean canEnterWater) {
-        return BLOCKED[cx][cy] || (!canEnterWater && WATER_BLOCKED[cx][cy]);
+    /** blocked[cx][cy] (здания) с учётом воды только для тех, кому она вообще препятствие — общий приём и для A* (findPath), и для проверки "срезания" угла. */
+    private boolean isCellBlocked(int cx, int cy, boolean canEnterWater) {
+        return blocked[cx][cy] || (!canEnterWater && WATER_BLOCKED[cx][cy]);
     }
 
     /**
@@ -136,7 +133,7 @@ public final class Pathfinding {
      * (несколько зданий рядом не должны мешать друг другу при сносе
      * одного из них — см. её javadoc).
      */
-    public static void addBuildingObstacle(int unitId, float centerX, float centerY, BuildingType type) {
+    public void addBuildingObstacle(int unitId, float centerX, float centerY, BuildingType type) {
         Footprint footprint = new Footprint(centerX, centerY, type);
         activeBuildings.put(unitId, footprint);
         recomputeCellsFor(footprint);
@@ -151,7 +148,7 @@ public final class Pathfinding {
      * зарегистрирован (защита на случай двойного вызова — не должно
      * происходить, но и не страшно, если произойдёт).
      */
-    public static void removeBuildingObstacle(int unitId) {
+    public void removeBuildingObstacle(int unitId) {
         Footprint footprint = activeBuildings.remove(unitId);
         if (footprint != null) {
             recomputeCellsFor(footprint);
@@ -170,20 +167,20 @@ public final class Pathfinding {
      * выражена тем, что сейчас лежит в карте, отдельно её дублировать не
      * нужно.
      */
-    private static void recomputeCellsFor(Footprint footprint) {
+    private void recomputeCellsFor(Footprint footprint) {
         int minX = cellX(footprint.centerX - footprint.halfWidth);
         int maxX = cellX(footprint.centerX + footprint.halfWidth);
         int minY = cellY(footprint.centerY - footprint.halfHeight);
         int maxY = cellY(footprint.centerY + footprint.halfHeight);
         for (int cx = minX; cx <= maxX; cx++) {
             for (int cy = minY; cy <= maxY; cy++) {
-                BLOCKED[cx][cy] = isInsideAnyBuilding(cellCenterX(cx), cellCenterY(cy));
+                blocked[cx][cy] = isInsideAnyBuilding(cellCenterX(cx), cellCenterY(cy));
             }
         }
     }
 
     /** Прописывает footprint во все клетки buildingsByCell, которые он перекрывает — см. её javadoc. Тот же диапазон клеток, что и recomputeCellsFor, но для другой сетки. */
-    private static void indexFootprint(Footprint footprint) {
+    private void indexFootprint(Footprint footprint) {
         int minX = cellX(footprint.centerX - footprint.halfWidth);
         int maxX = cellX(footprint.centerX + footprint.halfWidth);
         int minY = cellY(footprint.centerY - footprint.halfHeight);
@@ -196,7 +193,7 @@ public final class Pathfinding {
     }
 
     /** Обратная операция indexFootprint — убирает footprint из тех же клеток при сносе здания, чистя опустевшие bucket'ы, чтобы buildingsByCell не пух бесконечно за долгую партию. */
-    private static void deindexFootprint(Footprint footprint) {
+    private void deindexFootprint(Footprint footprint) {
         int minX = cellX(footprint.centerX - footprint.halfWidth);
         int maxX = cellX(footprint.centerX + footprint.halfWidth);
         int minY = cellY(footprint.centerY - footprint.halfHeight);
@@ -221,11 +218,11 @@ public final class Pathfinding {
      * UnitDefinitions.canEnterWater), ещё и прямоугольник воды — то, что
      * такому юниту нельзя ни пройти, ни в чём заспавниться. Считает по
      * ТОЧНЫМ координатам (x, y), не по клетке — в отличие от сеток
-     * BLOCKED/WATER_BLOCKED, которые используются только внутри A*. Раздут
+     * blocked/WATER_BLOCKED, которые используются только внутри A*. Раздут
      * на PATH_CLEARANCE сверх реального размера — см. её javadoc, почему
      * без этого юниты зависали, топчась у самого края препятствия.
      */
-    public static boolean isBlocked(float x, float y, boolean canEnterWater) {
+    public boolean isBlocked(float x, float y, boolean canEnterWater) {
         return (!canEnterWater && isInsideWater(x, y)) || isInsideAnyBuilding(x, y);
     }
 
@@ -234,9 +231,9 @@ public final class Pathfinding {
      * отладочная сетка (GameScreen) красила клетки в точности так же, как
      * их видит сам A* (та же PATH_CLEARANCE-инфляция, тот же расчёт центра
      * клетки), а не приблизительно повторяла логику независимо. Намеренно
-     * только про воду, не про здания — у клиента список зданий-препятствий
-     * всегда пуст (см. javadoc класса), так что для них это было бы
-     * бессмысленно. Не зависит от canEnterWater — рисуем воду на карте как
+     * только про воду, не про здания — реестр зданий принадлежит матчу на
+     * сервере, у клиента его нет (см. javadoc класса), поэтому метод
+     * статический. Не зависит от canEnterWater — рисуем воду на карте как
      * воду для всех, кто на неё смотрит, а не только для тех, кому она
      * препятствие.
      */
@@ -269,7 +266,7 @@ public final class Pathfinding {
      * огрубляются до клетки, только КАНДИДАТЫ на проверку теперь берутся
      * из индекса, а не перебором всех activeBuildings.
      */
-    private static boolean isInsideAnyBuilding(float x, float y) {
+    private boolean isInsideAnyBuilding(float x, float y) {
         List<Footprint> bucket = buildingsByCell.get(key(cellX(x), cellY(y)));
         if (bucket == null) {
             return false;
@@ -313,8 +310,8 @@ public final class Pathfinding {
      * мгновенным довортом — занимается AircraftMovementSystem, а не эта
      * функция.
      */
-    public static void setDestination(Entity entity, PositionComponent position, DirectionComponent direction,
-                                       float destX, float destY) {
+    public void setDestination(Entity entity, PositionComponent position, DirectionComponent direction,
+                               float destX, float destY) {
         if (entity.getComponent(AircraftComponent.class) != null) {
             AircraftComponent aircraft = entity.getComponent(AircraftComponent.class);
             aircraft.loitering = false; // новая цель — прекращаем кружение, летим к ней
@@ -378,8 +375,7 @@ public final class Pathfinding {
 
         if (path == null) {
             // new, а не engine.createComponent — у Pathfinding нет ссылки на
-            // Engine (статический метод, вызывается и из CombatSystem, и из
-            // GameServer). Это по-прежнему безопасно теперь, когда
+            // Engine (вызывается и из систем, и из GameServer). Это по-прежнему безопасно теперь, когда
             // PathComponent реализует Pool.Poolable: PooledEngine возвращает
             // в пул и сбрасывает (resет()) ЛЮБОЙ компонент поддерживаемого
             // типа при его удалении с сущности, независимо от того, был он
@@ -401,7 +397,7 @@ public final class Pathfinding {
     }
 
     /** Есть ли прямая видимость от (fromX,fromY) до (toX,toY) — то есть отрезок не пересекает препятствие (canEnterWater — см. isBlocked). */
-    private static boolean hasLineOfSight(float fromX, float fromY, float toX, float toY, boolean canEnterWater) {
+    private boolean hasLineOfSight(float fromX, float fromY, float toX, float toY, boolean canEnterWater) {
         float distance = Vector2.dst(fromX, fromY, toX, toY);
         int steps = Math.max(1, (int) (distance / (GameConstants.PATH_GRID_CELL_SIZE / 2f)));
         for (int i = 0; i <= steps; i++) {
@@ -435,7 +431,7 @@ public final class Pathfinding {
 
     // ---- A* по сетке, 8 направлений, без "срезания" углов между двумя занятыми клетками ----
 
-    private static List<Vector2> findPath(float fromX, float fromY, float toX, float toY, boolean canEnterWater) {
+    private List<Vector2> findPath(float fromX, float fromY, float toX, float toY, boolean canEnterWater) {
         int startX = cellX(fromX);
         int startY = cellY(fromY);
         int goalX = cellX(toX);

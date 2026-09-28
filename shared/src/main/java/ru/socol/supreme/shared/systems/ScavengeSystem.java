@@ -102,8 +102,13 @@ public class ScavengeSystem extends EntitySystem {
     private Engine engine;
     private ImmutableArray<Entity> collectors;
 
-    public ScavengeSystem(Map<Integer, Entity> unitsById, Map<Integer, PlayerResources> resourcesByPlayer) {
+    /** Поиск пути этого матча — см. javadoc Pathfinding, почему не статический. */
+    private final Pathfinding pathfinding;
+
+    public ScavengeSystem(Map<Integer, Entity> unitsById, Map<Integer, PlayerResources> resourcesByPlayer,
+                          Pathfinding pathfinding) {
         super(1);
+        this.pathfinding = pathfinding;
         this.unitsById = unitsById;
         this.resourcesByPlayer = resourcesByPlayer;
     }
@@ -161,7 +166,7 @@ public class ScavengeSystem extends EntitySystem {
             // приказ — отдельно чистить не нужно.
             engine.removeEntity(wreck);
             unitsById.remove(targetWreckUnitId);
-            Pathfinding.removeBuildingObstacle(targetWreckUnitId);
+            pathfinding.removeBuildingObstacle(targetWreckUnitId);
         }
     }
 
@@ -205,7 +210,7 @@ public class ScavengeSystem extends EntitySystem {
                 order.approachX = approachPoint.x;
                 order.approachY = approachPoint.y;
             }
-            Pathfinding.setDestination(builder, myPosition, direction, order.approachX, order.approachY);
+            pathfinding.setDestination(builder, myPosition, direction, order.approachX, order.approachY);
             return;
         }
 

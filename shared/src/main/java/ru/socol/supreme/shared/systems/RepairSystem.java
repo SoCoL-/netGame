@@ -88,8 +88,13 @@ public class RepairSystem extends EntitySystem {
 
     private ImmutableArray<Entity> builders;
 
-    public RepairSystem(Map<Integer, Entity> unitsById, Map<Integer, PlayerResources> resourcesByPlayer) {
+    /** Поиск пути этого матча — см. javadoc Pathfinding, почему не статический. */
+    private final Pathfinding pathfinding;
+
+    public RepairSystem(Map<Integer, Entity> unitsById, Map<Integer, PlayerResources> resourcesByPlayer,
+                        Pathfinding pathfinding) {
         super(1);
+        this.pathfinding = pathfinding;
         this.unitsById = unitsById;
         this.resourcesByPlayer = resourcesByPlayer;
     }
@@ -202,7 +207,7 @@ public class RepairSystem extends EntitySystem {
                 order.approachX = approachPoint.x;
                 order.approachY = approachPoint.y;
             }
-            Pathfinding.setDestination(builder, myPosition, direction, order.approachX, order.approachY);
+            pathfinding.setDestination(builder, myPosition, direction, order.approachX, order.approachY);
             return;
         }
 

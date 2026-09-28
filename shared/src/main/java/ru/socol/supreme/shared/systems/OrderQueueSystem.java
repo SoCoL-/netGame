@@ -74,10 +74,14 @@ public class OrderQueueSystem extends IteratingSystem {
     private final OrderExecutor repairExecutor;
     private final OrderExecutor collectExecutor;
 
+    /** Поиск пути этого матча — см. javadoc Pathfinding, почему не статический. */
+    private final Pathfinding pathfinding;
+
     public OrderQueueSystem(OrderExecutor attackExecutor, OrderExecutor buildExecutor, OrderExecutor repairExecutor,
-                             OrderExecutor collectExecutor) {
+                             OrderExecutor collectExecutor, Pathfinding pathfinding) {
         super(Family.all(OrderQueueComponent.class, DirectionComponent.class,
                 OwnerComponent.class, PositionComponent.class, UnitComponent.class).get(), 15);
+        this.pathfinding = pathfinding;
         this.attackExecutor = attackExecutor;
         this.buildExecutor = buildExecutor;
         this.repairExecutor = repairExecutor;
@@ -108,7 +112,7 @@ public class OrderQueueSystem extends IteratingSystem {
             case MOVE:
                 PositionComponent position = POSITION.get(entity);
                 DirectionComponent direction = DIRECTION.get(entity);
-                Pathfinding.setDestination(entity, position, direction, next.x, next.y);
+                pathfinding.setDestination(entity, position, direction, next.x, next.y);
                 break;
             case ATTACK:
                 attackExecutor.execute(playerId, actorUnitId, next.targetUnitId);

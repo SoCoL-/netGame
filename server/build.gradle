@@ -40,9 +40,6 @@ jar {
 // Юнит-тесты сервера (server/src/test) — GameServer и LobbyManager без
 // настоящей сети: соединения подменяются FakeConnection, симуляция
 // шагается вручную (GameServer.tick). Тот же JUnit 5, что и у core.
-// Рабочая директория — server/ (Gradle по умолчанию), как и у
-// :server:run, так что тесты видят те же units.json/buildings.json, что
-// и запущенный сервер; сами тесты от конкретных чисел баланса не зависят.
 dependencies {
   testImplementation platform("org.junit:junit-bom:$junitVersion")
   testImplementation "org.junit.jupiter:junit-jupiter"
@@ -53,4 +50,16 @@ dependencies {
 
 test {
   useJUnitPlatform()
+  // Те же units.json/buildings.json, что и у запущенного сервера (см. run
+  // ниже); сами тесты от конкретных чисел баланса не зависят.
+  workingDir = rootProject.file('assets')
+}
+
+// units.json и buildings.json ищутся в рабочей директории процесса (см.
+// UnitDefinitions/BuildingDefinitions), а единственная их копия в
+// репозитории лежит в assets/ — там же, откуда их читает клиент
+// (lwjgl3/build.gradle). Так сервер и клиент гарантированно видят один и
+// тот же баланс.
+run {
+  workingDir = rootProject.file('assets')
 }

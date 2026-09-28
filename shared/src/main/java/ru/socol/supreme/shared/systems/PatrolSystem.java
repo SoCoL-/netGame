@@ -53,9 +53,13 @@ public class PatrolSystem extends IteratingSystem {
     private static final ComponentMapper<DirectionComponent> DIRECTION =
             ComponentMapper.getFor(DirectionComponent.class);
 
-    public PatrolSystem() {
+    /** Поиск пути этого матча — см. javadoc Pathfinding, почему не статический. */
+    private final Pathfinding pathfinding;
+
+    public PatrolSystem(Pathfinding pathfinding) {
         super(Family.all(PatrolComponent.class, PositionComponent.class, DirectionComponent.class)
                 .exclude(AttackComponent.class).get(), 16);
+        this.pathfinding = pathfinding;
     }
 
     @Override
@@ -72,7 +76,7 @@ public class PatrolSystem extends IteratingSystem {
         while (attemptsLeft > 0 && !direction.moving) {
             Vector2 waypoint = patrol.waypoints.get(patrol.currentIndex);
             patrol.currentIndex = (patrol.currentIndex + 1) % patrol.waypoints.size();
-            Pathfinding.setDestination(entity, position, direction, waypoint.x, waypoint.y);
+            pathfinding.setDestination(entity, position, direction, waypoint.x, waypoint.y);
             attemptsLeft--;
         }
     }

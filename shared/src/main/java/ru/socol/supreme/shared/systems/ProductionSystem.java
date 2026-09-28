@@ -83,9 +83,14 @@ public class ProductionSystem extends IteratingSystem {
     private final Map<Integer, PlayerResources> resourcesByPlayer;
     private final UnitFactory unitFactory;
 
-    public ProductionSystem(Map<Integer, Entity> unitsById, Map<Integer, PlayerResources> resourcesByPlayer, UnitFactory unitFactory) {
+    /** Поиск пути этого матча — см. javadoc Pathfinding, почему не статический. */
+    private final Pathfinding pathfinding;
+
+    public ProductionSystem(Map<Integer, Entity> unitsById, Map<Integer, PlayerResources> resourcesByPlayer, UnitFactory unitFactory,
+                            Pathfinding pathfinding) {
         super(Family.all(BuildingComponent.class, ProductionComponent.class,
                 PositionComponent.class, OwnerComponent.class).get(), 2);
+        this.pathfinding = pathfinding;
         this.unitsById = unitsById;
         this.resourcesByPlayer = resourcesByPlayer;
         this.unitFactory = unitFactory;
@@ -146,7 +151,7 @@ public class ProductionSystem extends IteratingSystem {
         Entity newUnit = unitFactory.createUnit(owner.playerId, spawnPoint.x, spawnPoint.y, buildingUnitType);
 
         if (production.hasRallyPoint) {
-            Pathfinding.setDestination(newUnit, newUnit.getComponent(PositionComponent.class),
+            pathfinding.setDestination(newUnit, newUnit.getComponent(PositionComponent.class),
                     newUnit.getComponent(DirectionComponent.class), production.rallyX, production.rallyY);
         }
 

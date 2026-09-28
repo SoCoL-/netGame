@@ -30,7 +30,6 @@ import ru.socol.supreme.shared.network.messages.RepairOrderRequest;
 import ru.socol.supreme.shared.network.messages.SetRallyPointRequest;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
-import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -76,17 +75,8 @@ class GameServerTest {
         game = new GameServer(server, new FakeConnection[]{player0, player1}, () -> gameEndListenerCalled = true);
     }
 
-    /**
-     * Pathfinding хранит препятствия-здания в статическом реестре по
-     * unitId, а у каждого GameServer нумерация unitId начинается заново с
-     * 1 — без очистки здания одного теста остались бы препятствиями в
-     * следующем.
-     */
     @AfterEach
     void tearDown() throws IOException {
-        for (int unitId = 1; unitId < 1000; unitId++) {
-            Pathfinding.removeBuildingObstacle(unitId);
-        }
         server.dispose();
     }
 
@@ -553,13 +543,13 @@ class GameServerTest {
     @Test
     void disconnectRemovesAllPlayerEntitiesAndOpponentWins() {
         UnitSnapshot enemyHome = home(1);
-        assertTrue(Pathfinding.isBlocked(enemyHome.x, enemyHome.y, false), "дом — препятствие для A*");
+        assertTrue(game.pathfinding().isBlocked(enemyHome.x, enemyHome.y, false), "дом — препятствие для A*");
 
         game.handleDisconnect(player1);
         for (UnitSnapshot unit : snapshot().units) {
             assertTrue(unit.ownerId != 1, "у отключившегося игрока не осталось ни юнитов, ни зданий");
         }
-        assertFalse(Pathfinding.isBlocked(enemyHome.x, enemyHome.y, false), "препятствие снятого дома убрано");
+        assertFalse(game.pathfinding().isBlocked(enemyHome.x, enemyHome.y, false), "препятствие снятого дома убрано");
 
         player1.connected = false;
         game.tick(0.01f);
@@ -579,6 +569,31 @@ class GameServerTest {
         // только POST_GAME_OVER_DELAY_SECONDS перед вызовом слушателя.
         game.start();
         assertTrue(gameEndListenerCalled);
+    }
+
+    // ---- Несколько матчей на одном сервере ----
+
+    @Test
+    void concurrentMatchesDoNotShareBuildingObstacles() throws IOException {
+        FakeConnection otherPlayer0 = new FakeConnection(300);
+        FakeConnection otherPlayer1 = new FakeConnection(400);
+        RecordingServer otherServer = new RecordingServer(otherPlayer0, otherPlayer1);
+        try {
+            GameServer otherGame = new GameServer(otherServer, new FakeConnection[]{otherPlayer0, otherPlayer1}, null);
+
+            // Здание, поставленное в этом матче, не мешает ходить в соседнем.
+            placePowerPlantForPlayer0();
+            assertTrue(game.pathfinding().isBlocked(FREE_SPOT_X, FREE_SPOT_Y, false));
+            assertFalse(otherGame.pathfinding().isBlocked(FREE_SPOT_X, FREE_SPOT_Y, false));
+
+            // Нумерация unitId в обоих матчах одинаковая (дом игрока 0 — один
+            // и тот же id), но снос дома здесь не снимает препятствие там.
+            UnitSnapshot home = home(0);
+            game.handleDemolishBuilding(player0, demolish(home.unitId));
+            assertTrue(otherGame.pathfinding().isBlocked(home.x, home.y, false));
+        } finally {
+            otherServer.dispose();
+        }
     }
 
     // ---- Туман войны ----

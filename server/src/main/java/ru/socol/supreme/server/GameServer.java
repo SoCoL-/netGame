@@ -36,7 +36,6 @@ import ru.socol.supreme.shared.components.TurretComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.components.WreckComponent;
-import ru.socol.supreme.shared.pathfinding.Pathfinding;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
@@ -122,6 +121,13 @@ public class GameServer {
      */
     private final Server server;
     private final Engine engine = new PooledEngine();
+
+    /**
+     * Поиск пути и реестр зданий-препятствий ЭТОГО матча — у каждого
+     * GameServer свой (см. javadoc Pathfinding): одновременные матчи на
+     * одном сервере не должны видеть здания друг друга.
+     */
+    private final Pathfinding pathfinding = new Pathfinding();
 
     /**
      * connections[playerId] — соединение игрока этого матча, playerId
@@ -248,19 +254,20 @@ public class GameServer {
         SpatialHashGrid collisionGrid = new SpatialHashGrid(BuildingDefinitions.maxInteractionRadius());
 
         engine.addSystem(new AggroSystem(unitsById, aggroGrid));
-        engine.addSystem(new CombatSystem(unitsById, this::handleShotFired, this::spawnWreck, this::spawnBuildingRubble));
+        engine.addSystem(new CombatSystem(unitsById, this::handleShotFired, this::spawnWreck, this::spawnBuildingRubble,
+                pathfinding));
         engine.addSystem(new TurretAimSystem(unitsById));
-        engine.addSystem(new BuildSystem(unitsById, resourcesByPlayer));
-        engine.addSystem(new RepairSystem(unitsById, resourcesByPlayer));
-        engine.addSystem(new ScavengeSystem(unitsById, resourcesByPlayer));
-        engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit));
+        engine.addSystem(new BuildSystem(unitsById, resourcesByPlayer, pathfinding));
+        engine.addSystem(new RepairSystem(unitsById, resourcesByPlayer, pathfinding));
+        engine.addSystem(new ScavengeSystem(unitsById, resourcesByPlayer, pathfinding));
+        engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit, pathfinding));
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new MovementSystem());
         engine.addSystem(new AircraftMovementSystem(unitsById));
         engine.addSystem(new OrderQueueSystem(this::startAttackOrder, this::assignBuilderToBuild,
-                this::assignBuilderToRepair, this::assignBuilderToCollect));
-        engine.addSystem(new PatrolSystem());
+                this::assignBuilderToRepair, this::assignBuilderToCollect, pathfinding));
+        engine.addSystem(new PatrolSystem(pathfinding));
         engine.addSystem(new CollisionSystem(unitsById, collisionGrid));
 
         for (int playerId = 0; playerId < GameConstants.MAX_PLAYERS; playerId++) {
@@ -365,6 +372,11 @@ public class GameServer {
         return unitsById.get(unitId);
     }
 
+    /** Поиск пути этого матча — только для тестов (проверить, какие здания сейчас препятствия). */
+    Pathfinding pathfinding() {
+        return pathfinding;
+    }
+
     /**
      * Рассылает сообщение только двум игрокам ЭТОГО матча — общий на все
      * лобби процесса Server.sendToAllTCP() отправил бы его вообще всем
@@ -426,7 +438,7 @@ public class GameServer {
                 int unitId = unit.getComponent(UnitComponent.class).unitId;
                 engine.removeEntity(unit);
                 if (isBuilding) {
-                    Pathfinding.removeBuildingObstacle(unitId);
+                    pathfinding.removeBuildingObstacle(unitId);
                 }
             }
             return owned;
@@ -594,7 +606,7 @@ public class GameServer {
 
         engine.addEntity(building);
         unitsById.put(unitId, building);
-        Pathfinding.addBuildingObstacle(unitId, x, y, type);
+        pathfinding.addBuildingObstacle(unitId, x, y, type);
         return unitId;
     }
 
@@ -902,7 +914,7 @@ public class GameServer {
 
         // Pathfinding сама решает: прямая линия свободна — идём напрямую,
         // как раньше; если по пути препятствие (вода/здание) — обойдёт его.
-        Pathfinding.setDestination(unit, position, direction, targetX, targetY);
+        pathfinding.setDestination(unit, position, direction, targetX, targetY);
     }
 
     /** Добавляет приказ в конец очереди юнита, создавая OrderQueueComponent при первом обращении — см. её javadoc. */
@@ -1442,7 +1454,7 @@ public class GameServer {
 
         engine.addEntity(wreck);
         unitsById.put(unitId, wreck);
-        Pathfinding.addBuildingObstacle(unitId, x, y, BuildingType.WRECK);
+        pathfinding.addBuildingObstacle(unitId, x, y, BuildingType.WRECK);
     }
 
     /**
@@ -1501,7 +1513,7 @@ public class GameServer {
 
         engine.addEntity(rubble);
         unitsById.put(unitId, rubble);
-        Pathfinding.addBuildingObstacle(unitId, x, y, BuildingType.WRECK);
+        pathfinding.addBuildingObstacle(unitId, x, y, BuildingType.WRECK);
     }
 
     /**
@@ -1555,7 +1567,7 @@ public class GameServer {
         engine.removeEntity(rubble);
         if (unitId != null) {
             unitsById.remove(unitId);
-            Pathfinding.removeBuildingObstacle(unitId);
+            pathfinding.removeBuildingObstacle(unitId);
         }
     }
 
@@ -1739,7 +1751,7 @@ public class GameServer {
         PositionComponent position = unit.getComponent(PositionComponent.class);
         Vector2 firstWaypoint = patrol.waypoints.get(patrol.currentIndex);
         patrol.currentIndex = (patrol.currentIndex + 1) % patrol.waypoints.size();
-        Pathfinding.setDestination(unit, position, direction, firstWaypoint.x, firstWaypoint.y);
+        pathfinding.setDestination(unit, position, direction, firstWaypoint.x, firstWaypoint.y);
     }
 
     /**
@@ -1791,7 +1803,7 @@ public class GameServer {
 
         engine.removeEntity(building);
         unitsById.remove(request.buildingUnitId);
-        Pathfinding.removeBuildingObstacle(request.buildingUnitId);
+        pathfinding.removeBuildingObstacle(request.buildingUnitId);
 
         // Второй, не связанный с боем триггер именных обломков (см. javadoc
         // spawnBuildingRubble) — по прямому запросу пользователя обломки

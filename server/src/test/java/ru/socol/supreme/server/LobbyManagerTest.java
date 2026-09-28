@@ -1,6 +1,5 @@
 package ru.socol.supreme.server;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import ru.socol.supreme.shared.GameConstants;
@@ -15,7 +14,6 @@ import ru.socol.supreme.shared.network.messages.LeaveLobbyRequest;
 import ru.socol.supreme.shared.network.messages.LobbyListMessage;
 import ru.socol.supreme.shared.network.messages.LobbyStateMessage;
 import ru.socol.supreme.shared.network.messages.SetReadyRequest;
-import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -43,14 +41,6 @@ class LobbyManagerTest {
         alice = connect(1, "Alice");
         bob = connect(2, "Bob");
         carol = connect(3, "Carol");
-    }
-
-    /** См. тот же приём в GameServerTest — сквозной тест реально запускает матч, а тот регистрирует здания в статическом Pathfinding. */
-    @AfterEach
-    void tearDown() {
-        for (int unitId = 1; unitId < 1000; unitId++) {
-            Pathfinding.removeBuildingObstacle(unitId);
-        }
     }
 
     private FakeConnection connect(int id, String name) {
