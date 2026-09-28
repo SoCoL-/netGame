@@ -13,6 +13,7 @@ import ru.socol.supreme.shared.components.ArtilleryComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.network.messages.ArtilleryFireRequest;
+import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.FogSnapshot;
 import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
@@ -499,6 +500,82 @@ class ArtilleryTest {
 
         assertEquals(UnitDefinitions.healthFor(UnitType.BUILDER),
                 game.unitById(builder.unitId).getComponent(HealthComponent.class).currentHealth);
+    }
+
+    /** Ставит своё здание type в (x, y) сразу достроенным и с полным здоровьем. */
+    private int placeFinished(BuildingType type, float x, float y) {
+        PlaceBuildingRequest request = new PlaceBuildingRequest();
+        request.buildingType = type.ordinal();
+        request.x = x;
+        request.y = y;
+        game.handlePlaceBuilding(player0, request);
+        for (UnitSnapshot unit : game.buildWorldSnapshot().units) {
+            if (unit.building && unit.buildingType == type.ordinal() && unit.x == x && unit.y == y) {
+                game.unitById(unit.unitId).remove(ConstructionComponent.class);
+                HealthComponent health = game.unitById(unit.unitId).getComponent(HealthComponent.class);
+                health.currentHealth = health.maxHealth;
+                return unit.unitId;
+            }
+        }
+        throw new AssertionError("здание " + type + " не поставлено в (" + x + ", " + y + ")");
+    }
+
+    /** Сносит своё здание — на его месте остаются именные руины. */
+    private void demolish(int buildingId) {
+        DemolishBuildingRequest request = new DemolishBuildingRequest();
+        request.buildingUnitId = buildingId;
+        game.handleDemolishBuilding(player0, request);
+    }
+
+    /** Руины здания type в точке (x, y), или null. */
+    private UnitSnapshot ruinsAt(BuildingType type, float x, float y) {
+        for (UnitSnapshot unit : game.buildWorldSnapshot().units) {
+            if (unit.rubbleOriginalBuildingType == type.ordinal() && unit.x == x && unit.y == y) {
+                return unit;
+            }
+        }
+        return null;
+    }
+
+    // ---- Руины ----
+
+    @Test
+    void shellTakesIronFromRuinsAndCanWipeThemOut() {
+        int towerId = buildTower();
+        disableSpread();
+        artilleryOf(towerId).shells = 2;
+        resources().electricity = 1000f;
+        int damage = BuildingDefinitions.shellDamageFor(ARTILLERY);
+        // Богатые руины (другой артиллерии) переживут один снаряд, бедные (турели) — нет.
+        demolish(placeFinished(ARTILLERY, AHEAD_X, AHEAD_Y));
+        float turretX = AHEAD_X + 800f;
+        demolish(placeFinished(BuildingType.TURRET, turretX, AHEAD_Y - 800f));
+        int richIron = ruinsAt(ARTILLERY, AHEAD_X, AHEAD_Y).health;
+        assertTrue(richIron > damage, "в руинах артиллерии железа больше, чем урон снаряда");
+        assertTrue(ruinsAt(BuildingType.TURRET, turretX, AHEAD_Y - 800f).health <= damage);
+
+        fireAndWaitForImpact(towerId, AHEAD_X, AHEAD_Y);
+        fireAndWaitForImpact(towerId, turretX, AHEAD_Y - 800f);
+
+        assertEquals(richIron - damage, ruinsAt(ARTILLERY, AHEAD_X, AHEAD_Y).health, "снаряд отнял железо у руин");
+        assertNull(ruinsAt(BuildingType.TURRET, turretX, AHEAD_Y - 800f), "бедные руины выбиты насовсем");
+    }
+
+    @Test
+    void shellThatDestroysBuildingDoesNotHitItsFreshRuins() {
+        int towerId = buildTower();
+        disableSpread();
+        artilleryOf(towerId).shells = 1;
+        resources().electricity = 1000f;
+        int turretId = placeFinished(BuildingType.TURRET, AHEAD_X, AHEAD_Y);
+        game.unitById(turretId).getComponent(HealthComponent.class).currentHealth = 1;
+
+        fireAndWaitForImpact(towerId, AHEAD_X, AHEAD_Y);
+
+        assertNull(game.unitById(turretId), "турель уничтожена");
+        UnitSnapshot ruins = ruinsAt(BuildingType.TURRET, AHEAD_X, AHEAD_Y);
+        assertNotNull(ruins, "её руины остались");
+        assertEquals(ruins.maxHealth, ruins.health, "руины от этого же снаряда урона не получили");
     }
 
     private float flightTimeTo(UnitSnapshot target) {

@@ -14,6 +14,7 @@ import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.components.ArtilleryComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -53,9 +54,9 @@ import java.util.Random;
  *
  * Полёт. Урон наносится не в момент выстрела, а при падении, через
  * расстояние / shellSpeed секунд. Взрыв задевает всё в радиусе
- * shellSplashRadius, и своих тоже, кроме авиации (снаряд наземный), юнитов
- * под водой и обломков. Гибель от взрыва — через тот же
- * EntityDestruction, что и в обычном бою (обломки, руины, препятствия).
+ * shellSplashRadius, и своих тоже, включая руины зданий, кроме авиации
+ * (снаряд наземный), юнитов под водой и обломков юнитов. Гибель от
+ * взрыва — через тот же EntityDestruction, что и в обычном бою (обломки, руины, препятствия).
  *
  * Живёт в shared, но запускается только на сервере.
  */
@@ -280,7 +281,8 @@ public class ArtillerySystem extends IteratingSystem {
                 continue;
             }
             HealthComponent health = entity.getComponent(HealthComponent.class);
-            health.currentHealth -= shell.damage;
+            // Не ниже нуля — у руин это остаток железа.
+            health.currentHealth = Math.max(0, health.currentHealth - shell.damage);
             if (health.currentHealth <= 0) {
                 killed.add(entity);
             }
@@ -293,9 +295,15 @@ public class ArtillerySystem extends IteratingSystem {
     }
 
     private boolean isHitBy(Shell shell, Entity entity) {
-        if (entity.getComponent(WreckComponent.class) != null) {
-            return false; // обломки — не боевая цель, а источник железа
+        if (entity.getComponent(WreckComponent.class) != null
+                && entity.getComponent(BuildingRubbleComponent.class) == null) {
+            return false; // обломки юнитов — не цель, а источник железа
         }
+        // Руины зданий (BuildingRubbleComponent) задеваем: взрыв отнимает их
+        // железо, при нуле они исчезают — так важное здание можно выбить
+        // насовсем, не дав отстроить его на старом месте со скидкой. Руины,
+        // появившиеся от попадания этого же снаряда, в список целей не
+        // попадают (они создаются уже после подсчёта урона, см. explode).
         HealthComponent health = entity.getComponent(HealthComponent.class);
         PositionComponent position = entity.getComponent(PositionComponent.class);
         if (health == null || position == null) {
