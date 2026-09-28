@@ -17,6 +17,7 @@ import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.components.WreckComponent;
+import ru.socol.supreme.shared.pathfinding.Pathfinding;
 import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 
 import java.util.Map;
@@ -53,9 +54,13 @@ import java.util.Map;
  * Кандидат в цели дополнительно фильтруется по стихии (UnitDefinitions
  * .canTarget/isAirUnit): наземные юниты и турель не считают врагом
  * воздушную цель, разведчик — наоборот, наземную и здания. Штурмовик
- * ограничений не имеет. То же самое правило, той же парой методов,
- * проверяет GameServer.startAttackOrder для ручного/очередного приказа —
- * см. её javadoc, почему это единое правило, а не два разных.
+ * ограничений не имеет. Дополнительно исключается кандидат под водой
+ * (Pathfinding.isInsideWater — сейчас это всегда строитель, спрятавшийся
+ * от боя, см. её же javadoc в UnitDefinitions.canTarget) — его нельзя
+ * назначить целью автоагрессии никому, той же проверкой canTarget. То же
+ * самое правило, теми же методами, проверяет GameServer.startAttackOrder
+ * для ручного/очередного приказа — см. её javadoc, почему это единое
+ * правило, а не два разных.
  *
  * Family намеренно ИСКЛЮЧАЕТ AttackComponent — уже атакующие юниты цель не
  * пересматривают каждый тик, этим занимается только CombatSystem. Здания
@@ -178,8 +183,9 @@ public class AggroSystem extends IteratingSystem {
 
             UnitTypeComponent otherTypeComponent = UNIT_TYPE.get(other);
             boolean otherIsAir = otherTypeComponent != null && UnitDefinitions.isAirUnit(otherTypeComponent.type);
-            if (!UnitDefinitions.canTarget(myType, otherIsAir)) {
-                continue; // разделение целей по стихиям — см. её javadoc: наземный не видит воздух, разведчик не видит землю
+            boolean otherIsUnderwater = Pathfinding.isInsideWater(POSITION.get(other).position.x, POSITION.get(other).position.y);
+            if (!UnitDefinitions.canTarget(myType, otherIsAir, otherIsUnderwater)) {
+                continue; // разделение целей по стихиям — см. её javadoc: наземный не видит воздух, разведчик не видит землю, никто не видит спрятавшегося под водой строителя
             }
 
             float distanceSq = position.position.dst2(POSITION.get(other).position);

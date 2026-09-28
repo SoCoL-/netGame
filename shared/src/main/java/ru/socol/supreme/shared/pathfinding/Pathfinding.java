@@ -5,10 +5,12 @@ import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PathComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
+import ru.socol.supreme.shared.components.UnitTypeComponent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -87,16 +89,29 @@ public final class Pathfinding {
     private static final Map<Long, List<Footprint>> buildingsByCell = new HashMap<>();
 
     /**
-     * Кэш препятствий по клеткам для A* (см. findPath) — вода плюс
-     * footprint каждого здания из activeBuildings, но НЕ обновляется
-     * целиком при каждом изменении: addBuildingObstacle/
+     * Кэш препятствий по клеткам для A* (см. findPath) — ТОЛЬКО footprint
+     * каждого здания из activeBuildings (вода вынесена в отдельную,
+     * неизменную WATER_BLOCKED, см. её javadoc, почему), но и это не
+     * обновляется целиком при каждом изменении: addBuildingObstacle/
      * removeBuildingObstacle пересчитывают только клетки, которые
      * затрагивает конкретное здание, остальная сетка не трогается.
      * Для точечных запросов (hasLineOfSight, начальная проверка цели)
      * используется не эта сетка, а isBlocked — она считает по точным
      * координатам, не огрубляя до клетки.
      */
-    private static final boolean[][] BLOCKED = buildWaterOnlyGrid();
+    private static final boolean[][] BLOCKED = new boolean[GRID_WIDTH][GRID_HEIGHT];
+
+    /**
+     * Клетки воды — считается РОВНО ОДИН РАЗ при старте и никогда не
+     * пересчитывается (в отличие от BLOCKED выше): в отличие от зданий,
+     * прямоугольник воды (GameConstants.WATER_*) фиксирован на всю партию.
+     * Отдельная от BLOCKED сетка нужна ровно затем, чтобы её можно было
+     * проигнорировать целиком для юнита, умеющего плавать под водой
+     * (UnitDefinitions.canEnterWater — сейчас только строитель), не трогая
+     * при этом обычную непроходимость зданий, которая касается вообще всех
+     * без исключения.
+     */
+    private static final boolean[][] WATER_BLOCKED = buildWaterOnlyGrid();
 
     private static boolean[][] buildWaterOnlyGrid() {
         boolean[][] blocked = new boolean[GRID_WIDTH][GRID_HEIGHT];
@@ -106,6 +121,11 @@ public final class Pathfinding {
             }
         }
         return blocked;
+    }
+
+    /** BLOCKED[cx][cy] (здания) с учётом воды только для тех, кому она вообще препятствие — общий приём и для A* (findPath), и для проверки "срезания" угла. */
+    private static boolean isCellBlocked(int cx, int cy, boolean canEnterWater) {
+        return BLOCKED[cx][cy] || (!canEnterWater && WATER_BLOCKED[cx][cy]);
     }
 
     /**
@@ -141,12 +161,14 @@ public final class Pathfinding {
 
     /**
      * Пересчитывает клетки, накрытые этим footprint — не просто
-     * "поставить true"/"поставить false" напрямую: вода или другое
-     * (СОСЕДНЕЕ, ещё живое) здание могли частично накрывать те же самые
-     * клетки, снос одного не должен по ошибке открыть проход через
-     * границу с другим. Общая логика для добавления и снятия — после
-     * put/remove в activeBuildings единственная разница уже выражена
-     * тем, что сейчас лежит в карте, отдельно её дублировать не нужно.
+     * "поставить true"/"поставить false" напрямую: другое (СОСЕДНЕЕ, ещё
+     * живое) здание могло частично накрывать те же самые клетки, снос
+     * одного не должен по ошибке открыть проход через границу с другим.
+     * Вода сюда не входит — она в отдельной, неизменной WATER_BLOCKED (см.
+     * её javadoc), пересчитывать нечего. Общая логика для добавления и
+     * снятия — после put/remove в activeBuildings единственная разница уже
+     * выражена тем, что сейчас лежит в карте, отдельно её дублировать не
+     * нужно.
      */
     private static void recomputeCellsFor(Footprint footprint) {
         int minX = cellX(footprint.centerX - footprint.halfWidth);
@@ -155,7 +177,7 @@ public final class Pathfinding {
         int maxY = cellY(footprint.centerY + footprint.halfHeight);
         for (int cx = minX; cx <= maxX; cx++) {
             for (int cy = minY; cy <= maxY; cy++) {
-                BLOCKED[cx][cy] = isBlocked(cellCenterX(cx), cellCenterY(cy));
+                BLOCKED[cx][cy] = isInsideAnyBuilding(cellCenterX(cx), cellCenterY(cy));
             }
         }
     }
@@ -194,16 +216,17 @@ public final class Pathfinding {
     }
 
     /**
-     * Прямоугольник воды ИЛИ footprint любого сейчас живого здания — то,
-     * что нельзя ни пройти, ни в чём заспавниться. Считает по ТОЧНЫМ
-     * координатам (x, y), не по клетке — в отличие от сетки BLOCKED,
-     * которая используется только внутри A*. Раздут на PATH_CLEARANCE
-     * сверх реального размера — см. её javadoc, почему без этого юниты
-     * зависали, топчась у самого края препятствия. Используется и
-     * GameServer'ом, чтобы не создавать юнит посреди воды/здания.
+     * Footprint любого сейчас живого здания, а для тех, кто не умеет
+     * плавать под водой (canEnterWater == false — то есть почти все, см.
+     * UnitDefinitions.canEnterWater), ещё и прямоугольник воды — то, что
+     * такому юниту нельзя ни пройти, ни в чём заспавниться. Считает по
+     * ТОЧНЫМ координатам (x, y), не по клетке — в отличие от сеток
+     * BLOCKED/WATER_BLOCKED, которые используются только внутри A*. Раздут
+     * на PATH_CLEARANCE сверх реального размера — см. её javadoc, почему
+     * без этого юниты зависали, топчась у самого края препятствия.
      */
-    public static boolean isBlocked(float x, float y) {
-        return isInsideWater(x, y) || isInsideAnyBuilding(x, y);
+    public static boolean isBlocked(float x, float y, boolean canEnterWater) {
+        return (!canEnterWater && isInsideWater(x, y)) || isInsideAnyBuilding(x, y);
     }
 
     /**
@@ -213,13 +236,24 @@ public final class Pathfinding {
      * клетки), а не приблизительно повторяла логику независимо. Намеренно
      * только про воду, не про здания — у клиента список зданий-препятствий
      * всегда пуст (см. javadoc класса), так что для них это было бы
-     * бессмысленно.
+     * бессмысленно. Не зависит от canEnterWater — рисуем воду на карте как
+     * воду для всех, кто на неё смотрит, а не только для тех, кому она
+     * препятствие.
      */
     public static boolean isWaterCell(int cellX, int cellY) {
         return isInsideWater(cellCenterX(cellX), cellCenterY(cellY));
     }
 
-    private static boolean isInsideWater(float x, float y) {
+    /**
+     * Прямоугольник воды (с той же PATH_CLEARANCE-инфляцией, что и
+     * остальные проверки препятствий в этом классе) — публичный, помимо
+     * внутреннего использования в A* isBlocked, ещё и для боевых правил:
+     * CombatSystem/AggroSystem/GameServer.startAttackOrder проверяют им,
+     * что цель атаки СЕЙЧАС не спряталась под водой (см. javadoc
+     * UnitDefinitions.canTarget, почему это отдельная, третья проверка
+     * помимо разделения на "воздух/земля").
+     */
+    public static boolean isInsideWater(float x, float y) {
         float margin = GameConstants.PATH_CLEARANCE;
         return x >= GameConstants.WATER_MIN_X - margin && x <= GameConstants.WATER_MAX_X + margin
                 && y >= GameConstants.WATER_MIN_Y - margin && y <= GameConstants.WATER_MAX_Y + margin;
@@ -289,11 +323,20 @@ public final class Pathfinding {
             return;
         }
 
-        if (isBlocked(destX, destY)) {
+        // Умеет ли ИМЕННО ЭТА сущность плавать под водой (сейчас — только
+        // строитель, см. UnitDefinitions.canEnterWater) — вычисляется здесь,
+        // один раз на вызов, а не в каждом из вызывающих setDestination
+        // мест (их около десятка — GameServer, CombatSystem, BuildSystem и
+        // т.д.): так сигнатура setDestination не меняется вовсе, и ни один
+        // из этих вызовов не нужно трогать.
+        UnitTypeComponent unitTypeComponent = entity.getComponent(UnitTypeComponent.class);
+        boolean canEnterWater = unitTypeComponent != null && UnitDefinitions.canEnterWater(unitTypeComponent.type);
+
+        if (isBlocked(destX, destY, canEnterWater)) {
             return; // нельзя дойти ДО воды/здания — цель недостижима, приказ просто игнорируем
         }
 
-        if (hasLineOfSight(position.position.x, position.position.y, destX, destY)) {
+        if (hasLineOfSight(position.position.x, position.position.y, destX, destY, canEnterWater)) {
             entity.remove(PathComponent.class); // если раньше шли обходным путём — он больше не нужен
             direction.target.set(destX, destY);
             direction.direction.set(direction.target).sub(position.position).nor();
@@ -327,7 +370,7 @@ public final class Pathfinding {
             return;
         }
 
-        List<Vector2> waypoints = findPath(position.position.x, position.position.y, destX, destY);
+        List<Vector2> waypoints = findPath(position.position.x, position.position.y, destX, destY, canEnterWater);
         if (waypoints.isEmpty()) {
             direction.moving = false; // со всех сторон окружено препятствиями — идти некуда
             return;
@@ -357,13 +400,13 @@ public final class Pathfinding {
         direction.moving = true;
     }
 
-    /** Есть ли прямая видимость от (fromX,fromY) до (toX,toY) — то есть отрезок не пересекает препятствие. */
-    private static boolean hasLineOfSight(float fromX, float fromY, float toX, float toY) {
+    /** Есть ли прямая видимость от (fromX,fromY) до (toX,toY) — то есть отрезок не пересекает препятствие (canEnterWater — см. isBlocked). */
+    private static boolean hasLineOfSight(float fromX, float fromY, float toX, float toY, boolean canEnterWater) {
         float distance = Vector2.dst(fromX, fromY, toX, toY);
         int steps = Math.max(1, (int) (distance / (GameConstants.PATH_GRID_CELL_SIZE / 2f)));
         for (int i = 0; i <= steps; i++) {
             float t = (float) i / steps;
-            if (isBlocked(fromX + (toX - fromX) * t, fromY + (toY - fromY) * t)) {
+            if (isBlocked(fromX + (toX - fromX) * t, fromY + (toY - fromY) * t, canEnterWater)) {
                 return false;
             }
         }
@@ -392,7 +435,7 @@ public final class Pathfinding {
 
     // ---- A* по сетке, 8 направлений, без "срезания" углов между двумя занятыми клетками ----
 
-    private static List<Vector2> findPath(float fromX, float fromY, float toX, float toY) {
+    private static List<Vector2> findPath(float fromX, float fromY, float toX, float toY, boolean canEnterWater) {
         int startX = cellX(fromX);
         int startY = cellY(fromY);
         int goalX = cellX(toX);
@@ -443,12 +486,13 @@ public final class Pathfinding {
                     // Старт всегда проходим, даже если формально "в воде" (защита на случай,
                     // если юнит уже как-то оказался у самой границы препятствия).
                     boolean isStart = nx == startX && ny == startY;
-                    if (!isStart && BLOCKED[nx][ny]) {
+                    if (!isStart && isCellBlocked(nx, ny, canEnterWater)) {
                         continue;
                     }
 
                     boolean diagonal = dx != 0 && dy != 0;
-                    if (diagonal && (BLOCKED[current.x + dx][current.y] || BLOCKED[current.x][current.y + dy])) {
+                    if (diagonal && (isCellBlocked(current.x + dx, current.y, canEnterWater)
+                            || isCellBlocked(current.x, current.y + dy, canEnterWater))) {
                         continue; // не даём "срезать" угол между двумя занятыми клетками
                     }
 

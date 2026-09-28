@@ -48,10 +48,14 @@ import java.util.Map;
  * погони, выставленное здесь, в этом же тике подхватила MovementSystem.
  *
  * Разделение целей по стихиям (наземный/воздушный, см. UnitDefinitions
- * .canTarget) эта система не проверяет вовсе — раз AttackComponent уже
+ * .canTarget) эта система заново не проверяет — раз AttackComponent уже
  * стоит на атакующем, цель считается допустимой: это проверено один раз
  * при её назначении (AggroSystem или GameServer.startAttackOrder), а
- * стихия юнита за время боя не меняется, перепроверять каждый тик нечего.
+ * воздушная/наземная природа юнита за время боя не меняется, перепроверять
+ * каждый тик нечего. Единственное исключение — вода: строитель, в отличие
+ * от домена "воздух/земля", МОЖЕТ зайти под воду уже посреди погони (см.
+ * processEntity, самое начало) — эта одна проверка каждый тик всё-таки
+ * остаётся, отменяя атаку, если цель туда спряталась.
  *
  * Живёт в shared (как и MovementSystem), но реально используется только
  * сервером: клиент не запускает эту систему у себя, он лишь показывает
@@ -145,12 +149,28 @@ public class CombatSystem extends IteratingSystem {
             return;
         }
 
+        PositionComponent targetPosition = POSITION.get(target);
+
+        // Единственное исключение из правила "стихия цели за время боя не
+        // меняется" (см. javadoc класса) — строитель может ЗАЙТИ под воду
+        // уже ПОСЛЕ того, как его назначили целью (AggroSystem/GameServer
+        // .startAttackOrder не пускают под воду только В МОМЕНТ назначения,
+        // а сам он может уйти туда посреди погони). Проверяем это здесь, на
+        // каждом тике — так же, как и "цель пропала" чуть выше, отменяя
+        // приказ, а не просто пропуская тик: иначе атакующий так и стоял бы
+        // с бесполезным AttackComponent, пытаясь подойти к недостижимой
+        // (Pathfinding.isBlocked для него самого) точке подхода у уреза воды.
+        if (Pathfinding.isInsideWater(targetPosition.position.x, targetPosition.position.y)) {
+            attacker.remove(AttackComponent.class);
+            DIRECTION.get(attacker).moving = false;
+            return;
+        }
+
         UnitTypeComponent attackerTypeComponent = UNIT_TYPE.get(attacker);
         UnitType attackerType = attackerTypeComponent != null ? attackerTypeComponent.type : UnitType.WARRIOR;
         float attackRange = UnitDefinitions.attackRadiusFor(attackerType);
 
         PositionComponent myPosition = POSITION.get(attacker);
-        PositionComponent targetPosition = POSITION.get(target);
         DirectionComponent direction = DIRECTION.get(attacker);
 
         float distance = myPosition.position.dst(targetPosition.position);

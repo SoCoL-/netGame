@@ -983,8 +983,10 @@ public class GameServer {
         // Разделение целей по стихиям (см. UnitDefinitions.canTarget) —
         // наземные юниты и турель не могут атаковать воздушные цели,
         // разведчик не может атаковать наземные (включая здания — у них
-        // UnitTypeComponent нет вовсе, isAirUnit для них всегда false).
-        // То же правило теми же двумя методами проверяет AggroSystem для
+        // UnitTypeComponent нет вовсе, isAirUnit для них всегда false), и
+        // никто не может атаковать цель под водой (Pathfinding
+        // .isInsideWater — сейчас это всегда строитель, спрятавшийся от
+        // боя). То же правило теми же методами проверяет AggroSystem для
         // автоагрессии — см. её javadoc, единое правило для обоих путей
         // назначения цели. Клиент это тоже не проверяет (GameScreen
         // .isEnemy пропускает любого чужого, невзирая на стихию) — это
@@ -994,7 +996,10 @@ public class GameServer {
         UnitType attackerType = attackerTypeComponent != null ? attackerTypeComponent.type : UnitType.WARRIOR;
         UnitTypeComponent targetTypeComponent = target.getComponent(UnitTypeComponent.class);
         boolean targetIsAir = targetTypeComponent != null && UnitDefinitions.isAirUnit(targetTypeComponent.type);
-        if (!UnitDefinitions.canTarget(attackerType, targetIsAir)) {
+        PositionComponent targetPositionForWaterCheck = target.getComponent(PositionComponent.class);
+        boolean targetIsUnderwater = Pathfinding.isInsideWater(
+                targetPositionForWaterCheck.position.x, targetPositionForWaterCheck.position.y);
+        if (!UnitDefinitions.canTarget(attackerType, targetIsAir, targetIsUnderwater)) {
             return false;
         }
 
