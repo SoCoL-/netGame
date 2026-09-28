@@ -14,8 +14,25 @@ dependencies {
   if(enableGraalNative == 'true') {
     implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"
   }
+
+  // Юнит-тесты клиента (core/src/test) — чистая логика без окна/OpenGL и
+  // без сети (EntityFactory, InterpolationSystem): Vector2/MathUtils и
+  // Ashley Engine прекрасно работают вне libGDX-приложения, реальный
+  // Gdx.app/GL-контекст им не нужен. JUnit 5 — единственный тестовый
+  // фреймворк в проекте, версия зафиксирована в gradle.properties, как и
+  // остальные зависимости.
+  testImplementation platform("org.junit:junit-bom:$junitVersion")
+  testImplementation "org.junit.jupiter:junit-jupiter"
 }
 
 jar {
   duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// JUnit 5 (Jupiter) запускается через свою платформу — без этого Gradle
+// по умолчанию попытается найти тесты через старый JUnit4-раннер и
+// молча найдёт 0 тестов, даже если testImplementation выше подключён
+// правильно.
+test {
+  useJUnitPlatform()
 }
