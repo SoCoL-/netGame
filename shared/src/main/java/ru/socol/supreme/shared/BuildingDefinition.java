@@ -132,12 +132,11 @@ public class BuildingDefinition {
     public float barrelTurnSpeed;
 
     /**
-     * Разброс, проценты от дистанции выстрела: снаряд падает в случайной
-     * точке круга с центром в точке прицеливания и радиусом
-     * shellSpreadPercent% от расстояния башня–цель (20 — промах до 400 ед.
-     * при стрельбе на 2000).
+     * Разброс: снаряд падает в случайной точке круга с центром в точке
+     * прицеливания и этим радиусом — одинаково на любой дальности (50 —
+     * круг диаметром 100 ед.).
      */
-    public float shellSpreadPercent;
+    public float shellSpreadRadius;
 
     public BuildingDefinition() {
         // требуется Json для десериализации

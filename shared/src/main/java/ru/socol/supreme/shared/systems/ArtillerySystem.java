@@ -48,8 +48,8 @@ import java.util.Random;
  * от ствола), башня стреляет — если есть снаряд и shotElectricityCost
  * электричества; нет электричества — ждёт, как и стройка снаряда. Снаряд
  * падает не точно в указанную точку, а в случайную точку круга вокруг неё
- * радиусом shellSpreadPercent% от дистанции выстрела (равномерно по
- * площади круга).
+ * радиусом shellSpreadRadius (равномерно по площади круга, на любой
+ * дальности одинаково).
  *
  * Полёт. Урон наносится не в момент выстрела, а при падении, через
  * расстояние / shellSpeed секунд. Взрыв задевает всё в радиусе
@@ -176,7 +176,7 @@ public class ArtillerySystem extends IteratingSystem {
 
         // Разброс: случайная точка круга радиусом spread вокруг цели. sqrt —
         // чтобы точки ложились равномерно по площади, а не кучковались в центре.
-        float spread = position.dst(target) * BuildingDefinitions.shellSpreadPercentFor(type) / 100f;
+        float spread = BuildingDefinitions.shellSpreadRadiusFor(type);
         float offsetRadius = spread * (float) Math.sqrt(random.nextFloat());
         float offsetAngle = random.nextFloat() * MathUtils.PI2;
         float landX = MathUtils.clamp(target.x + MathUtils.cos(offsetAngle) * offsetRadius, 0f, GameConstants.MAP_WIDTH);

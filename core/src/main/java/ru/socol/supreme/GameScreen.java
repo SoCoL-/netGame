@@ -1198,7 +1198,8 @@ public class GameScreen extends InputAdapter implements Screen {
      * Для выделенной СВОЕЙ достроенной артиллерии: круг дальности (куда
      * можно кликнуть ПКМ), конус стрельбы вдоль текущего направления ствола
      * (цель должна попасть в него, чтобы башня выстрелила) и отданные, ещё
-     * не выполненные приказы — пунктир от башни к каждой цели и крестик.
+     * не выполненные приказы — пунктир от башни к каждой цели, крестик и
+     * круг разброса, в который упадёт снаряд.
      */
     private void drawArtilleryRange() {
         Entity artillery = selectedOwnArtillery();
@@ -1235,6 +1236,15 @@ public class GameScreen extends InputAdapter implements Screen {
         for (Vector2 target : targets) {
             shapeRenderer.rectLine(target.x - cross, target.y - cross, target.x + cross, target.y + cross, 3f);
             shapeRenderer.rectLine(target.x - cross, target.y + cross, target.x + cross, target.y - cross, 3f);
+        }
+        shapeRenderer.end();
+
+        // Круг разброса: снаряд упадёт в любую точку внутри него.
+        float spreadRadius = BuildingDefinitions.shellSpreadRadiusFor(BuildingType.ARTILLERY);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        shapeRenderer.setColor(ARTILLERY_EXPLOSION_COLOR);
+        for (Vector2 target : targets) {
+            shapeRenderer.circle(target.x, target.y, spreadRadius, 32);
         }
         shapeRenderer.end();
     }

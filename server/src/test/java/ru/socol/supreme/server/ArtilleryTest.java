@@ -178,7 +178,7 @@ class ArtilleryTest {
         assertEquals(10f, BuildingDefinitions.activeConsumptionRateFor(ARTILLERY), 0.001f);
         assertEquals(5f, BuildingDefinitions.idleConsumptionRateFor(ARTILLERY), 0.001f);
         assertEquals(200, BuildingDefinitions.shotElectricityCostFor(ARTILLERY));
-        assertEquals(20f, BuildingDefinitions.shellSpreadPercentFor(ARTILLERY), 0.001f);
+        assertEquals(100f, BuildingDefinitions.shellSpreadRadiusFor(ARTILLERY) * 2f, 0.001f, "круг разброса диаметром 100");
     }
 
     @Test
@@ -428,8 +428,7 @@ class ArtilleryTest {
         int shots = BuildingDefinitions.shellCapacityFor(ARTILLERY);
         artilleryOf(towerId).shells = shots;
         resources().electricity = 100000f;
-        float distance = (float) Math.hypot(AHEAD_X - TOWER_X, AHEAD_Y - TOWER_Y);
-        float maxDeviation = distance * BuildingDefinitions.shellSpreadPercentFor(ARTILLERY) / 100f;
+        float maxDeviation = BuildingDefinitions.shellSpreadRadiusFor(ARTILLERY);
 
         for (int i = 0; i < shots; i++) {
             fire(towerId, AHEAD_X, AHEAD_Y);
@@ -441,7 +440,7 @@ class ArtilleryTest {
         for (ProjectileFiredEvent event : player0.sentOf(ProjectileFiredEvent.class)) {
             float deviation = (float) Math.hypot(event.toX - AHEAD_X, event.toY - AHEAD_Y);
             assertTrue(deviation <= maxDeviation + 0.01f,
-                    "отклонение " + deviation + " больше " + maxDeviation + " (20% дистанции)");
+                    "отклонение " + deviation + " больше радиуса разброса " + maxDeviation);
             largestDeviation = Math.max(largestDeviation, deviation);
         }
         assertTrue(largestDeviation > 1f, "разброс реально есть — снаряды падают не точно в цель");
