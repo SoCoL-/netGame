@@ -18,7 +18,8 @@
     "maxHealth": 70,
     "buildTime": 10,
     "producesUnitTypes": [
-      "ARCHER"
+      "ARCHER",
+      "ANTI_AIR"
     ],
     "consumesResourceType": "ELECTRICITY",
     "idleConsumptionRate": 0.5,

@@ -157,9 +157,14 @@ public final class UnitDefinitions {
      * могут атаковать только наземные цели (targetIsAir == false — сюда же
      * попадают и здания, у них домена вовсе нет, воздушными они не
      * бывают); разведчик (SCOUT) — только воздушные; штурмовик
-     * (ATTACK_AIRCRAFT) — единственный тип, которому можно атаковать и то,
-     * и другое. targetIsUnderwater — отдельное, ортогональное условие:
-     * цель под водой (см. Pathfinding.isInsideWater) сейчас всегда
+     * (ATTACK_AIRCRAFT) и ПВО (ANTI_AIR) — им можно атаковать и то, и
+     * другое: ПВО наземный (isAirUnit(ANTI_AIR) == false, см. её же
+     * запись в units.json — turnRadius 0), но специально предназначен
+     * стрелять по воздуху, и по правилам, озвученным пользователем,
+     * умеет добивать и наземные цели (просто вдвое слабее — см.
+     * CombatSystem, эта функция урон не считает, только саму
+     * ВОЗМОЖНОСТЬ атаковать). targetIsUnderwater — отдельное,
+     * ортогональное условие: цель под водой (см. Pathfinding.isInsideWater) сейчас всегда
      * означает "строитель, спрятавшийся под водой" (единственный, кто
      * туда вообще может попасть) и НЕВОЗМОЖНА для атаки вообще никаким
      * атакующим — не только "наземным": воздушный уже не мог бы её
@@ -180,7 +185,7 @@ public final class UnitDefinitions {
         if (targetIsUnderwater) {
             return false;
         }
-        if (attackerType == UnitType.ATTACK_AIRCRAFT) {
+        if (attackerType == UnitType.ATTACK_AIRCRAFT || attackerType == UnitType.ANTI_AIR) {
             return true;
         }
         if (attackerType == UnitType.SCOUT) {
@@ -226,6 +231,13 @@ public final class UnitDefinitions {
         // (CombatSystem/AggroSystem) — остальные поля для турели ничего не
         // значат, см. javadoc UnitType.TURRET, почему.
         definitions.put(UnitType.TURRET, new UnitDefinition(UnitType.TURRET, 0f, 0, 1f, 4, 200f, 0, 0, 0f, 0f, 0f, 0f, false, 0f));
+        // ПВО — наземный юнит (turnRadius 0, своя доворачивающаяся башня,
+        // как у воина/стрелка, а не жёстко по курсу, как у авиации), но
+        // canTarget пускает его и на воздушные, и на наземные цели (см. её
+        // javadoc) — против земли CombatSystem режет его урон вдвое (см.
+        // её же javadoc). buildRadius/firingArcDegrees/canHover тут не
+        // используются вовсе, как и у остальных не-строителей/не-авиации.
+        definitions.put(UnitType.ANTI_AIR, new UnitDefinition(UnitType.ANTI_AIR, 240f, 65, 4f, 5, 300f, 350, 400, 15f, 0f, 800f, 0f, false, 0f));
         return definitions;
     }
 }

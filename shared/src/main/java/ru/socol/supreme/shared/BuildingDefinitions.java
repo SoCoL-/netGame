@@ -213,7 +213,12 @@ public final class BuildingDefinitions {
         archerBarracks.halfHeight = 50f;
         archerBarracks.maxHealth = 70;
         archerBarracks.buildTime = 10f; // теперь строит сам игрок, не автоспавн — та же длительность, что у шахты/станции
-        archerBarracks.producesUnitTypes = new UnitType[]{UnitType.ARCHER};
+        // ANTI_AIR дописан сюда же, а не в отдельное здание — тоже
+        // наземный дальнобойный юнит с собственной башней (см.
+        // GameServer.createUnit), той же природы, что и ARCHER, разве что
+        // специализирован по воздуху (см. UnitDefinitions.canTarget/
+        // CombatSystem).
+        archerBarracks.producesUnitTypes = new UnitType[]{UnitType.ARCHER, UnitType.ANTI_AIR};
         archerBarracks.consumesResourceType = ResourceType.ELECTRICITY;
         archerBarracks.idleConsumptionRate = 0.5f;
         archerBarracks.activeConsumptionRate = 2f;

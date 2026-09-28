@@ -1807,6 +1807,8 @@ public class GameScreen extends InputAdapter implements Screen {
                 return "Scout";
             case ATTACK_AIRCRAFT:
                 return "Attack Aircraft";
+            case ANTI_AIR:
+                return "Anti-Air";
             default:
                 return "";
         }

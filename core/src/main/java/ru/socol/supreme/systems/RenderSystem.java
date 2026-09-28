@@ -82,6 +82,8 @@ public class RenderSystem extends IteratingSystem {
     private static final Color ARCHER_MARKER_COLOR = Color.WHITE;
     private static final float ARCHER_MARKER_RADIUS = GameConstants.UNIT_RADIUS * 0.4f;
     private static final Color BUILDER_MARKER_COLOR = Color.LIGHT_GRAY; // тот же цвет, что у "стройки" (UNDER_CONSTRUCTION_COLOR) — тематическая связь
+    private static final Color ANTI_AIR_MARKER_COLOR = Color.RED; // тот же цвет, что у метки ATTACK_AIRCRAFT — тематическая связь "оружие против воздуха"
+    private static final float ANTI_AIR_MARKER_HALF_SIZE = GameConstants.UNIT_RADIUS * 0.4f;
 
     /**
      * Цвет башни наземной техники (drawGroundVehicle) — намеренно НЕ
@@ -256,12 +258,15 @@ public class RenderSystem extends IteratingSystem {
 
         UnitTypeComponent unitTypeComponent = UNIT_TYPE.get(entity);
         UnitType type = unitTypeComponent != null ? unitTypeComponent.type : null;
-        // "Наземная техника" — только WARRIOR/ARCHER/BUILDER (turnRadius
+        // "Наземная техника" — WARRIOR/ARCHER/BUILDER/ANTI_AIR (turnRadius
         // == 0, см. GameServer.createUnit). SCOUT, несмотря на название,
         // и ATTACK_AIRCRAFT — авиация (обоих производит AIRCRAFT_FACTORY,
         // см. BuildingDefinitions, у обоих ненулевой turnRadius) — их
-        // отрисовка (круг + треугольник-курс) этой веткой не тронута.
-        boolean groundVehicle = type == UnitType.WARRIOR || type == UnitType.ARCHER || type == UnitType.BUILDER;
+        // отрисовка (круг + треугольник-курс) этой веткой не тронута. ПВО
+        // сам наземный, хоть и стреляет по воздуху — та же логика, что и
+        // у ARCHER, только с меткой другого цвета (см. drawGroundVehicle).
+        boolean groundVehicle = type == UnitType.WARRIOR || type == UnitType.ARCHER || type == UnitType.BUILDER
+                || type == UnitType.ANTI_AIR;
 
         // Подсветка выделения рисуется под юнитом более крупным кругом —
         // из-под основного кружка/корпуса выглядывает как обводка, без
@@ -333,6 +338,12 @@ public class RenderSystem extends IteratingSystem {
             setColor(BUILDER_MARKER_COLOR);
             float half = BUILDER_MARKER_HALF_SIZE;
             shapeRenderer.rect(position.position.x - half, position.position.y - half, half * 2f, half * 2f);
+        } else if (type == UnitType.ANTI_AIR) {
+            // Ромб — отличается по силуэту и от кружка стрелка, и от
+            // квадратика строителя; тот же drawDiamond, что и у турели,
+            // только маленький и поверх корпуса, а не сам корпус.
+            setColor(ANTI_AIR_MARKER_COLOR);
+            drawDiamond(position.position.x, position.position.y, ANTI_AIR_MARKER_HALF_SIZE, ANTI_AIR_MARKER_HALF_SIZE);
         }
 
         TurretDisplayComponent turretDisplay = TURRET_DISPLAY.get(entity);

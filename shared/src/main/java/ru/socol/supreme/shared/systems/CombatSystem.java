@@ -44,6 +44,15 @@ import java.util.Map;
  * .canHover). Наземных юнитов это не касается — им ориентация не важна
  * никогда.
  *
+ * ПВО (UnitType.ANTI_AIR) — единственный тип со своим множителем урона В
+ * ЗАВИСИМОСТИ ОТ ЦЕЛИ (а не только от того, кто атакует, или кого атакуют
+ * — как TURRET_DAMAGE_MULTIPLIER ниже): UnitDefinitions.canTarget пускает
+ * его на любую цель, воздушную или наземную (это его игровая роль —
+ * специализация по воздуху, а не запрет), но по наземной он бьёт вдвое
+ * слабее. Считается там же, где и TURRET_DAMAGE_MULTIPLIER, — оба
+ * множителя независимы и перемножаются, если совпали разом (ПВО добивает
+ * вражескую турель).
+ *
  * Приоритет 0 — раньше MovementSystem (приоритет 10) — чтобы направление
  * погони, выставленное здесь, в этом же тике подхватила MovementSystem.
  *
@@ -261,13 +270,25 @@ public class CombatSystem extends IteratingSystem {
 
         HealthComponent targetHealth = HEALTH.get(target);
         UnitTypeComponent targetTypeComponent = UNIT_TYPE.get(target);
-        int damage = UnitDefinitions.damageFor(attackerType);
+        float damageMultiplier = 1f;
+
+        // ПВО специализирован по воздуху — по наземной цели (включая
+        // здания: у них targetTypeComponent == null, кроме турели, но она
+        // тоже не воздушная) его урон вдвое слабее, чем заявлен в
+        // UnitDefinitions.damageFor (см. её же javadoc и javadoc класса).
+        boolean targetIsAirForDamage = targetTypeComponent != null && UnitDefinitions.isAirUnit(targetTypeComponent.type);
+        if (attackerType == UnitType.ANTI_AIR && !targetIsAirForDamage) {
+            damageMultiplier *= 0.5f;
+        }
         if (targetTypeComponent != null && targetTypeComponent.type == UnitType.TURRET) {
             // Турель как ЦЕЛЬ получает усиленный урон от любой атаки,
             // независимо от типа атакующего — см. javadoc
-            // GameConstants.TURRET_DAMAGE_MULTIPLIER, почему.
-            damage = Math.round(damage * GameConstants.TURRET_DAMAGE_MULTIPLIER);
+            // GameConstants.TURRET_DAMAGE_MULTIPLIER, почему. Независимо
+            // от множителя ПВО выше — если он бьёт по вражеской турели,
+            // оба множителя перемножаются.
+            damageMultiplier *= GameConstants.TURRET_DAMAGE_MULTIPLIER;
         }
+        int damage = Math.round(UnitDefinitions.damageFor(attackerType) * damageMultiplier);
         targetHealth.currentHealth -= damage;
 
         if (shotFiredListener != null) {

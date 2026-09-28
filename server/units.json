@@ -94,5 +94,21 @@
     "turnRadius": 0,
     "canHover": false,
     "firingArcDegrees": 0
+  },
+  {
+    "type": "ANTI_AIR",
+    "speed": 240,
+    "health": 65,
+    "fireRate": 4,
+    "damage": 5,
+    "attackRadius": 300,
+    "ironCost": 350,
+    "electricityCost": 400,
+    "buildTime": 15,
+    "buildRadius": 0,
+    "sightRadius": 800,
+    "turnRadius": 0,
+    "canHover": false,
+    "firingArcDegrees": 0
   }
 ]
