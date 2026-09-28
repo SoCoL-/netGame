@@ -5,6 +5,7 @@ import com.esotericsoftware.kryonet.EndPoint;
 import ru.socol.supreme.shared.network.messages.ArtilleryFireRequest;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
+import ru.socol.supreme.shared.network.messages.BuildingExplosionEvent;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
@@ -96,5 +97,6 @@ public final class NetworkRegistration {
         kryo.register(String[].class);
         // Артиллерия — тоже строго в конец.
         kryo.register(ArtilleryFireRequest.class);
+        kryo.register(BuildingExplosionEvent.class);
     }
 }

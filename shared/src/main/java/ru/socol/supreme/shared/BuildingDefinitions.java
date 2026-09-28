@@ -171,6 +171,16 @@ public final class BuildingDefinitions {
         return DEFINITIONS.get(type).electricityCost;
     }
 
+    /** Урон взрыва при разрушении здания этого типа; 0 — не взрывается (все, кроме электростанции). */
+    public static int destructionBlastDamageFor(BuildingType type) {
+        return DEFINITIONS.get(type).destructionBlastDamage;
+    }
+
+    /** Радиус взрыва при разрушении, от центра здания. */
+    public static float destructionBlastRadiusFor(BuildingType type) {
+        return DEFINITIONS.get(type).destructionBlastRadius;
+    }
+
     /** Дальность стрельбы артиллерии; 0 у всех остальных зданий. */
     public static float artilleryRangeFor(BuildingType type) {
         return DEFINITIONS.get(type).artilleryRange;
@@ -292,6 +302,10 @@ public final class BuildingDefinitions {
         powerPlant.resourceType = ResourceType.ELECTRICITY;
         powerPlant.extractionRate = 150f;
         powerPlant.electricityCost = 50;
+        // Взрыв при разрушении: 500 урона зданиям, которые ближе чем на половину
+        // "радиуса" станции (50 / 2 = 25) от её стен — радиус от центра 50 + 25.
+        powerPlant.destructionBlastDamage = 500;
+        powerPlant.destructionBlastRadius = 75f;
         definitions.put(BuildingType.POWER_PLANT, powerPlant);
 
         BuildingDefinition ironStorage = new BuildingDefinition();

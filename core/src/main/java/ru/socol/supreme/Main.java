@@ -4,6 +4,7 @@ import com.badlogic.gdx.Game;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Screen;
 import ru.socol.supreme.network.GameClient;
+import ru.socol.supreme.shared.network.messages.BuildingExplosionEvent;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.GameStartedMessage;
@@ -192,6 +193,15 @@ public class Main extends Game implements GameClient.GameClientListener {
         Gdx.app.postRunnable(() -> {
             if (getScreen() instanceof GameScreen) {
                 ((GameScreen) getScreen()).onProjectileFired(event);
+            }
+        });
+    }
+
+    @Override
+    public void onBuildingExplosion(BuildingExplosionEvent event) {
+        Gdx.app.postRunnable(() -> {
+            if (getScreen() instanceof GameScreen) {
+                ((GameScreen) getScreen()).onBuildingExplosion(event);
             }
         });
     }

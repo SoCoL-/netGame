@@ -40,6 +40,7 @@ import ru.socol.supreme.shared.components.WreckComponent;
 import ru.socol.supreme.shared.network.messages.ArtilleryFireRequest;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
+import ru.socol.supreme.shared.network.messages.BuildingExplosionEvent;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
@@ -261,7 +262,7 @@ public class GameServer {
         SpatialHashGrid collisionGrid = new SpatialHashGrid(BuildingDefinitions.maxInteractionRadius());
 
         engine.addSystem(new AggroSystem(unitsById, aggroGrid));
-        engine.addSystem(new CombatSystem(unitsById, this::handleShotFired, this::spawnWreck, this::spawnBuildingRubble,
+        engine.addSystem(new CombatSystem(unitsById, this::handleShotFired, this::spawnWreck, this::handleBuildingDestroyed,
                 pathfinding));
         engine.addSystem(new TurretAimSystem(unitsById));
         engine.addSystem(new BuildSystem(unitsById, resourcesByPlayer, pathfinding));
@@ -269,7 +270,7 @@ public class GameServer {
         engine.addSystem(new ScavengeSystem(unitsById, resourcesByPlayer, pathfinding));
         engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit, pathfinding));
         artillerySystem = new ArtillerySystem(unitsById, resourcesByPlayer, pathfinding,
-                this::spawnWreck, this::spawnBuildingRubble, this::handleShellLaunched);
+                this::spawnWreck, this::handleBuildingDestroyed, this::handleShellLaunched);
         engine.addSystem(artillerySystem);
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
@@ -1465,6 +1466,25 @@ public class GameServer {
         engine.addEntity(wreck);
         unitsById.put(unitId, wreck);
         pathfinding.addBuildingObstacle(unitId, x, y, BuildingType.WRECK);
+    }
+
+    /**
+     * Здание погибло от урона (бой, снаряд артиллерии, взрыв соседней
+     * электростанции) — CombatSystem.BuildingDestroyedListener. Оставляет
+     * именные обломки и, если это взрывающееся здание (электростанция),
+     * рассылает клиентам картинку взрыва — сам урон от него применяет
+     * EntityDestruction. Добровольный снос сюда не попадает (см.
+     * handleDemolishBuilding) — снесённая электростанция не взрывается.
+     */
+    private void handleBuildingDestroyed(BuildingType destroyedType, float x, float y) {
+        spawnBuildingRubble(destroyedType, x, y);
+        if (BuildingDefinitions.destructionBlastDamageFor(destroyedType) > 0) {
+            BuildingExplosionEvent event = new BuildingExplosionEvent();
+            event.x = x;
+            event.y = y;
+            event.radius = BuildingDefinitions.destructionBlastRadiusFor(destroyedType);
+            broadcastToSession(event);
+        }
     }
 
     /**

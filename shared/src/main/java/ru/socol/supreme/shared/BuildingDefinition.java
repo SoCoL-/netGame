@@ -93,6 +93,17 @@ public class BuildingDefinition {
     public int ironCost;
     public int electricityCost;
 
+    /**
+     * Взрыв при разрушении (сейчас только у POWER_PLANT, у остальных 0):
+     * когда здание погибает от урона — в бою или от снаряда артиллерии, но
+     * не при добровольном сносе, — все здания (свои и чужие, кроме
+     * обломков), до ближайшей точки которых от его центра не дальше
+     * destructionBlastRadius, получают destructionBlastDamage урона.
+     * Погибшая от взрыва электростанция взрывается сама — цепная реакция.
+     */
+    public int destructionBlastDamage;
+    public float destructionBlastRadius;
+
     // ---- Только для ARTILLERY (у остальных 0) ----
     //
     // Потребление электричества у артиллерии — через те же общие поля, что

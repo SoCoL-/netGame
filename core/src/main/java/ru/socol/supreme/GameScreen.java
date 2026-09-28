@@ -51,6 +51,7 @@ import ru.socol.supreme.shared.network.messages.FogSnapshot;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.PatrolPoint;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
+import ru.socol.supreme.shared.network.messages.BuildingExplosionEvent;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueuedOrderPoint;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
@@ -431,14 +432,17 @@ public class GameScreen extends InputAdapter implements Screen {
         }
     }
 
+    /** Взрыв — упавшего снаряда артиллерии или разрушенной электростанции: кольцо, расширяющееся до radius. */
     private static final class ArtilleryExplosionVisual {
         final float x;
         final float y;
+        final float radius;
         float elapsed;
 
-        ArtilleryExplosionVisual(float x, float y) {
+        ArtilleryExplosionVisual(float x, float y, float radius) {
             this.x = x;
             this.y = y;
+            this.radius = radius;
         }
     }
 
@@ -646,6 +650,11 @@ public class GameScreen extends InputAdapter implements Screen {
             font.setColor(Color.RED);
         }
         dragging = false;
+    }
+
+    /** Разрушенная электростанция взорвалась — см. BuildingExplosionEvent. Рисуется тем же кольцом, что и взрыв снаряда. */
+    public void onBuildingExplosion(BuildingExplosionEvent event) {
+        activeExplosions.add(new ArtilleryExplosionVisual(event.x, event.y, event.radius));
     }
 
     public void onProjectileFired(ProjectileFiredEvent event) {
@@ -1146,7 +1155,8 @@ public class GameScreen extends InputAdapter implements Screen {
             shell.elapsed += delta;
             if (shell.elapsed >= shell.duration) {
                 shells.remove();
-                activeExplosions.add(new ArtilleryExplosionVisual(shell.toX, shell.toY));
+                activeExplosions.add(new ArtilleryExplosionVisual(shell.toX, shell.toY,
+                        BuildingDefinitions.shellSplashRadiusFor(BuildingType.ARTILLERY)));
             }
         }
         Iterator<ArtilleryExplosionVisual> explosions = activeExplosions.iterator();
@@ -1182,12 +1192,11 @@ public class GameScreen extends InputAdapter implements Screen {
         if (activeExplosions.isEmpty()) {
             return;
         }
-        float splashRadius = BuildingDefinitions.shellSplashRadiusFor(BuildingType.ARTILLERY);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
         shapeRenderer.setColor(ARTILLERY_EXPLOSION_COLOR);
         for (ArtilleryExplosionVisual explosion : activeExplosions) {
             float t = MathUtils.clamp(explosion.elapsed / ARTILLERY_EXPLOSION_DURATION, 0f, 1f);
-            float radius = splashRadius * (0.3f + 0.7f * t);
+            float radius = explosion.radius * (0.3f + 0.7f * t);
             shapeRenderer.circle(explosion.x, explosion.y, radius, 48);
             shapeRenderer.circle(explosion.x, explosion.y, radius * 0.6f, 32);
         }

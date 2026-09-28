@@ -11,6 +11,7 @@ import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.network.NetworkRegistration;
 import ru.socol.supreme.shared.network.messages.ArtilleryFireRequest;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
+import ru.socol.supreme.shared.network.messages.BuildingExplosionEvent;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
 import ru.socol.supreme.shared.network.messages.CreateLobbyRequest;
@@ -85,6 +86,9 @@ public class GameClient implements Disposable {
         /** Чисто косметическое: дальнобойный юнит выстрелил (см. javadoc ProjectileFiredEvent, кто именно) — нарисовать летящий снаряд. Урон уже применён на сервере. */
         void onProjectileFired(ProjectileFiredEvent event);
 
+        /** Чисто косметическое: разрушенное здание (электростанция) взорвалось — нарисовать взрыв. Урон уже применён на сервере. */
+        void onBuildingExplosion(BuildingExplosionEvent event);
+
         /** Не удалось подключиться (таймаут/сеть/сервер недоступен) — сообщение для отображения игроку. */
         void onConnectFailed(String message);
     }
@@ -142,6 +146,10 @@ public class GameClient implements Disposable {
                 } else if (object instanceof ProjectileFiredEvent) {
                     if (GameClient.this.listener != null) {
                         GameClient.this.listener.onProjectileFired((ProjectileFiredEvent) object);
+                    }
+                } else if (object instanceof BuildingExplosionEvent) {
+                    if (GameClient.this.listener != null) {
+                        GameClient.this.listener.onBuildingExplosion((BuildingExplosionEvent) object);
                     }
                 }
             }
