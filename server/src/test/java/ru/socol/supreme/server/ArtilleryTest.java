@@ -344,6 +344,8 @@ class ArtilleryTest {
 
         game.tick(0.01f);
         assertEquals(1, player0.sentOf(ProjectileFiredEvent.class).size(), "первый выстрел сразу");
+        assertEquals(cooldown, unitById(towerId).artilleryCooldownRemaining, 0.05f,
+                "клиент получает оставшееся время перезарядки — для индикатора");
 
         tickFor(cooldown - 0.2f);
         assertEquals(1, player0.sentOf(ProjectileFiredEvent.class).size(), "второй ждёт перезарядку");

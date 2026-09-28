@@ -63,6 +63,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -412,6 +413,11 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float ARTILLERY_SHELL_RADIUS = 7f;
     private static final float ARTILLERY_EXPLOSION_DURATION = 0.6f;
     private static final float ARTILLERY_TARGET_MARKER_SIZE = 14f;
+    // Полоска перезарядки в панели артиллерии — справа от "Shells: N/10", на той же строке.
+    private static final float RELOAD_BAR_X = ACTION_BUTTON_X + 170f;
+    private static final float RELOAD_BAR_Y = ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 17f;
+    private static final float RELOAD_BAR_WIDTH = 160f;
+    private static final float RELOAD_BAR_HEIGHT = 10f;
     private final List<ArtilleryShellVisual> activeShells = new ArrayList<>();
     private final List<ArtilleryExplosionVisual> activeExplosions = new ArrayList<>();
 
@@ -1813,6 +1819,17 @@ public class GameScreen extends InputAdapter implements Screen {
             shapeRenderer.rect(actionButtonX(i), ACTION_BUTTON_Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT);
         }
 
+        if (artillery != null) {
+            // Перезарядка — полоска рядом с "Shells: N/10", заполняется за
+            // shotCooldown: полная (зелёная) — башня готова стрелять.
+            float cooldown = BuildingDefinitions.shotCooldownFor(buildingType);
+            float reloaded = cooldown > 0f ? MathUtils.clamp(1f - artillery.cooldownRemaining / cooldown, 0f, 1f) : 1f;
+            shapeRenderer.setColor(Color.DARK_GRAY);
+            shapeRenderer.rect(RELOAD_BAR_X, RELOAD_BAR_Y, RELOAD_BAR_WIDTH, RELOAD_BAR_HEIGHT);
+            shapeRenderer.setColor(reloaded >= 1f ? Color.GREEN : Color.GOLD);
+            shapeRenderer.rect(RELOAD_BAR_X, RELOAD_BAR_Y, RELOAD_BAR_WIDTH * reloaded, RELOAD_BAR_HEIGHT);
+        }
+
         if (artillery != null && artillery.shells < BuildingDefinitions.shellCapacityFor(buildingType)) {
             float fraction = MathUtils.clamp(artillery.shellProgress / BuildingDefinitions.shellBuildTimeFor(buildingType), 0f, 1f);
             shapeRenderer.setColor(Color.DARK_GRAY);
@@ -1861,6 +1878,11 @@ public class GameScreen extends InputAdapter implements Screen {
             String pending = artillery.pendingTargets.isEmpty() ? "" : ", queued: " + artillery.pendingTargets.size();
             uiFont.draw(spriteBatch, "RMB on map: fire (" + BuildingDefinitions.shotElectricityCostFor(buildingType)
                     + " electricity per shot" + pending + ")", ACTION_BUTTON_X, ACTION_BUTTON_Y + 10f);
+            String reloadStatus = artillery.cooldownRemaining > 0f
+                    ? String.format(Locale.ROOT, "Reloading %.1fs", artillery.cooldownRemaining)
+                    : "Ready";
+            uiFont.draw(spriteBatch, reloadStatus, RELOAD_BAR_X + RELOAD_BAR_WIDTH + 12f,
+                    ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 4f);
             String shellStatus = artillery.shells >= capacity ? "Full" : "Next shell";
             uiFont.draw(spriteBatch, shellStatus, PROGRESS_BAR_X + PROGRESS_BAR_WIDTH + 20f, PROGRESS_BAR_Y + 11f);
         }

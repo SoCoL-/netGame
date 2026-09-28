@@ -2128,6 +2128,7 @@ public class GameServer {
             if (artilleryState != null) {
                 unitSnapshot.artilleryShells = artilleryState.shells;
                 unitSnapshot.artilleryShellProgress = artilleryState.shellProgress;
+                unitSnapshot.artilleryCooldownRemaining = artilleryState.cooldownRemaining;
                 // Угол ствола — в те же поля, что и у башни турели/техники:
                 // клиент рисует его через тот же TurretDisplayComponent.
                 unitSnapshot.turretDirX = MathUtils.cos(artilleryState.barrelAngle);
