@@ -134,6 +134,7 @@ public class RenderSystem extends IteratingSystem {
     // цвет игрока 1 соответственно), маркер на его фоне был бы почти
     // невидим.
     private static final Color AIRCRAFT_FACTORY_MARKER_COLOR = Color.CYAN;
+    private static final Color ARTILLERY_MARKER_COLOR = Color.valueOf("37474F");
     private static final Color UNDER_CONSTRUCTION_COLOR = Color.GRAY;
     /** Обломки на суше — тускло-ржавый, чтобы не путались ни с одним цветом игрока (SKY/ORANGE) и не выглядели как здание. */
     private static final Color WRECK_COLOR = Color.valueOf("6B5B4B");
@@ -492,6 +493,9 @@ public class RenderSystem extends IteratingSystem {
             case AIRCRAFT_FACTORY:
                 drawWaveMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
                 break;
+            case ARTILLERY:
+                drawArtilleryMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
+                break;
             case HOME:
             default:
                 drawStar(position.position.x, position.position.y, Math.min(halfWidth, halfHeight) * 0.6f);
@@ -594,6 +598,29 @@ public class RenderSystem extends IteratingSystem {
      * как гладкая волна. Один полный период (сначала вверх, потом вниз) —
      * силуэтом похоже на "~".
      */
+    /**
+     * Артиллерия — круглое основание и длинный толстый ствол. Ствол смотрит
+     * к центру карты, то есть в сторону противника (базы стоят в
+     * противоположных углах): реальный угол последнего выстрела сервер не
+     * шлёт, а для узнаваемости силуэта его и не нужно.
+     */
+    private void drawArtilleryMarker(float cx, float cy, float halfSize) {
+        float dx = GameConstants.MAP_WIDTH / 2f - cx;
+        float dy = GameConstants.MAP_HEIGHT / 2f - cy;
+        float length = (float) Math.sqrt(dx * dx + dy * dy);
+        if (length < 0.0001f) {
+            dx = 1f;
+            dy = 0f;
+        } else {
+            dx /= length;
+            dy /= length;
+        }
+        setColor(ARTILLERY_MARKER_COLOR);
+        shapeRenderer.circle(cx, cy, halfSize * 0.55f);
+        float barrelLength = halfSize * 1.3f;
+        shapeRenderer.rectLine(cx, cy, cx + dx * barrelLength, cy + dy * barrelLength, halfSize * 0.22f);
+    }
+
     private void drawWaveMarker(float cx, float cy, float halfSize) {
         float amplitude = halfSize * 0.35f;
         float width = halfSize * 1.6f;

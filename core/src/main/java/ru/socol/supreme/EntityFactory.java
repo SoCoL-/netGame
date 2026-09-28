@@ -14,6 +14,7 @@ import ru.socol.supreme.components.InterpolationComponent;
 import ru.socol.supreme.components.OrderQueueDisplayComponent;
 import ru.socol.supreme.components.PatrolDisplayComponent;
 import ru.socol.supreme.components.TurretDisplayComponent;
+import ru.socol.supreme.shared.components.ArtilleryComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
@@ -94,6 +95,7 @@ public class EntityFactory {
 
             if (snapshot.building) {
                 updateBuildingConstructionState(entity, snapshot);
+                updateArtillery(entity, snapshot);
             } else {
                 updateBuildBeam(entity, snapshot);
             }
@@ -196,6 +198,7 @@ public class EntityFactory {
             BuildingType type = BuildingType.values()[snapshot.buildingType];
             entity.add(new BuildingComponent(type));
             addBuildingBehaviorComponent(entity, type, snapshot);
+            updateArtillery(entity, snapshot);
 
             // Только у турели среди зданий есть башня, доворачивающаяся на
             // цель (сервер шлёт её угол в snapshot.turretDirX/Y для любой
@@ -307,6 +310,28 @@ public class EntityFactory {
         if (resourceType != null) {
             entity.add(new ResourceExtractorComponent(resourceType));
         }
+    }
+
+    /**
+     * Запас снарядов артиллерийской башни — только для панели здания.
+     * artilleryShells == -1 — у сущности артиллерии нет (не башня или ещё
+     * строится); как только сервер начнёт присылать число, компонент
+     * появляется, и башня на клиенте становится "готовой к стрельбе".
+     */
+    private void updateArtillery(Entity entity, UnitSnapshot snapshot) {
+        ArtilleryComponent artillery = entity.getComponent(ArtilleryComponent.class);
+        if (snapshot.artilleryShells < 0) {
+            if (artillery != null) {
+                entity.remove(ArtilleryComponent.class);
+            }
+            return;
+        }
+        if (artillery == null) {
+            artillery = new ArtilleryComponent();
+            entity.add(artillery);
+        }
+        artillery.shells = snapshot.artilleryShells;
+        artillery.shellProgress = snapshot.artilleryShellProgress;
     }
 
     /** Добавляет/обновляет/снимает BuildBeamComponent по snapshot.buildTargetUnitId — актуально только для юнитов, только для строителей, которые СЕЙЧАС реально строят (не просто идут к цели). */

@@ -2,6 +2,7 @@ package ru.socol.supreme.server;
 
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
+import ru.socol.supreme.shared.network.messages.ArtilleryFireRequest;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
@@ -115,6 +116,11 @@ public class ServerNetworkListener extends Listener {
             GameServer session = lobbyManager.sessionFor(connection);
             if (session != null) {
                 session.handlePatrolUnit(connection, (PatrolUnitRequest) object);
+            }
+        } else if (object instanceof ArtilleryFireRequest) {
+            GameServer session = lobbyManager.sessionFor(connection);
+            if (session != null) {
+                session.handleArtilleryFire(connection, (ArtilleryFireRequest) object);
             }
         }
     }

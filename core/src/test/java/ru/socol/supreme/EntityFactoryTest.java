@@ -10,6 +10,7 @@ import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitType;
+import ru.socol.supreme.shared.components.ArtilleryComponent;
 import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
@@ -251,5 +252,24 @@ class EntityFactoryTest {
         factory.applySnapshot(List.of(idleAgain));
         assertNull(factory.getEntity(40).getComponent(BuildBeamComponent.class),
                 "луч стройки должен сняться, когда строитель перестал строить");
+    }
+
+    @Test
+    void artilleryShellsAppearWhenTowerIsReadyAndFollowSnapshots() {
+        UnitSnapshot underConstruction = buildingSnapshot(50, BuildingType.ARTILLERY, 1500f, 1500f);
+        underConstruction.underConstruction = true;
+        factory.applySnapshot(List.of(underConstruction));
+        assertNull(factory.getEntity(50).getComponent(ArtilleryComponent.class),
+                "у строящейся башни (artilleryShells == -1) запаса снарядов нет");
+
+        UnitSnapshot ready = buildingSnapshot(50, BuildingType.ARTILLERY, 1500f, 1500f);
+        ready.artilleryShells = 3;
+        ready.artilleryShellProgress = 2.5f;
+        factory.applySnapshot(List.of(ready));
+
+        ArtilleryComponent artillery = factory.getEntity(50).getComponent(ArtilleryComponent.class);
+        assertNotNull(artillery);
+        assertEquals(3, artillery.shells);
+        assertEquals(2.5f, artillery.shellProgress);
     }
 }

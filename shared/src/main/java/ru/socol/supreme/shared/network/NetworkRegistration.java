@@ -2,6 +2,7 @@ package ru.socol.supreme.shared.network;
 
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryonet.EndPoint;
+import ru.socol.supreme.shared.network.messages.ArtilleryFireRequest;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
@@ -93,5 +94,7 @@ public final class NetworkRegistration {
         // int[]/boolean[] выше регистрируем явно, не полагаясь на
         // неявную поддержку Kryo для массивов.
         kryo.register(String[].class);
+        // Артиллерия — тоже строго в конец.
+        kryo.register(ArtilleryFireRequest.class);
     }
 }

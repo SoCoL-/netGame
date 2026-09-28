@@ -12,7 +12,6 @@ import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.AttackComponent;
-import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -302,33 +301,8 @@ public class CombatSystem extends IteratingSystem {
         }
 
         if (targetHealth.currentHealth <= 0) {
-            BuildingComponent targetBuilding = target.getComponent(BuildingComponent.class);
-            // Обычные обломки юнита — только для настоящих юнитов, не для
-            // зданий (у зданий теперь свои, именные — см. ветку ниже) — и,
-            // разумеется, не для самих обломков (WreckComponent), если их
-            // вдруг умудрились "добить" боем, хотя по-хорошему их здоровье
-            // должна трогать только ScavengeSystem: тут её не видно, потому
-            // что targetBuilding != null уже отсеивает любую сущность с
-            // BuildingComponent, а обломки — это именно такая сущность.
-            if (targetBuilding == null && unitDestroyedListener != null && targetTypeComponent != null) {
-                unitDestroyedListener.onUnitDestroyed(targetTypeComponent.type,
-                        targetPosition.position.x, targetPosition.position.y);
-            } else if (targetBuilding != null && targetBuilding.type != BuildingType.WRECK
-                    && buildingDestroyedListener != null) {
-                // Настоящее здание (не сами обломки) погибло в бою —
-                // GameServer.spawnBuildingRubble оставляет на его месте
-                // именные обломки (второй, не связанный с боем триггер того
-                // же метода — добровольный снос, см. GameServer
-                // .handleDemolishBuilding).
-                buildingDestroyedListener.onBuildingDestroyed(targetBuilding.type,
-                        targetPosition.position.x, targetPosition.position.y);
-            }
-
-            engine.removeEntity(target);
-            unitsById.remove(attack.targetUnitId);
-            if (targetBuilding != null) {
-                pathfinding.removeBuildingObstacle(attack.targetUnitId);
-            }
+            EntityDestruction.destroy(engine, unitsById, pathfinding, target, attack.targetUnitId,
+                    unitDestroyedListener, buildingDestroyedListener);
             attacker.remove(AttackComponent.class);
         }
     }

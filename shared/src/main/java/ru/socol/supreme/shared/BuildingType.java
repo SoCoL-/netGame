@@ -16,6 +16,14 @@ public enum BuildingType {
     ELECTRICITY_STORAGE,
     AIRCRAFT_FACTORY,
     TURRET,
+    /**
+     * Артиллерийская башня — стреляет по точке, указанной игроком (ПКМ при
+     * выделенной башне), на очень большую дальность и в том числе в туман
+     * войны. Сама копит снаряды (см. ArtilleryComponent/ArtillerySystem),
+     * каждый выстрел дополнительно стоит электричества. Параметры — в
+     * buildings.json (artilleryRange, shell* и др. у BuildingDefinition).
+     */
+    ARTILLERY,
 
     /**
      * Обломки погибшего юнита (GameServer.spawnWreck) — не настоящее

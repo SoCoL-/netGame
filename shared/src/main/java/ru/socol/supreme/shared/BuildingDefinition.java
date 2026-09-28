@@ -93,6 +93,34 @@ public class BuildingDefinition {
     public int ironCost;
     public int electricityCost;
 
+    // ---- Только для ARTILLERY (у остальных 0) ----
+    //
+    // Потребление электричества у артиллерии — через те же общие поля, что
+    // и у производящих зданий: activeConsumptionRate — в секунду, пока
+    // внутри башни строится очередной снаряд; idleConsumptionRate — в
+    // секунду на содержание, когда снарядов уже максимум и стройка стоит.
+
+    /** Дальность стрельбы (от центра башни до точки прицеливания). */
+    public float artilleryRange;
+
+    /** Сколько снарядов башня может держать готовыми. Пока их меньше — строит следующий. */
+    public int shellCapacity;
+
+    /** Секунд на постройку одного снаряда. */
+    public float shellBuildTime;
+
+    /** Электричество, списываемое разом в момент выстрела. Нет столько — выстрела нет. */
+    public int shotElectricityCost;
+
+    /** Урон каждой сущности в радиусе взрыва. */
+    public int shellDamage;
+
+    /** Радиус взрыва вокруг точки падения. */
+    public float shellSplashRadius;
+
+    /** Скорость полёта снаряда, единиц карты в секунду — урон наносится в момент падения, а не выстрела. */
+    public float shellSpeed;
+
     public BuildingDefinition() {
         // требуется Json для десериализации
     }

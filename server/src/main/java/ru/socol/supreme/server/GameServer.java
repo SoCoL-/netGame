@@ -16,6 +16,7 @@ import ru.socol.supreme.shared.QueuedOrder;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AircraftComponent;
+import ru.socol.supreme.shared.components.ArtilleryComponent;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.BuildOrderComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
@@ -36,6 +37,7 @@ import ru.socol.supreme.shared.components.TurretComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.components.WreckComponent;
+import ru.socol.supreme.shared.network.messages.ArtilleryFireRequest;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
@@ -60,6 +62,7 @@ import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 import ru.socol.supreme.shared.systems.AggroSystem;
+import ru.socol.supreme.shared.systems.ArtillerySystem;
 import ru.socol.supreme.shared.systems.AircraftMovementSystem;
 import ru.socol.supreme.shared.systems.BuildSystem;
 import ru.socol.supreme.shared.systems.CollisionSystem;
@@ -128,6 +131,9 @@ public class GameServer {
      * одном сервере не должны видеть здания друг друга.
      */
     private final Pathfinding pathfinding = new Pathfinding();
+
+    /** Стройка снарядов и полёт выпущенных — нужна напрямую, чтобы выпускать снаряды из handleArtilleryFire. */
+    private final ArtillerySystem artillerySystem;
 
     /**
      * connections[playerId] — соединение игрока этого матча, playerId
@@ -261,6 +267,9 @@ public class GameServer {
         engine.addSystem(new RepairSystem(unitsById, resourcesByPlayer, pathfinding));
         engine.addSystem(new ScavengeSystem(unitsById, resourcesByPlayer, pathfinding));
         engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit, pathfinding));
+        artillerySystem = new ArtillerySystem(unitsById, resourcesByPlayer, pathfinding,
+                this::spawnWreck, this::spawnBuildingRubble);
+        engine.addSystem(artillerySystem);
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
         engine.addSystem(new MovementSystem());
@@ -1813,6 +1822,88 @@ public class GameServer {
         }
     }
 
+    /**
+     * Выстрел артиллерийской башни в указанную игроком точку. Видимость
+     * точки не проверяется — стрелять можно и в неисследованную часть карты.
+     * Нужны: своя достроенная башня (есть ArtilleryComponent), точка в
+     * пределах artilleryRange, хотя бы один готовый снаряд и
+     * shotElectricityCost электричества — всё это списывается сразу, а урон
+     * наносит ArtillerySystem при падении снаряда. При отказе игрок
+     * получает ErrorResponse (кроме явно чужих/невалидных запросов, которые
+     * молча игнорируются, как и везде).
+     */
+    synchronized void handleArtilleryFire(Connection connection, ArtilleryFireRequest request) {
+        if (gameOver) {
+            return;
+        }
+
+        Integer playerId = connectionToPlayer.get(connection.getID());
+        if (playerId == null) {
+            return;
+        }
+
+        Entity building = unitsById.get(request.buildingUnitId);
+        if (building == null) {
+            return;
+        }
+        OwnerComponent owner = building.getComponent(OwnerComponent.class);
+        if (owner == null || owner.playerId != playerId) {
+            return; // не ваша башня
+        }
+        BuildingComponent buildingMarker = building.getComponent(BuildingComponent.class);
+        if (buildingMarker == null || buildingMarker.type != BuildingType.ARTILLERY) {
+            return;
+        }
+        ArtilleryComponent artillery = building.getComponent(ArtilleryComponent.class);
+        if (artillery == null) {
+            connection.sendTCP(new ErrorResponse("Artillery is still under construction"));
+            return;
+        }
+
+        float targetX = clamp(request.x, 0f, GameConstants.MAP_WIDTH);
+        float targetY = clamp(request.y, 0f, GameConstants.MAP_HEIGHT);
+        PositionComponent position = building.getComponent(PositionComponent.class);
+        float range = BuildingDefinitions.artilleryRangeFor(BuildingType.ARTILLERY);
+        if (position.position.dst2(targetX, targetY) > range * range) {
+            connection.sendTCP(new ErrorResponse("Target is out of artillery range"));
+            return;
+        }
+        if (artillery.shells <= 0) {
+            connection.sendTCP(new ErrorResponse("No artillery shells ready"));
+            return;
+        }
+        PlayerResources resources = resourcesByPlayer.get(playerId);
+        int shotCost = BuildingDefinitions.shotElectricityCostFor(BuildingType.ARTILLERY);
+        if (resources == null || resources.electricity < shotCost - GameConstants.RESOURCE_EPSILON) {
+            connection.sendTCP(new ErrorResponse("Not enough electricity to fire (" + shotCost + " needed)"));
+            return;
+        }
+
+        resources.electricity = Math.max(0f, resources.electricity - shotCost);
+        artillery.shells--;
+        float flightTime = artillerySystem.launch(BuildingType.ARTILLERY,
+                position.position.x, position.position.y, targetX, targetY);
+
+        ProjectileFiredEvent event = new ProjectileFiredEvent();
+        event.fromX = position.position.x;
+        event.fromY = position.position.y;
+        event.toX = targetX;
+        event.toY = targetY;
+        event.artillery = true;
+        event.flightTime = flightTime;
+        broadcastToSession(event);
+    }
+
+    /** Живое (не копия) состояние ресурсов игрока — только для тестов, чтобы выставить нужный запас. */
+    synchronized PlayerResources resourcesOf(int playerId) {
+        return resourcesByPlayer.get(playerId);
+    }
+
+    /** Снарядов артиллерии в полёте — только для тестов. */
+    int artilleryShellsInFlight() {
+        return artillerySystem.shellsInFlightCount();
+    }
+
     // ---- Визуальный эффект полёта снаряда (см. CombatSystem.ShotFiredListener) ----
 
     private void handleShotFired(UnitType attackerType, float fromX, float fromY, float toX, float toY) {
@@ -2002,6 +2093,12 @@ public class GameServer {
                 unitSnapshot.hasRallyPoint = production.hasRallyPoint;
                 unitSnapshot.rallyX = production.rallyX;
                 unitSnapshot.rallyY = production.rallyY;
+            }
+
+            ArtilleryComponent artilleryState = unit.getComponent(ArtilleryComponent.class);
+            if (artilleryState != null) {
+                unitSnapshot.artilleryShells = artilleryState.shells;
+                unitSnapshot.artilleryShellProgress = artilleryState.shellProgress;
             }
 
             ConstructionComponent construction = unit.getComponent(ConstructionComponent.class);

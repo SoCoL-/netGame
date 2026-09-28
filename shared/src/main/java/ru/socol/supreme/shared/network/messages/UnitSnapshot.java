@@ -99,6 +99,12 @@ public class UnitSnapshot {
      */
     public int rubbleOriginalBuildingType = -1;
 
+    /** Готовых снарядов у достроенной артиллерийской башни (ArtilleryComponent). -1 — у сущности нет артиллерии. */
+    public int artilleryShells = -1;
+
+    /** Секунд прошло с начала постройки следующего снаряда (ArtilleryComponent.shellProgress). */
+    public float artilleryShellProgress;
+
     /**
      * Точки оставшегося маршрута (текущая цель direction.target + все
      * оставшиеся waypoints из PathComponent, если юнит обходит препятствие)

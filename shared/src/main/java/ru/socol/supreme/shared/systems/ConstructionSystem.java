@@ -8,6 +8,7 @@ import com.badlogic.ashley.systems.IteratingSystem;
 import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.ResourceType;
+import ru.socol.supreme.shared.components.ArtilleryComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
@@ -75,6 +76,11 @@ public class ConstructionSystem extends IteratingSystem {
         if (BuildingDefinitions.producesUnitTypesFor(buildingType).length > 0) {
             ProductionComponent production = engine.createComponent(ProductionComponent.class);
             entity.add(production);
+        }
+
+        // Артиллерия начинает строить снаряды (и стрелять) только достроенной.
+        if (BuildingDefinitions.shellCapacityFor(buildingType) > 0) {
+            entity.add(engine.createComponent(ArtilleryComponent.class));
         }
     }
 }

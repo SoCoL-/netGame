@@ -18,6 +18,17 @@ public class ProjectileFiredEvent {
     public float toX;
     public float toY;
 
+    /**
+     * true — это снаряд артиллерии (BuildingType.ARTILLERY), а не хитскан:
+     * урон наносится при падении, через flightTime секунд, поэтому клиент
+     * рисует его медленным снарядом ровно на это время и взрыв в точке
+     * падения.
+     */
+    public boolean artillery;
+
+    /** Только для artillery — секунд до падения. */
+    public float flightTime;
+
     public ProjectileFiredEvent() {
     }
 }

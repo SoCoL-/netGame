@@ -171,6 +171,36 @@ public final class BuildingDefinitions {
         return DEFINITIONS.get(type).electricityCost;
     }
 
+    /** Дальность стрельбы артиллерии; 0 у всех остальных зданий. */
+    public static float artilleryRangeFor(BuildingType type) {
+        return DEFINITIONS.get(type).artilleryRange;
+    }
+
+    /** Сколько готовых снарядов может держать артиллерия; 0 у всех остальных зданий. */
+    public static int shellCapacityFor(BuildingType type) {
+        return DEFINITIONS.get(type).shellCapacity;
+    }
+
+    public static float shellBuildTimeFor(BuildingType type) {
+        return DEFINITIONS.get(type).shellBuildTime;
+    }
+
+    public static int shotElectricityCostFor(BuildingType type) {
+        return DEFINITIONS.get(type).shotElectricityCost;
+    }
+
+    public static int shellDamageFor(BuildingType type) {
+        return DEFINITIONS.get(type).shellDamage;
+    }
+
+    public static float shellSplashRadiusFor(BuildingType type) {
+        return DEFINITIONS.get(type).shellSplashRadius;
+    }
+
+    public static float shellSpeedFor(BuildingType type) {
+        return DEFINITIONS.get(type).shellSpeed;
+    }
+
     private static Map<BuildingType, BuildingDefinition> load() {
         Map<BuildingType, BuildingDefinition> definitions = defaultDefinitions();
 
@@ -295,6 +325,31 @@ public final class BuildingDefinitions {
         turret.buildTime = 10f;
         turret.ironCost = 100;
         definitions.put(BuildingType.TURRET, turret);
+
+        // Артиллерия: стоимость, здоровье, дальность (1/3 карты), снаряды и
+        // энергия — по постановке задачи; урон, радиус взрыва, скорость
+        // снаряда, размер и время постройки самой башни — значения по
+        // умолчанию, их можно менять в buildings.json.
+        BuildingDefinition artillery = new BuildingDefinition();
+        artillery.type = BuildingType.ARTILLERY;
+        artillery.sightRadius = 420f;
+        artillery.halfWidth = 50f;
+        artillery.halfHeight = 50f;
+        artillery.maxHealth = 200;
+        artillery.buildTime = 20f;
+        artillery.ironCost = 1000;
+        artillery.electricityCost = 1500;
+        artillery.consumesResourceType = ResourceType.ELECTRICITY;
+        artillery.activeConsumptionRate = 10f;
+        artillery.idleConsumptionRate = 5f;
+        artillery.artilleryRange = GameConstants.MAP_WIDTH / 3f;
+        artillery.shellCapacity = 10;
+        artillery.shellBuildTime = 5f;
+        artillery.shotElectricityCost = 200;
+        artillery.shellDamage = 60;
+        artillery.shellSplashRadius = 120f;
+        artillery.shellSpeed = 800f;
+        definitions.put(BuildingType.ARTILLERY, artillery);
 
         // Обломки — не настоящее здание (см. javadoc BuildingType.WRECK),
         // поэтому большинство полей тут не используются вовсе: buildTime/

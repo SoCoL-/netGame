@@ -34,6 +34,7 @@ import ru.socol.supreme.components.SelectedComponent;
 import ru.socol.supreme.network.GameClient;
 import ru.socol.supreme.systems.InterpolationSystem;
 import ru.socol.supreme.systems.RenderSystem;
+import ru.socol.supreme.shared.components.ArtilleryComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.WreckComponent;
@@ -227,6 +228,7 @@ public class GameScreen extends InputAdapter implements Screen {
             BuildingType.ELECTRICITY_STORAGE,
             BuildingType.AIRCRAFT_FACTORY,
             BuildingType.TURRET,
+            BuildingType.ARTILLERY,
     };
     // Пустой массив вместо null — для ещё строящегося (или непроизводящего)
     // здания, см. drawBuildingInfoPanel/touchDown.
@@ -256,7 +258,9 @@ public class GameScreen extends InputAdapter implements Screen {
     // (hudCamera.setToOrtho, HUD_WIDTH — это вся ширина экрана в
     // HUD-координатах, не просто ширина панели) и была бы невидима и
     // некликабельна.
-    private static final float ACTION_BUTTON_WIDTH = 135f;
+    // 116, а не 135, как было: с артиллерией кнопок построек стало восемь,
+    // 8 * (116 + 8) + 15 как раз помещается в HUD_WIDTH (1024).
+    private static final float ACTION_BUTTON_WIDTH = 116f;
     private static final float ACTION_BUTTON_HEIGHT = 42f;
     private static final float ACTION_BUTTON_GAP = 8f;
     private static final float ACTION_BUTTON_X = PANEL_X + 15f;
@@ -394,6 +398,47 @@ public class GameScreen extends InputAdapter implements Screen {
     // FIRE_RATE=4/сек и полёте <1 сек он в любой реалистичной игре остаётся
     // маленьким сам по себе.
     private final List<ArrowVisual> activeArrows = new ArrayList<>();
+
+    // Артиллерия (см. ProjectileFiredEvent.artillery): снаряд летит ровно
+    // flightTime, присланное сервером, — в отличие от стрел, урон наносится
+    // именно в момент падения, так что картинка совпадает с реальным
+    // взрывом. Рисуются ПОСЛЕ тумана войны: игрок должен видеть, куда упал
+    // его снаряд, даже если стрелял в неисследованную область.
+    private static final Color ARTILLERY_SHELL_COLOR = Color.valueOf("FF7043");
+    private static final Color ARTILLERY_EXPLOSION_COLOR = Color.valueOf("FF5722");
+    private static final Color ARTILLERY_RANGE_COLOR = Color.valueOf("FF7043");
+    private static final float ARTILLERY_SHELL_RADIUS = 7f;
+    private static final float ARTILLERY_EXPLOSION_DURATION = 0.6f;
+    private final List<ArtilleryShellVisual> activeShells = new ArrayList<>();
+    private final List<ArtilleryExplosionVisual> activeExplosions = new ArrayList<>();
+
+    private static final class ArtilleryShellVisual {
+        final float fromX;
+        final float fromY;
+        final float toX;
+        final float toY;
+        final float duration;
+        float elapsed;
+
+        ArtilleryShellVisual(float fromX, float fromY, float toX, float toY, float duration) {
+            this.fromX = fromX;
+            this.fromY = fromY;
+            this.toX = toX;
+            this.toY = toY;
+            this.duration = Math.max(0.05f, duration);
+        }
+    }
+
+    private static final class ArtilleryExplosionVisual {
+        final float x;
+        final float y;
+        float elapsed;
+
+        ArtilleryExplosionVisual(float x, float y) {
+            this.x = x;
+            this.y = y;
+        }
+    }
 
     private static final class ArrowVisual {
         final float fromX;
@@ -602,6 +647,10 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     public void onProjectileFired(ProjectileFiredEvent event) {
+        if (event.artillery) {
+            activeShells.add(new ArtilleryShellVisual(event.fromX, event.fromY, event.toX, event.toY, event.flightTime));
+            return;
+        }
         float dx = event.toX - event.fromX;
         float dy = event.toY - event.fromY;
         float length = (float) Math.sqrt(dx * dx + dy * dy);
@@ -850,6 +899,9 @@ public class GameScreen extends InputAdapter implements Screen {
         // область) — раньше обе рисовались ДО тумана и потому частично
         // прятались под его серой плашкой.
         drawRallyPoints();
+        drawArtilleryRange();
+        updateArtilleryVisuals(delta);
+        drawArtilleryVisuals();
         drawOrderQueue();
         drawPatrolRoute();
         if (debugMode) {
@@ -991,6 +1043,8 @@ public class GameScreen extends InputAdapter implements Screen {
                 return "Aircraft Factory";
             case TURRET:
                 return "Turret";
+            case ARTILLERY:
+                return "Artillery";
             case WRECK:
                 return "Wreck";
             default:
@@ -1080,6 +1134,89 @@ public class GameScreen extends InputAdapter implements Screen {
         }
 
         shapeRenderer.end();
+    }
+
+    /** Двигает летящие снаряды артиллерии; долетевший превращается во взрыв в точке падения. */
+    private void updateArtilleryVisuals(float delta) {
+        Iterator<ArtilleryShellVisual> shells = activeShells.iterator();
+        while (shells.hasNext()) {
+            ArtilleryShellVisual shell = shells.next();
+            shell.elapsed += delta;
+            if (shell.elapsed >= shell.duration) {
+                shells.remove();
+                activeExplosions.add(new ArtilleryExplosionVisual(shell.toX, shell.toY));
+            }
+        }
+        Iterator<ArtilleryExplosionVisual> explosions = activeExplosions.iterator();
+        while (explosions.hasNext()) {
+            ArtilleryExplosionVisual explosion = explosions.next();
+            explosion.elapsed += delta;
+            if (explosion.elapsed >= ARTILLERY_EXPLOSION_DURATION) {
+                explosions.remove();
+            }
+        }
+    }
+
+    /**
+     * Снаряд — кружок, который летит по прямой и "поднимается" к середине
+     * пути (растёт в размере), изображая навесную траекторию; взрыв —
+     * расширяющееся до радиуса поражения кольцо.
+     */
+    private void drawArtilleryVisuals() {
+        if (activeShells.isEmpty() && activeExplosions.isEmpty()) {
+            return;
+        }
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(ARTILLERY_SHELL_COLOR);
+        for (ArtilleryShellVisual shell : activeShells) {
+            float t = MathUtils.clamp(shell.elapsed / shell.duration, 0f, 1f);
+            float x = MathUtils.lerp(shell.fromX, shell.toX, t);
+            float y = MathUtils.lerp(shell.fromY, shell.toY, t);
+            float arc = MathUtils.sin(t * MathUtils.PI); // 0 на концах, 1 в середине полёта
+            shapeRenderer.circle(x, y, ARTILLERY_SHELL_RADIUS * (1f + arc));
+        }
+        shapeRenderer.end();
+
+        if (activeExplosions.isEmpty()) {
+            return;
+        }
+        float splashRadius = BuildingDefinitions.shellSplashRadiusFor(BuildingType.ARTILLERY);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        shapeRenderer.setColor(ARTILLERY_EXPLOSION_COLOR);
+        for (ArtilleryExplosionVisual explosion : activeExplosions) {
+            float t = MathUtils.clamp(explosion.elapsed / ARTILLERY_EXPLOSION_DURATION, 0f, 1f);
+            float radius = splashRadius * (0.3f + 0.7f * t);
+            shapeRenderer.circle(explosion.x, explosion.y, radius, 48);
+            shapeRenderer.circle(explosion.x, explosion.y, radius * 0.6f, 32);
+        }
+        shapeRenderer.end();
+    }
+
+    /** Круг дальности стрельбы выделенной СВОЕЙ достроенной артиллерии — куда можно кликнуть ПКМ для выстрела. */
+    private void drawArtilleryRange() {
+        Entity artillery = selectedOwnArtillery();
+        if (artillery == null) {
+            return;
+        }
+        PositionComponent position = artillery.getComponent(PositionComponent.class);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        shapeRenderer.setColor(ARTILLERY_RANGE_COLOR);
+        shapeRenderer.circle(position.position.x, position.position.y,
+                BuildingDefinitions.artilleryRangeFor(BuildingType.ARTILLERY), 128);
+        shapeRenderer.end();
+    }
+
+    /** Выделенное здание, если это своя достроенная артиллерия (есть ArtilleryComponent), иначе null. */
+    private Entity selectedOwnArtillery() {
+        if (selectedBuildingId == null) {
+            return null;
+        }
+        Entity building = entityFactory.getEntity(selectedBuildingId);
+        if (building == null || building.getComponent(ArtilleryComponent.class) == null) {
+            return null;
+        }
+        OwnerComponent owner = building.getComponent(OwnerComponent.class);
+        return owner != null && owner.playerId == client.getPlayerId() ? building : null;
     }
 
     /** Продвигает и вычищает истёкшие визуальные стрелы — сама отрисовка в drawArrows(). */
@@ -1600,6 +1737,7 @@ public class GameScreen extends InputAdapter implements Screen {
         HealthComponent health = building.getComponent(HealthComponent.class);
         ProductionComponent production = building.getComponent(ProductionComponent.class);
         ConstructionComponent construction = building.getComponent(ConstructionComponent.class);
+        ArtilleryComponent artillery = building.getComponent(ArtilleryComponent.class);
         BuildingType buildingType = building.getComponent(BuildingComponent.class).type;
         // Кнопки очереди — только если у СУЩНОСТИ прямо сейчас есть
         // ProductionComponent, не по одному лишь типу здания:
@@ -1621,6 +1759,14 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.setColor(Color.LIGHT_GRAY);
         for (int i = 0; i < producible.length; i++) {
             shapeRenderer.rect(actionButtonX(i), ACTION_BUTTON_Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT);
+        }
+
+        if (artillery != null && artillery.shells < BuildingDefinitions.shellCapacityFor(buildingType)) {
+            float fraction = MathUtils.clamp(artillery.shellProgress / BuildingDefinitions.shellBuildTimeFor(buildingType), 0f, 1f);
+            shapeRenderer.setColor(Color.DARK_GRAY);
+            shapeRenderer.rect(PROGRESS_BAR_X, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT);
+            shapeRenderer.setColor(ARTILLERY_SHELL_COLOR);
+            shapeRenderer.rect(PROGRESS_BAR_X, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH * fraction, PROGRESS_BAR_HEIGHT);
         }
 
         if (production != null && production.queuedCount > 0) {
@@ -1655,6 +1801,15 @@ public class GameScreen extends InputAdapter implements Screen {
         }
         if (production != null) {
             uiFont.draw(spriteBatch, "Queue: " + production.queuedCount, PROGRESS_BAR_X + PROGRESS_BAR_WIDTH + 20f, PROGRESS_BAR_Y + 11f);
+        }
+        if (artillery != null) {
+            int capacity = BuildingDefinitions.shellCapacityFor(buildingType);
+            uiFont.draw(spriteBatch, "Shells: " + artillery.shells + "/" + capacity,
+                    ACTION_BUTTON_X, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 4f);
+            uiFont.draw(spriteBatch, "RMB on map: fire (" + BuildingDefinitions.shotElectricityCostFor(buildingType)
+                    + " electricity per shot)", ACTION_BUTTON_X, ACTION_BUTTON_Y + 10f);
+            String shellStatus = artillery.shells >= capacity ? "Full" : "Next shell";
+            uiFont.draw(spriteBatch, shellStatus, PROGRESS_BAR_X + PROGRESS_BAR_WIDTH + 20f, PROGRESS_BAR_Y + 11f);
         }
         uiFont.draw(spriteBatch, "Demolish", DEMOLISH_BUTTON_X + 10f, DEMOLISH_BUTTON_Y + DEMOLISH_BUTTON_HEIGHT - 10f);
         spriteBatch.end();
@@ -1981,6 +2136,12 @@ public class GameScreen extends InputAdapter implements Screen {
             dragStartWorld.set(camera.unproject(new Vector3(screenX, screenY, 0)));
             dragCurrentWorld.set(dragStartWorld);
             dragging = true;
+        } else if (button == Input.Buttons.RIGHT && selectedOwnArtillery() != null) {
+            // ПКМ по любой точке карты при выделенной своей артиллерии —
+            // выстрел туда, в том числе в туман войны (дальность, снаряды и
+            // электричество проверяет сервер и при отказе пришлёт ошибку).
+            Vector3 world = camera.unproject(new Vector3(screenX, screenY, 0));
+            client.requestArtilleryFire(selectedBuildingId, world.x, world.y);
         } else if (button == Input.Buttons.RIGHT && selectedBuildingId != null) {
             // Здание выделено — правый клик по карте ставит точку сбора
             // (не выделение и не приказ юниту, тех тут просто нет). Только

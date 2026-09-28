@@ -9,6 +9,7 @@ import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.network.NetworkRegistration;
+import ru.socol.supreme.shared.network.messages.ArtilleryFireRequest;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
@@ -236,6 +237,15 @@ public class GameClient implements Disposable {
     public void requestDemolishBuilding(int buildingUnitId) {
         DemolishBuildingRequest request = new DemolishBuildingRequest();
         request.buildingUnitId = buildingUnitId;
+        client.sendTCP(request);
+    }
+
+    /** Выстрел своей артиллерии в точку (x, y) — см. javadoc ArtilleryFireRequest. */
+    public void requestArtilleryFire(int buildingUnitId, float x, float y) {
+        ArtilleryFireRequest request = new ArtilleryFireRequest();
+        request.buildingUnitId = buildingUnitId;
+        request.x = x;
+        request.y = y;
         client.sendTCP(request);
     }
 
