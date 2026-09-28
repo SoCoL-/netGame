@@ -18,13 +18,12 @@ class FpsCounter {
     private static final float MARGIN = 10f;
 
     private final SpriteBatch batch = new SpriteBatch();
-    private final BitmapFont font = new BitmapFont();
+    private final BitmapFont font = Fonts.create(19);
     private final OrthographicCamera camera = new OrthographicCamera();
     private final GlyphLayout layout = new GlyphLayout();
 
     FpsCounter() {
         font.setColor(Color.GREEN);
-        font.getData().setScale(1.3f);
         resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
     }
 

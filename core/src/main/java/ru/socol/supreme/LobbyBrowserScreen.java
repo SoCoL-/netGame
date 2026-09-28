@@ -55,8 +55,8 @@ public class LobbyBrowserScreen extends InputAdapter implements Screen {
     private final OrthographicCamera camera = new OrthographicCamera();
     private final ShapeRenderer shapeRenderer = new ShapeRenderer();
     private final SpriteBatch spriteBatch = new SpriteBatch();
-    private final BitmapFont titleFont = new BitmapFont();
-    private final BitmapFont font = new BitmapFont();
+    private final BitmapFont titleFont = Fonts.create(33);
+    private final BitmapFont font = Fonts.create(20);
     private final GlyphLayout layout = new GlyphLayout();
 
     private List<LobbySummary> lobbies = new ArrayList<>();
@@ -67,8 +67,6 @@ public class LobbyBrowserScreen extends InputAdapter implements Screen {
     public LobbyBrowserScreen(GameClient client) {
         this.client = client;
         camera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
-        titleFont.getData().setScale(2.2f);
-        font.getData().setScale(1.3f);
     }
 
     /** Вызывается из Main при каждом LobbyListMessage — см. её же javadoc. */
@@ -116,7 +114,7 @@ public class LobbyBrowserScreen extends InputAdapter implements Screen {
 
         spriteBatch.begin();
         titleFont.setColor(Color.WHITE);
-        titleFont.draw(spriteBatch, "Лобби", 40f, HUD_HEIGHT - 30f);
+        titleFont.draw(spriteBatch, "Лобби", 40f, HUD_HEIGHT - 12f);
 
         font.setColor(Color.WHITE);
         layout.setText(font, "Создать");

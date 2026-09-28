@@ -723,7 +723,7 @@ public class GameServer {
 
         if (unitsById.size() >= GameConstants.MAX_TOTAL_UNITS) {
             server.sendToTCP(connection.getID(),
-                    new ErrorResponse("Unit limit reached (" + GameConstants.MAX_TOTAL_UNITS + " total)"));
+                    new ErrorResponse("Достигнут лимит юнитов (" + GameConstants.MAX_TOTAL_UNITS + " на матч)"));
             return;
         }
 
@@ -790,7 +790,7 @@ public class GameServer {
         }
 
         if (isDepositOccupied(request.depositIndex)) {
-            server.sendToTCP(connection.getID(), new ErrorResponse("This iron deposit is already occupied"));
+            server.sendToTCP(connection.getID(), new ErrorResponse("Это месторождение уже занято"));
             return;
         }
 
@@ -828,7 +828,7 @@ public class GameServer {
         }
 
         if (!BuildingPlacement.canPlaceBuilding(type, unitsById.values(), request.x, request.y)) {
-            server.sendToTCP(connection.getID(), new ErrorResponse("Cannot place building there"));
+            server.sendToTCP(connection.getID(), new ErrorResponse("Здесь строить нельзя"));
             return;
         }
 
@@ -1879,7 +1879,7 @@ public class GameServer {
         }
         ArtilleryComponent artillery = building.getComponent(ArtilleryComponent.class);
         if (artillery == null) {
-            connection.sendTCP(new ErrorResponse("Artillery is still under construction"));
+            connection.sendTCP(new ErrorResponse("Артиллерия ещё строится"));
             return;
         }
 
@@ -1888,17 +1888,17 @@ public class GameServer {
         PositionComponent position = building.getComponent(PositionComponent.class);
         float range = BuildingDefinitions.artilleryRangeFor(BuildingType.ARTILLERY);
         if (position.position.dst2(targetX, targetY) > range * range) {
-            connection.sendTCP(new ErrorResponse("Target is out of artillery range"));
+            connection.sendTCP(new ErrorResponse("Цель вне дальности артиллерии"));
             return;
         }
         if (artillery.shells - artillery.pendingTargets.size() <= 0) {
-            connection.sendTCP(new ErrorResponse("No artillery shells ready"));
+            connection.sendTCP(new ErrorResponse("Нет готовых снарядов"));
             return;
         }
         PlayerResources resources = resourcesByPlayer.get(playerId);
         int shotCost = BuildingDefinitions.shotElectricityCostFor(BuildingType.ARTILLERY);
         if (resources == null || resources.electricity < shotCost - GameConstants.RESOURCE_EPSILON) {
-            connection.sendTCP(new ErrorResponse("Not enough electricity to fire (" + shotCost + " needed)"));
+            connection.sendTCP(new ErrorResponse("Не хватает энергии на выстрел (нужно " + shotCost + ")"));
             return;
         }
 

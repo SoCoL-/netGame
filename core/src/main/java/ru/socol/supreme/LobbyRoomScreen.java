@@ -52,9 +52,9 @@ public class LobbyRoomScreen extends InputAdapter implements Screen {
     private final OrthographicCamera camera = new OrthographicCamera();
     private final ShapeRenderer shapeRenderer = new ShapeRenderer();
     private final SpriteBatch spriteBatch = new SpriteBatch();
-    private final BitmapFont titleFont = new BitmapFont();
-    private final BitmapFont font = new BitmapFont();
-    private final BitmapFont countdownFont = new BitmapFont();
+    private final BitmapFont titleFont = Fonts.create(33);
+    private final BitmapFont font = Fonts.create(21);
+    private final BitmapFont countdownFont = Fonts.create(60);
     private final GlyphLayout layout = new GlyphLayout();
 
     private int lobbyId;
@@ -70,9 +70,6 @@ public class LobbyRoomScreen extends InputAdapter implements Screen {
     public LobbyRoomScreen(GameClient client, LobbyStateMessage initialState) {
         this.client = client;
         camera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
-        titleFont.getData().setScale(2.2f);
-        font.getData().setScale(1.4f);
-        countdownFont.getData().setScale(4f);
         applyState(initialState);
     }
 
@@ -135,7 +132,7 @@ public class LobbyRoomScreen extends InputAdapter implements Screen {
 
         spriteBatch.begin();
         titleFont.setColor(Color.WHITE);
-        titleFont.draw(spriteBatch, name != null ? name : "Лобби", 40f, HUD_HEIGHT - 30f);
+        titleFont.draw(spriteBatch, name != null ? name : "Лобби", 40f, HUD_HEIGHT - 12f);
 
         for (int slot = 0; slot < GameConstants.MAX_PLAYERS; slot++) {
             float y = FIRST_SLOT_Y - slot * (SLOT_HEIGHT + 12f);

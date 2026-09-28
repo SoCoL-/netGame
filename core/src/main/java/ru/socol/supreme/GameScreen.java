@@ -208,7 +208,7 @@ public class GameScreen extends InputAdapter implements Screen {
     // на старом месте, а не у верха, где ей и положено быть.
     private static final float RESOURCE_PANEL_X = 20f;
     private static final float RESOURCE_PANEL_WIDTH = 280f; // расширено под ставку изменения справа от количества
-    private static final float RESOURCE_PANEL_HEIGHT = 40f;
+    private static final float RESOURCE_PANEL_HEIGHT = 50f;
     private static final float RESOURCE_PANEL_Y = HUD_HEIGHT - RESOURCE_PANEL_HEIGHT - 10f;
     // Где начинается текст ставки — фиксированный отступ от правого края
     // панели, не "после текста количества": разная ширина цифр количества
@@ -333,8 +333,11 @@ public class GameScreen extends InputAdapter implements Screen {
     private final Engine engine = new Engine();
     private final ShapeRenderer shapeRenderer = new ShapeRenderer();
     private final SpriteBatch spriteBatch = new SpriteBatch();
-    private final BitmapFont font = new BitmapFont(); // крупный — для "VICTORY"/"Connecting..." по центру экрана
-    private final BitmapFont uiFont = new BitmapFont(); // помельче — для панели постройки
+    private final BitmapFont font = Fonts.create(45); // крупный — для "ПОБЕДА"/"Подключение..." по центру экрана
+    private final BitmapFont uiFont = Fonts.create(19); // помельче — для панелей
+    private final BitmapFont buttonFont = Fonts.create(16); // подписи кнопок — русские названия длиннее английских
+    private final GlyphLayout buttonLayout = new GlyphLayout();
+    private static final Color BUTTON_LABEL_DARK = Color.valueOf("212121");
     private final OrthographicCamera camera = new OrthographicCamera();
     // Отдельная неподвижная камера для HUD (панель постройки) — рисуется в
     // экранных координатах, не должна зависеть от прокрутки world-камеры.
@@ -564,12 +567,15 @@ public class GameScreen extends InputAdapter implements Screen {
     // выковыривать из десятка мест ради одного всегда-false условия.
     private String connectionStatusText = null;
 
+    private static final float ERROR_TOAST_SECONDS = 3f;
+    private String errorToastText = null;
+    private float errorToastRemaining = 0f;
+    private final GlyphLayout errorLayout = new GlyphLayout();
+
     public GameScreen(GameClient client) {
         this.client = client;
         camera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
         hudCamera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
-        font.getData().setScale(3f);
-        uiFont.getData().setScale(1.3f);
 
         // Linear — это и есть всё сглаживание тумана войны: GPU сама
         // интерполирует альфу между соседними клетками при растяжении
@@ -634,6 +640,33 @@ public class GameScreen extends InputAdapter implements Screen {
 
     public void onError(ErrorResponse error) {
         Gdx.app.log("Network", "Error: " + error.message);
+        errorToastText = error.message;
+        errorToastRemaining = ERROR_TOAST_SECONDS;
+    }
+
+    /**
+     * Отказ сервера (ErrorResponse — "нет снарядов", "здесь строить нельзя"
+     * и т.п.) — жёлтая строка по центру над нижней панелью, гаснет через
+     * ERROR_TOAST_SECONDS. Раньше такие сообщения только писались в лог, и
+     * игрок не понимал, почему приказ не выполнился.
+     */
+    private void drawErrorToast(float delta) {
+        if (errorToastText == null) {
+            return;
+        }
+        errorToastRemaining -= delta;
+        if (errorToastRemaining <= 0f) {
+            errorToastText = null;
+            return;
+        }
+        spriteBatch.setProjectionMatrix(hudCamera.combined);
+        spriteBatch.begin();
+        errorLayout.setText(uiFont, errorToastText);
+        uiFont.setColor(Color.valueOf("FFCA28"));
+        uiFont.draw(spriteBatch, errorLayout, (HUD_WIDTH - errorLayout.width) / 2f, PANEL_Y + PANEL_HEIGHT + 34f);
+        uiFont.setColor(Color.WHITE);
+        spriteBatch.end();
+        spriteBatch.setProjectionMatrix(camera.combined);
     }
 
     /**
@@ -646,13 +679,13 @@ public class GameScreen extends InputAdapter implements Screen {
      */
     public void onGameOver(GameOverMessage message) {
         if (message.draw) {
-            gameOverText = "DRAW";
+            gameOverText = "НИЧЬЯ";
             font.setColor(Color.WHITE);
         } else if (message.winnerPlayerId == client.getPlayerId()) {
-            gameOverText = "VICTORY";
+            gameOverText = "ПОБЕДА";
             font.setColor(Color.GREEN);
         } else {
-            gameOverText = "DEFEAT";
+            gameOverText = "ПОРАЖЕНИЕ";
             font.setColor(Color.RED);
         }
         dragging = false;
@@ -945,6 +978,7 @@ public class GameScreen extends InputAdapter implements Screen {
             // строитель, его кнопки построек остаются видны и кликабельны,
             // это и позволяет переключить тип здания на лету — см. touchDown.
             drawInfoPanel();
+            drawErrorToast(delta);
         }
     }
 
@@ -1041,31 +1075,63 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.end();
     }
 
-    /** Название здания этого типа — используется и как имя в плашке выделения (drawBuildingInfoPanel), и как подпись кнопки постройки (drawBuilderActionButtons). Единственное место, переводящее BuildingType в текст для игрока. */
+    /** Полное название здания этого типа — для плашки выделения (drawBuildingInfoPanel) и названия руин. На кнопках постройки — короткое, см. buildingButtonLabel. */
     private String buildingTypeLabel(BuildingType type) {
         switch (type) {
             case HOME:
-                return "Home";
+                return "Главное здание";
             case ARCHER_BARRACKS:
-                return "Archer Barracks";
+                return "Казарма стрелков";
             case IRON_MINE:
-                return "Iron Mine";
+                return "Шахта железа";
             case POWER_PLANT:
-                return "Power Plant";
+                return "Электростанция";
             case IRON_STORAGE:
-                return "Iron Storage";
+                return "Склад железа";
             case ELECTRICITY_STORAGE:
-                return "Electricity Storage";
+                return "Хранилище энергии";
             case AIRCRAFT_FACTORY:
-                return "Aircraft Factory";
+                return "Авиазавод";
             case TURRET:
-                return "Turret";
+                return "Турель";
             case ARTILLERY:
-                return "Artillery";
+                return "Артиллерия";
             case WRECK:
-                return "Wreck";
+                return "Обломки";
             default:
                 return "";
+        }
+    }
+
+    /**
+     * Подпись кнопки — по центру прямоугольника (x, y, width, height),
+     * шрифтом buttonFont. Вызывается внутри уже начатого spriteBatch.
+     * На светло-серых кнопках — тёмный текст (белый на них почти не
+     * читался), на красной кнопке сноса — белый.
+     */
+    private void drawButtonLabel(String text, float x, float y, float width, float height, Color color) {
+        buttonLayout.setText(buttonFont, text);
+        buttonFont.setColor(color);
+        buttonFont.draw(spriteBatch, buttonLayout,
+                x + (width - buttonLayout.width) / 2f,
+                y + (height + buttonLayout.height) / 2f);
+    }
+
+    /** Короткое название для кнопки постройки — полные русские названия в кнопку шириной ACTION_BUTTON_WIDTH не помещаются. */
+    private String buildingButtonLabel(BuildingType type) {
+        switch (type) {
+            case IRON_MINE:
+                return "Шахта";
+            case ARCHER_BARRACKS:
+                return "Казарма";
+            case POWER_PLANT:
+                return "Генератор";
+            case IRON_STORAGE:
+                return "Склад железа";
+            case ELECTRICITY_STORAGE:
+                return "Аккумулятор";
+            default:
+                return buildingTypeLabel(type);
         }
     }
 
@@ -1706,10 +1772,10 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.begin();
         uiFont.setColor(Color.WHITE);
         // (int) — округление вниз для отображения; внутренний счёт остаётся дробным (float), см. myIron/myElectricity.
-        uiFont.draw(spriteBatch, "Iron: " + (int) myIron, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 8f);
-        uiFont.draw(spriteBatch, "Electricity: " + (int) myElectricity, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 26f);
-        drawResourceRate(myIronRate, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 8f);
-        drawResourceRate(myElectricityRate, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 26f);
+        uiFont.draw(spriteBatch, "Железо: " + (int) myIron, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 5f);
+        uiFont.draw(spriteBatch, "Энергия: " + (int) myElectricity, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 27f);
+        drawResourceRate(myIronRate, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 5f);
+        drawResourceRate(myElectricityRate, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 27f);
         spriteBatch.end();
 
         // Возвращаем world-камеру шейп-рендереру и спрайт-батчу для следующего кадра.
@@ -1858,35 +1924,37 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.begin();
         uiFont.setColor(Color.WHITE);
         uiFont.draw(spriteBatch, buildingTypeLabel(buildingType), PANEL_X + 15f, NAME_TEXT_Y);
-        uiFont.draw(spriteBatch, "HP: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
+        uiFont.draw(spriteBatch, "Здоровье: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
         for (int i = 0; i < producible.length; i++) {
-            uiFont.draw(spriteBatch, "+" + unitTypeLabel(producible[i]), actionButtonX(i) + 10f, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 14f);
+            drawButtonLabel("+" + unitTypeLabel(producible[i]), actionButtonX(i), ACTION_BUTTON_Y,
+                    ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, BUTTON_LABEL_DARK);
         }
         if (construction != null) {
             // Занимает то же место, где были бы кнопки очереди — их тут
             // нет, раз функционал недоступен до завершения стройки.
             int percent = Math.round(MathUtils.clamp(1f - construction.remaining / construction.totalTime, 0f, 1f) * 100f);
-            uiFont.draw(spriteBatch, "Under construction: " + percent + "%", ACTION_BUTTON_X, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 14f);
+            uiFont.draw(spriteBatch, "Строится: " + percent + "%", ACTION_BUTTON_X, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 14f);
         }
         if (production != null) {
-            uiFont.draw(spriteBatch, "Queue: " + production.queuedCount, PROGRESS_BAR_X + PROGRESS_BAR_WIDTH + 20f, PROGRESS_BAR_Y + 11f);
+            uiFont.draw(spriteBatch, "Очередь: " + production.queuedCount, PROGRESS_BAR_X + PROGRESS_BAR_WIDTH + 20f, PROGRESS_BAR_Y + 11f);
         }
         if (artillery != null) {
             int capacity = BuildingDefinitions.shellCapacityFor(buildingType);
-            uiFont.draw(spriteBatch, "Shells: " + artillery.shells + "/" + capacity,
+            uiFont.draw(spriteBatch, "Снаряды: " + artillery.shells + "/" + capacity,
                     ACTION_BUTTON_X, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 4f);
-            String pending = artillery.pendingTargets.isEmpty() ? "" : ", queued: " + artillery.pendingTargets.size();
-            uiFont.draw(spriteBatch, "RMB on map: fire (" + BuildingDefinitions.shotElectricityCostFor(buildingType)
-                    + " electricity per shot" + pending + ")", ACTION_BUTTON_X, ACTION_BUTTON_Y + 10f);
+            String pending = artillery.pendingTargets.isEmpty() ? "" : ", в очереди: " + artillery.pendingTargets.size();
+            uiFont.draw(spriteBatch, "ПКМ по карте — выстрел (" + BuildingDefinitions.shotElectricityCostFor(buildingType)
+                    + " энергии за выстрел" + pending + ")", ACTION_BUTTON_X, ACTION_BUTTON_Y + 10f);
             String reloadStatus = artillery.cooldownRemaining > 0f
-                    ? String.format(Locale.ROOT, "Reloading %.1fs", artillery.cooldownRemaining)
-                    : "Ready";
+                    ? String.format(Locale.ROOT, "Перезарядка %.1f с", artillery.cooldownRemaining)
+                    : "Готова";
             uiFont.draw(spriteBatch, reloadStatus, RELOAD_BAR_X + RELOAD_BAR_WIDTH + 12f,
                     ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 4f);
-            String shellStatus = artillery.shells >= capacity ? "Full" : "Next shell";
+            String shellStatus = artillery.shells >= capacity ? "Запас полный" : "Следующий снаряд";
             uiFont.draw(spriteBatch, shellStatus, PROGRESS_BAR_X + PROGRESS_BAR_WIDTH + 20f, PROGRESS_BAR_Y + 11f);
         }
-        uiFont.draw(spriteBatch, "Demolish", DEMOLISH_BUTTON_X + 10f, DEMOLISH_BUTTON_Y + DEMOLISH_BUTTON_HEIGHT - 10f);
+        drawButtonLabel("Снести", DEMOLISH_BUTTON_X, DEMOLISH_BUTTON_Y,
+                DEMOLISH_BUTTON_WIDTH, DEMOLISH_BUTTON_HEIGHT, Color.WHITE);
         spriteBatch.end();
 
         // Возвращаем world-камеру шейп-рендереру и спрайт-батчу для следующего кадра.
@@ -1915,7 +1983,7 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.begin();
         uiFont.setColor(Color.WHITE);
         uiFont.draw(spriteBatch, unitTypeLabel(unitType), PANEL_X + 15f, NAME_TEXT_Y);
-        uiFont.draw(spriteBatch, "HP: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
+        uiFont.draw(spriteBatch, "Здоровье: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
         drawPatrolButtonLabel();
         spriteBatch.end();
 
@@ -1956,7 +2024,7 @@ public class GameScreen extends InputAdapter implements Screen {
         uiFont.setColor(Color.WHITE);
         uiFont.draw(spriteBatch, title, PANEL_X + 15f, NAME_TEXT_Y);
         if (ironStock != null) {
-            uiFont.draw(spriteBatch, "Iron: " + ironStock.currentHealth + "/" + ironStock.maxHealth,
+            uiFont.draw(spriteBatch, "Железо: " + ironStock.currentHealth + "/" + ironStock.maxHealth,
                     PANEL_X + 15f, HP_TEXT_Y);
         }
         spriteBatch.end();
@@ -1987,17 +2055,18 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.begin();
         uiFont.setColor(Color.WHITE);
         if (selectedUnitIds.size() == 1) {
-            uiFont.draw(spriteBatch, "Builder", PANEL_X + 15f, NAME_TEXT_Y);
+            uiFont.draw(spriteBatch, "Строитель", PANEL_X + 15f, NAME_TEXT_Y);
             Entity builder = entityFactory.getEntity(selectedUnitIds.iterator().next());
             HealthComponent health = builder != null ? builder.getComponent(HealthComponent.class) : null;
             if (health != null) {
-                uiFont.draw(spriteBatch, "HP: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
+                uiFont.draw(spriteBatch, "Здоровье: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
             }
         } else {
-            uiFont.draw(spriteBatch, selectedUnitIds.size() + " Builders", PANEL_X + 15f, NAME_TEXT_Y);
+            uiFont.draw(spriteBatch, "Строители: " + selectedUnitIds.size(), PANEL_X + 15f, NAME_TEXT_Y);
         }
         for (int i = 0; i < BUILDABLE_TYPES.length; i++) {
-            uiFont.draw(spriteBatch, buildingTypeLabel(BUILDABLE_TYPES[i]), actionButtonX(i) + 10f, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 14f);
+            drawButtonLabel(buildingButtonLabel(BUILDABLE_TYPES[i]), actionButtonX(i), ACTION_BUTTON_Y,
+                    ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, BUTTON_LABEL_DARK);
         }
         drawPatrolButtonLabel();
         spriteBatch.end();
@@ -2017,7 +2086,7 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
         uiFont.setColor(Color.WHITE);
-        uiFont.draw(spriteBatch, selectedUnitIds.size() + " units selected", PANEL_X + 15f, NAME_TEXT_Y);
+        uiFont.draw(spriteBatch, "Выделено юнитов: " + selectedUnitIds.size(), PANEL_X + 15f, NAME_TEXT_Y);
         drawPatrolButtonLabel();
         spriteBatch.end();
 
@@ -2028,17 +2097,17 @@ public class GameScreen extends InputAdapter implements Screen {
     private String unitTypeLabel(UnitType type) {
         switch (type) {
             case WARRIOR:
-                return "Warrior";
+                return "Воин";
             case ARCHER:
-                return "Archer";
+                return "Стрелок";
             case BUILDER:
-                return "Builder";
+                return "Строитель";
             case SCOUT:
-                return "Scout";
+                return "Разведчик";
             case ATTACK_AIRCRAFT:
-                return "Attack Aircraft";
+                return "Штурмовик";
             case ANTI_AIR:
-                return "Anti-Air";
+                return "ПВО";
             default:
                 return "";
         }
@@ -2087,7 +2156,8 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     private void drawPatrolButtonLabel() {
-        uiFont.draw(spriteBatch, placingPatrol ? "Done" : "Patrol", PATROL_BUTTON_X + 12f, PATROL_BUTTON_Y + PATROL_BUTTON_HEIGHT - 10f);
+        drawButtonLabel(placingPatrol ? "Готово" : "Патруль", PATROL_BUTTON_X, PATROL_BUTTON_Y,
+                PATROL_BUTTON_WIDTH, PATROL_BUTTON_HEIGHT, BUTTON_LABEL_DARK);
     }
 
     // ---- Ввод ----
@@ -2751,6 +2821,7 @@ public class GameScreen extends InputAdapter implements Screen {
         spriteBatch.dispose();
         font.dispose();
         uiFont.dispose();
+        buttonFont.dispose();
         fogTexture.dispose();
         fogPixmap.dispose();
     }
