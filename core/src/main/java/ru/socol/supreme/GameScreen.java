@@ -47,7 +47,6 @@ import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.FogSnapshot;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
-import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.PatrolPoint;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
@@ -65,8 +64,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Основной игровой экран: клиентский Ashley-движок, соединение с сервером и
- * обработка ввода.
+ * Основной игровой экран: клиентский Ashley-движок и обработка ввода.
+ * Соединением больше не владеет сам (см. javadoc поля client) — получает
+ * уже подключённый, прошедший лобби GameClient снаружи, от Main, которая и
+ * создаёт этот экран, как только приходит GameStartedMessage (см. её же
+ * javadoc в Main).
  *
  * Управление:
  *  - WASD / стрелки            -> прокрутка камеры (карта 8000x8000, окно
@@ -335,7 +337,17 @@ public class GameScreen extends InputAdapter implements Screen {
     // тактического слоя (см. render()/strategicFactor).
     private final RenderSystem renderSystem = new RenderSystem(shapeRenderer);
     private final EntityFactory entityFactory = new EntityFactory(engine);
-    private final GameClient client = new GameClient();
+    /**
+     * Уже подключённый, живущий дольше одного матча GameClient — передаётся
+     * снаружи (Main), а не создаётся и не подключается тут: к моменту
+     * создания этого экрана матч уже подтверждён сервером (GameStartedMessage,
+     * см. javadoc GameClient) и playerId уже известен (client.getPlayerId()).
+     * Main сам реализует GameClient.GameClientListener на всё время жизни
+     * соединения и пересылает сюда игровые события (onWorldSnapshot/onError
+     * /onGameOver/onProjectileFired) вызовом соответствующих публичных
+     * методов этого класса — см. их же javadoc ниже.
+     */
+    private final GameClient client;
 
     private final Set<Integer> selectedUnitIds = new HashSet<>();
     private Integer selectedBuildingId = null;
@@ -483,11 +495,20 @@ public class GameScreen extends InputAdapter implements Screen {
             GameConstants.FOG_GRID_WIDTH, GameConstants.FOG_GRID_HEIGHT, Pixmap.Format.Alpha);
     private final Texture fogTexture = new Texture(fogPixmap);
     private String gameOverText = null;
-    // Пока не null — показываем этот текст вместо игры (окно уже открыто и
-    // отрисовывается, само подключение идёт в фоне — см. GameClient.connect()).
-    private String connectionStatusText = "Connecting...";
+    // Пока не null — показываем этот текст вместо игры. Раньше сюда попадал
+    // статус самого подключения ("Connecting...", ошибка JoinResponse) — эта
+    // связь ушла вместе с client.connect() из конструктора (см. её же
+    // javadoc): к моменту создания этого экрана соединение уже
+    // гарантированно установлено и матч подтверждён сервером, так что это
+    // поле реально никогда больше не становится не-null. Оставлено как есть
+    // (не удалено вместе со всеми проверками на него ниже, в render/touchDown
+    // /touchUp) — по тому же принципу минимальных изменений, что и everywhere
+    // в этом рефакторинге: мёртвый, но безвредный код проще оставить, чем
+    // выковыривать из десятка мест ради одного всегда-false условия.
+    private String connectionStatusText = null;
 
-    public GameScreen(String serverHost) {
+    public GameScreen(GameClient client) {
+        this.client = client;
         camera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
         hudCamera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
         font.getData().setScale(3f);
@@ -517,106 +538,85 @@ public class GameScreen extends InputAdapter implements Screen {
         engine.addSystem(new InterpolationSystem());
         engine.addSystem(renderSystem);
 
-        client.connect(serverHost, new GameClient.GameClientListener() {
-            @Override
-            public void onJoinResponse(JoinResponse response) {
-                // received() приходит из сетевого потока KryoNet — переносим
-                // изменение состояния экрана в поток рендера.
-                Gdx.app.postRunnable(() -> {
-                    Gdx.app.log("Network", response.message);
-                    connectionStatusText = response.accepted ? null : response.message;
-                });
-            }
-
-            @Override
-            public void onWorldSnapshot(WorldSnapshot snapshot) {
-                Gdx.app.postRunnable(() -> {
-                    entityFactory.applySnapshot(snapshot.units);
-                    // Юниты, погибшие в этом снапшоте, уже удалены из
-                    // entityFactory — вычищаем их id из выделения, чтобы
-                    // не пытаться командовать мёртвыми.
-                    selectedUnitIds.removeIf(unitId -> entityFactory.getEntity(unitId) == null);
-                    if (selectedBuildingId != null && entityFactory.getEntity(selectedBuildingId) == null) {
-                        selectedBuildingId = null; // здание пропало — закрываем панель
-                    }
-                    if (selectedWreckId != null && entityFactory.getEntity(selectedWreckId) == null) {
-                        selectedWreckId = null; // обломки собраны/пропали — закрываем панель
-                    }
-                    for (PlayerResources resources : snapshot.playerResources) {
-                        if (resources.playerId == client.getPlayerId()) {
-                            myIron = resources.iron;
-                            myElectricity = resources.electricity;
-                            myIronRate = resources.ironRate;
-                            myElectricityRate = resources.electricityRate;
-                            break;
-                        }
-                    }
-                    for (FogSnapshot fog : snapshot.fog) {
-                        if (fog.playerId == client.getPlayerId()) {
-                            fogRevealed = fog.revealed;
-                            updateFogTexture();
-                            break;
-                        }
-                    }
-                    centerCameraOnOwnBuildingIfNeeded();
-                });
-            }
-
-            @Override
-            public void onError(ErrorResponse error) {
-                Gdx.app.log("Network", "Error: " + error.message);
-            }
-
-            @Override
-            public void onGameOver(GameOverMessage message) {
-                Gdx.app.postRunnable(() -> {
-                    if (message.draw) {
-                        gameOverText = "DRAW";
-                        font.setColor(Color.WHITE);
-                    } else if (message.winnerPlayerId == client.getPlayerId()) {
-                        gameOverText = "VICTORY";
-                        font.setColor(Color.GREEN);
-                    } else {
-                        gameOverText = "DEFEAT";
-                        font.setColor(Color.RED);
-                    }
-                    dragging = false;
-                });
-            }
-
-            @Override
-            public void onProjectileFired(ProjectileFiredEvent event) {
-                // received() приходит из сетевого потока KryoNet — переносим
-                // изменение activeArrows (читается в render()) в поток рендера.
-                Gdx.app.postRunnable(() -> {
-                    float dx = event.toX - event.fromX;
-                    float dy = event.toY - event.fromY;
-                    float length = (float) Math.sqrt(dx * dx + dy * dy);
-                    float fromX = event.fromX;
-                    float fromY = event.fromY;
-                    if (length > 0.0001f) {
-                        // Не даём смещению "перепрыгнуть" саму цель, если она
-                        // почему-то оказалась ближе ARROW_MUZZLE_OFFSET —
-                        // не должно происходить (attackRadius всегда больше),
-                        // но на всякий случай.
-                        float offset = Math.min(ARROW_MUZZLE_OFFSET, length * 0.5f);
-                        fromX += dx / length * offset;
-                        fromY += dy / length * offset;
-                    }
-                    activeArrows.add(new ArrowVisual(fromX, fromY, event.toX, event.toY));
-                });
-            }
-
-            @Override
-            public void onConnectFailed(String message) {
-                // Уже вызывается на GL-потоке — GameClient сама делает
-                // Gdx.app.postRunnable() перед вызовом этого метода.
-                Gdx.app.log("Network", "Connect failed: " + message);
-                connectionStatusText = "Failed to connect" + (message != null ? ": " + message : "");
-            }
-        });
-
         Gdx.input.setInputProcessor(this);
+    }
+
+    // ---- События сети (вызываются извне, из Main.GameClientListener, уже на GL-потоке — см. её же javadoc) ----
+
+    /** Раньше вызывался напрямую из анонимного GameClientListener этого экрана — см. javadoc client, почему теперь снаружи, из Main. */
+    public void onWorldSnapshot(WorldSnapshot snapshot) {
+        entityFactory.applySnapshot(snapshot.units);
+        // Юниты, погибшие в этом снапшоте, уже удалены из
+        // entityFactory — вычищаем их id из выделения, чтобы
+        // не пытаться командовать мёртвыми.
+        selectedUnitIds.removeIf(unitId -> entityFactory.getEntity(unitId) == null);
+        if (selectedBuildingId != null && entityFactory.getEntity(selectedBuildingId) == null) {
+            selectedBuildingId = null; // здание пропало — закрываем панель
+        }
+        if (selectedWreckId != null && entityFactory.getEntity(selectedWreckId) == null) {
+            selectedWreckId = null; // обломки собраны/пропали — закрываем панель
+        }
+        for (PlayerResources resources : snapshot.playerResources) {
+            if (resources.playerId == client.getPlayerId()) {
+                myIron = resources.iron;
+                myElectricity = resources.electricity;
+                myIronRate = resources.ironRate;
+                myElectricityRate = resources.electricityRate;
+                break;
+            }
+        }
+        for (FogSnapshot fog : snapshot.fog) {
+            if (fog.playerId == client.getPlayerId()) {
+                fogRevealed = fog.revealed;
+                updateFogTexture();
+                break;
+            }
+        }
+        centerCameraOnOwnBuildingIfNeeded();
+    }
+
+    public void onError(ErrorResponse error) {
+        Gdx.app.log("Network", "Error: " + error.message);
+    }
+
+    /**
+     * Конец матча — сама смена экрана обратно на комнату лобби происходит
+     * НЕ отсюда: сервер сам, через паузу GameConstants.POST_GAME_OVER_DELAY_SECONDS
+     * после этого сообщения, пришлёт LobbyStateMessage той же комнаты
+     * (реванш), и Main переключит экран по нему — см. её же javadoc
+     * onLobbyState. Этот экран до того момента просто показывает финальный
+     * текст на месте игры, никуда сам не уходя.
+     */
+    public void onGameOver(GameOverMessage message) {
+        if (message.draw) {
+            gameOverText = "DRAW";
+            font.setColor(Color.WHITE);
+        } else if (message.winnerPlayerId == client.getPlayerId()) {
+            gameOverText = "VICTORY";
+            font.setColor(Color.GREEN);
+        } else {
+            gameOverText = "DEFEAT";
+            font.setColor(Color.RED);
+        }
+        dragging = false;
+    }
+
+    public void onProjectileFired(ProjectileFiredEvent event) {
+        float dx = event.toX - event.fromX;
+        float dy = event.toY - event.fromY;
+        float length = (float) Math.sqrt(dx * dx + dy * dy);
+        float fromX = event.fromX;
+        float fromY = event.fromY;
+        if (length > 0.0001f) {
+            // Не даём смещению "перепрыгнуть" саму цель, если она
+            // почему-то оказалась ближе ARROW_MUZZLE_OFFSET —
+            // не должно происходить (attackRadius всегда больше),
+            // но на всякий случай.
+            float offset = Math.min(ARROW_MUZZLE_OFFSET, length * 0.5f);
+            fromX += dx / length * offset;
+            fromY += dy / length * offset;
+        }
+        activeArrows.add(new ArrowVisual(fromX, fromY, event.toX, event.toY));
     }
 
     // ---- Камера ----
@@ -2497,13 +2497,20 @@ public class GameScreen extends InputAdapter implements Screen {
     public void hide() {
     }
 
+    /**
+     * client.dispose() тут больше НЕТ — раньше каждый GameScreen владел
+     * своим единственным на весь матч соединением и закрывал его вместе с
+     * собой, теперь client общий на весь процесс (см. её же javadoc) и
+     * должен пережить этот экран: после game over то же соединение
+     * возвращается в комнату лобби (LobbyRoomScreen), закрывать его тут
+     * было бы концом всей сессии игрока, а не только этого матча.
+     */
     @Override
     public void dispose() {
         shapeRenderer.dispose();
         spriteBatch.dispose();
         font.dispose();
         uiFont.dispose();
-        client.dispose();
         fogTexture.dispose();
         fogPixmap.dispose();
     }

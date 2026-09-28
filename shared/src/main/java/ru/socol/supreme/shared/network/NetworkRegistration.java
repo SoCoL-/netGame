@@ -8,8 +8,16 @@ import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
+import ru.socol.supreme.shared.network.messages.GameStartedMessage;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
+import ru.socol.supreme.shared.network.messages.CreateLobbyRequest;
+import ru.socol.supreme.shared.network.messages.JoinLobbyRequest;
+import ru.socol.supreme.shared.network.messages.LeaveLobbyRequest;
+import ru.socol.supreme.shared.network.messages.SetReadyRequest;
+import ru.socol.supreme.shared.network.messages.LobbySummary;
+import ru.socol.supreme.shared.network.messages.LobbyListMessage;
+import ru.socol.supreme.shared.network.messages.LobbyStateMessage;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PatrolPoint;
 import ru.socol.supreme.shared.network.messages.PatrolUnitRequest;
@@ -70,5 +78,20 @@ public final class NetworkRegistration {
         kryo.register(CollectOrderRequest.class);
         kryo.register(PatrolPoint.class);
         kryo.register(PatrolUnitRequest.class);
+        // Добавлены с лобби (LobbyManager) — как и остальной список выше,
+        // ДОБАВЛЯЕМ строго в конец, никогда не переупорядочиваем и не
+        // удаляем существующие строки (см. javadoc класса).
+        kryo.register(CreateLobbyRequest.class);
+        kryo.register(JoinLobbyRequest.class);
+        kryo.register(LeaveLobbyRequest.class);
+        kryo.register(SetReadyRequest.class);
+        kryo.register(LobbySummary.class);
+        kryo.register(LobbyListMessage.class);
+        kryo.register(LobbyStateMessage.class);
+        kryo.register(GameStartedMessage.class);
+        // LobbyStateMessage.slotPlayerName — массив String, как
+        // int[]/boolean[] выше регистрируем явно, не полагаясь на
+        // неявную поддержку Kryo для массивов.
+        kryo.register(String[].class);
     }
 }

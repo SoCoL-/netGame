@@ -12,11 +12,17 @@ import ru.socol.supreme.shared.network.NetworkRegistration;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
+import ru.socol.supreme.shared.network.messages.CreateLobbyRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
+import ru.socol.supreme.shared.network.messages.GameStartedMessage;
+import ru.socol.supreme.shared.network.messages.JoinLobbyRequest;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.JoinResponse;
+import ru.socol.supreme.shared.network.messages.LeaveLobbyRequest;
+import ru.socol.supreme.shared.network.messages.LobbyListMessage;
+import ru.socol.supreme.shared.network.messages.LobbyStateMessage;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PatrolPoint;
 import ru.socol.supreme.shared.network.messages.PatrolUnitRequest;
@@ -26,6 +32,7 @@ import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueueUnitRequest;
 import ru.socol.supreme.shared.network.messages.RepairOrderRequest;
 import ru.socol.supreme.shared.network.messages.SetRallyPointRequest;
+import ru.socol.supreme.shared.network.messages.SetReadyRequest;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 
 import java.io.IOException;
@@ -46,11 +53,27 @@ import java.util.List;
  * дополнительная handshake-стадия при connect() — лишний источник зависаний
  * без выигрыша. Если позже добавите частые снапшоты по UDP (см. README),
  * возвращайте udpPort и на сервере, и здесь.
+ *
+ * Одно соединение теперь живёт куда дольше одного матча: после connect()
+ * клиент сначала браузит список лобби (onLobbyList), затем сидит в
+ * комнате (onLobbyState) и только после onGameStarted переходит в саму
+ * игру — а после onGameOver (и паузы на сервере, см. GameConstants
+ * .POST_GAME_OVER_DELAY_SECONDS) снова получит onLobbyState той же
+ * комнаты, вернувшейся в ожидание (реванш), без переподключения.
  */
 public class GameClient implements Disposable {
 
     public interface GameClientListener {
         void onJoinResponse(JoinResponse response);
+
+        /** Актуальный список комнат — приходит и сразу после onJoinResponse, и после любого изменения, пока это соединение НЕ сидит ни в одной комнате. */
+        void onLobbyList(LobbyListMessage message);
+
+        /** Полное состояние комнаты, в которой сейчас сидит это соединение — приходит заново при любом изменении (занят/освобождён слот, (не)готов, тик обратного отсчёта, конец матча). */
+        void onLobbyState(LobbyStateMessage message);
+
+        /** Обратный отсчёт комнаты дошёл до нуля — пора переключаться на игровой экран с playerId = message.yourPlayerId. */
+        void onGameStarted(GameStartedMessage message);
 
         void onWorldSnapshot(WorldSnapshot snapshot);
 
@@ -67,6 +90,16 @@ public class GameClient implements Disposable {
 
     private final Client client = new Client(GameConstants.NETWORK_WRITE_BUFFER_SIZE, GameConstants.NETWORK_OBJECT_BUFFER_SIZE);
     private GameClientListener listener;
+
+    /**
+     * playerId НА ТЕКУЩИЙ матч — раньше назначался один раз на всё
+     * соединение (JoinResponse.playerId), теперь приходит заново перед
+     * каждым матчем в GameStartedMessage.yourPlayerId (см. её же javadoc,
+     * почему: одно и то же соединение может сыграть много матчей подряд в
+     * одном и том же лобби, и playerId — это индекс СЛОТА в лобби, а не
+     * что-то постоянное для соединения). -1, пока ни один матч ещё не
+     * начинался.
+     */
     private int playerId = -1;
 
     public void connect(String host, GameClientListener listener) {
@@ -77,12 +110,21 @@ public class GameClient implements Disposable {
             @Override
             public void received(Connection connection, Object object) {
                 if (object instanceof JoinResponse) {
-                    JoinResponse response = (JoinResponse) object;
-                    if (response.accepted) {
-                        playerId = response.playerId;
-                    }
                     if (GameClient.this.listener != null) {
-                        GameClient.this.listener.onJoinResponse(response);
+                        GameClient.this.listener.onJoinResponse((JoinResponse) object);
+                    }
+                } else if (object instanceof LobbyListMessage) {
+                    if (GameClient.this.listener != null) {
+                        GameClient.this.listener.onLobbyList((LobbyListMessage) object);
+                    }
+                } else if (object instanceof LobbyStateMessage) {
+                    if (GameClient.this.listener != null) {
+                        GameClient.this.listener.onLobbyState((LobbyStateMessage) object);
+                    }
+                } else if (object instanceof GameStartedMessage) {
+                    playerId = ((GameStartedMessage) object).yourPlayerId;
+                    if (GameClient.this.listener != null) {
+                        GameClient.this.listener.onGameStarted((GameStartedMessage) object);
                     }
                 } else if (object instanceof WorldSnapshot) {
                     if (GameClient.this.listener != null) {
@@ -113,7 +155,13 @@ public class GameClient implements Disposable {
         Thread connectThread = new Thread(() -> {
             try {
                 client.connect(5000, host, GameConstants.TCP_PORT);
-                client.sendTCP(new JoinRequest());
+                JoinRequest request = new JoinRequest();
+                // Имя пользователя ОС как разумный дефолт — своего экрана
+                // ввода ника сознательно не делаем (не просили, см. javadoc
+                // JoinRequest), но и оставлять всем одинаковое "Player" в
+                // списке слотов комнаты было бы бесполезно.
+                request.playerName = System.getProperty("user.name", "Player");
+                client.sendTCP(request);
             } catch (IOException e) {
                 if (GameClient.this.listener != null) {
                     String message = e.getMessage();
@@ -123,6 +171,32 @@ public class GameClient implements Disposable {
         }, "kryonet-connect");
         connectThread.setDaemon(true);
         connectThread.start();
+    }
+
+    /** Создаёт новую комнату лобби — создатель автоматически занимает слот 0 (см. javadoc CreateLobbyRequest). */
+    public void requestCreateLobby(String lobbyName) {
+        CreateLobbyRequest request = new CreateLobbyRequest();
+        request.lobbyName = lobbyName;
+        client.sendTCP(request);
+    }
+
+    /** Занимает первый свободный слот указанной комнаты из списка (onLobbyList). */
+    public void requestJoinLobby(int lobbyId) {
+        JoinLobbyRequest request = new JoinLobbyRequest();
+        request.lobbyId = lobbyId;
+        client.sendTCP(request);
+    }
+
+    /** Выход обратно в общий список лобби — сервер молча игнорирует, если матч в этой комнате уже идёт (см. javadoc LeaveLobbyRequest). */
+    public void requestLeaveLobby() {
+        client.sendTCP(new LeaveLobbyRequest());
+    }
+
+    /** Подтверждает или снимает готовность своего слота — снятие во время уже идущего отсчёта отменяет его (см. javadoc LobbyManager.handleSetReady). */
+    public void requestSetReady(boolean ready) {
+        SetReadyRequest request = new SetReadyRequest();
+        request.ready = ready;
+        client.sendTCP(request);
     }
 
     public void requestQueueUnit(int buildingUnitId, UnitType unitType) {

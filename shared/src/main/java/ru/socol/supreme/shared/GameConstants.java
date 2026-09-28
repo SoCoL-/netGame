@@ -331,4 +331,26 @@ public final class GameConstants {
 
     /** Частота рассылки снапшотов мира клиентам. Также используется клиентом как длительность интерполяции. */
     public static final float SNAPSHOT_RATE = 1f / 15f;
+
+    /**
+     * Сколько секунд идёт обратный отсчёт в комнате лобби, после того как
+     * оба слота заняты и оба игрока подтвердили готовность
+     * (LobbyManager.handleSetReady), прежде чем реально стартует матч —
+     * ровно то время, за которое клиент (LobbyRoomScreen) рисует тикающий
+     * таймер по LobbyStateMessage.countdownRemaining. Если кто-то снимает
+     * готовность или выходит из лобби до истечения этого времени, отсчёт
+     * отменяется и лобби возвращается в обычное ожидание (см. javadoc
+     * Lobby.removePlayer/LobbyManager.handleSetReady).
+     */
+    public static final float LOBBY_COUNTDOWN_SECONDS = 5f;
+
+    /**
+     * Пауза (в секундах) между финальным GameOverMessage и тем моментом,
+     * когда GameServer(-сессия матча) завершает свой поток и LobbyManager
+     * возвращает обоих игроков обратно в комнату лобби (см. javadoc
+     * GameServer.start()) — даёт игрокам время увидеть на экране
+     * "Победа"/"Поражение"/"Ничья", прежде чем экран сменится обратно на
+     * комнату лобби, а не переключает его мгновенно.
+     */
+    public static final float POST_GAME_OVER_DELAY_SECONDS = 3f;
 }

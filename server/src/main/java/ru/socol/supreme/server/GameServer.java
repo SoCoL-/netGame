@@ -36,7 +36,6 @@ import ru.socol.supreme.shared.components.TurretComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.components.WreckComponent;
-import ru.socol.supreme.shared.network.NetworkRegistration;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
@@ -45,8 +44,6 @@ import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.FogSnapshot;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
-import ru.socol.supreme.shared.network.messages.JoinRequest;
-import ru.socol.supreme.shared.network.messages.JoinResponse;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
 import ru.socol.supreme.shared.network.messages.PathPoint;
 import ru.socol.supreme.shared.network.messages.PatrolPoint;
@@ -78,7 +75,6 @@ import ru.socol.supreme.shared.systems.ResourceExtractionSystem;
 import ru.socol.supreme.shared.systems.ScavengeSystem;
 import ru.socol.supreme.shared.systems.TurretAimSystem;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -87,22 +83,66 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Авторитетный игровой сервер: владеет Ashley-движком, симулирует движение и
- * бой, применяет правила игры (максимум 2 игрока, максимум 300 юнитов на
- * всю игру суммарно, карта 8000x8000) и с фиксированной частотой рассылает
- * снапшоты мира всем клиентам. Как только у одного из игроков уничтожен дом
- * (не казарма стрелков — см. spawnHomeAndBuilder) — объявляет победителя и
- * замораживает симуляцию.
+ * Авторитетный игровой сервер ОДНОГО МАТЧА: владеет Ashley-движком,
+ * симулирует движение и бой, применяет правила игры (максимум 2 игрока,
+ * максимум 300 юнитов на этот матч суммарно, карта 8000x8000) и с
+ * фиксированной частотой рассылает снапшоты мира двум игрокам ЭТОГО
+ * матча. Как только у одного из игроков уничтожен дом (не казарма
+ * стрелков — см. spawnHomeAndBuilder) — объявляет победителя и
+ * завершает свой игровой цикл (см. javadoc start()).
  *
- * Это "каркас" — минимальный, но рабочий скелет. Он не занимается
- * аутентификацией, реконнектом с сохранением состояния, unreliable-каналом
- * для снапшотов и т.п. — см. README для списка того, что стоит добавить
- * перед реальным продакшеном.
+ * До появления лобби (LobbyManager) это был единственный объект на весь
+ * процесс — сам поднимал KryoNet Server и жил вечно после game over,
+ * замороженный. Теперь на процесс может быть много одновременных
+ * матчей (по одному на каждое стартовавшее лобби) — LobbyManager
+ * владеет ОБЩИМ на все матчи Server (см. её же javadoc, почему это
+ * безопасно) и создаёт для каждого стартующего лобби свой экземпляр
+ * GameServer с уже известными двумя Connection игроков — отдельного
+ * рукопожатия (JoinRequest/handleJoin, как было раньше) для этого
+ * больше не требуется, playerId 0/1 однозначно определяется индексом в
+ * переданном массиве connections. Экземпляр одноразовый: после конца
+ * матча (start() вернулся) не переиспользуется — реванш в том же лобби
+ * означает НОВЫЙ экземпляр GameServer, см. LobbyManager.
+ *
+ * Это по-прежнему "каркас" — минимальный, но рабочий скелет. Он не
+ * занимается аутентификацией, реконнектом с сохранением состояния,
+ * unreliable-каналом для снапшотов и т.п. — см. README для списка того,
+ * что стоит добавить перед реальным продакшеном.
  */
 public class GameServer {
 
-    private final Server server = new Server(GameConstants.NETWORK_WRITE_BUFFER_SIZE, GameConstants.NETWORK_OBJECT_BUFFER_SIZE);
+    /**
+     * Общий на ВСЕ матчи процесса KryoNet Server (владеет им LobbyManager,
+     * см. её же javadoc) — нужен тут только чтобы слать сообщения ДВУМ
+     * connections этого матча (см. broadcastToSession и три места с
+     * server.sendToTCP(connection.getID(), ...) по одиночным ошибкам).
+     * GameServer этот Server больше не поднимает и не останавливает сам —
+     * ни bind(), ни start(), ни addListener() тут больше нет, это всё
+     * теперь на LobbyManager, единое на процесс.
+     */
+    private final Server server;
     private final Engine engine = new PooledEngine();
+
+    /**
+     * connections[playerId] — соединение игрока этого матча, playerId
+     * совпадает с индексом слота, который он занимал в Lobby (0 или 1).
+     * Задаётся один раз в конструкторе и не меняется — в отличие от
+     * старой версии, где связка connection -> playerId устанавливалась
+     * динамически через handleJoin по мере подключения игроков.
+     */
+    private final Connection[] connections;
+
+    /**
+     * Вызывается ровно один раз, когда start() возвращается (матч
+     * закончился и, если он закончился победой/поражением/ничьей, после
+     * паузы GameConstants.POST_GAME_OVER_DELAY_SECONDS — см. её же
+     * javadoc) — LobbyManager по этому сигналу возвращает обоих ещё
+     * подключённых игроков в комнату лобби. Не interface, а Runnable —
+     * LobbyManager и так знает, какому именно Lobby принадлежит этот
+     * GameServer (сам его для этого лобби и создал), передавать сюда
+     * что-либо в ответ не нужно.
+     */
+    private final Runnable gameEndListener;
 
     /** connectionId -> playerId (0 или 1) */
     private final Map<Integer, Integer> connectionToPlayer = new HashMap<>();
@@ -134,8 +174,6 @@ public class GameServer {
      * зданий, рискующую разойтись с ProductionSystem/ResourceExtractionSystem.
      */
     private final Map<Integer, float[]> previousResourceValues = new HashMap<>();
-
-    private final boolean[] playerSlotUsed = new boolean[GameConstants.MAX_PLAYERS];
 
     private final AtomicInteger unitIdSequence = new AtomicInteger(1);
 
@@ -177,7 +215,25 @@ public class GameServer {
 
     private volatile boolean gameOver = false;
 
-    public GameServer() {
+    /**
+     * Создаёт и сразу заселяет игровой мир ОДНОГО матча — вызывается
+     * LobbyManager ровно в момент, когда обратный отсчёт лобби доходит до
+     * нуля (см. её же javadoc). connections[playerId] — уже готовые,
+     * живые Connection обоих игроков (их и так проверил на "оба слота
+     * заняты и оба готовы" сам LobbyManager перед вызовом) — оба дома со
+     * стартовым строителем спавнятся немедленно, тут же в конструкторе,
+     * тем же способом (spawnHomeAndBuilder), которым раньше их спавнил
+     * handleJoin по мере динамического подключения игроков. Разница
+     * только в том, ЧТО именно запускает спавн: раньше — сетевое
+     * сообщение JoinRequest от игрока, теперь — сам факт создания этого
+     * объекта, потому что LobbyManager создаёт его только когда оба
+     * игрока уже точно на месте.
+     */
+    public GameServer(Server server, Connection[] connections, Runnable gameEndListener) {
+        this.server = server;
+        this.connections = connections.clone();
+        this.gameEndListener = gameEndListener;
+
         // Приоритет: AggroSystem (-10) до CombatSystem (0) до ProductionSystem (1)
         // до ConstructionSystem (2) до ResourceExtractionSystem (3) до
         // MovementSystem (10) до CollisionSystem (20) — см. их конструкторы.
@@ -206,27 +262,39 @@ public class GameServer {
                 this::assignBuilderToRepair, this::assignBuilderToCollect));
         engine.addSystem(new PatrolSystem());
         engine.addSystem(new CollisionSystem(unitsById, collisionGrid));
+
+        for (int playerId = 0; playerId < GameConstants.MAX_PLAYERS; playerId++) {
+            connectionToPlayer.put(this.connections[playerId].getID(), playerId);
+            resourcesByPlayer.put(playerId, startingResources(playerId));
+            spawnHomeAndBuilder(playerId);
+        }
     }
 
-    public void start() throws IOException {
-        NetworkRegistration.register(server);
-        server.addListener(new ServerNetworkListener(this));
-        // TCP-only: сейчас всё (включая снапшоты) шлётся через sendTCP, а
-        // udpPort в bind()/connect() добавляет клиенту лишнюю UDP-handshake
-        // стадию без какой-либо пользы — см. комментарий в GameClient.connect().
-        // Если добавите частые снапшоты по UDP, возвращайте
-        // server.bind(TCP_PORT, UDP_PORT) и udpPort в GameClient.connect().
-        server.bind(GameConstants.TCP_PORT);
-        server.start();
-
-        System.out.println("Server started on TCP " + GameConstants.TCP_PORT);
-
+    /**
+     * Запускает игровой цикл этого матча на ТЕКУЩЕМ потоке — блокирует его
+     * до самого конца матча (LobbyManager запускает это на отдельном
+     * потоке под каждую стартовавшую сессию, а не на своём собственном —
+     * иначе один долгий матч останавливал бы тиканье обратных отсчётов и
+     * обработку сообщений всех ОСТАЛЬНЫХ лобби). В отличие от старой
+     * версии, ни NetworkRegistration.register(), ни server.bind()/start()
+     * тут больше нет — общий на все матчи KryoNet Server поднимает
+     * LobbyManager один раз на весь процесс, а не каждый матч заново.
+     *
+     * Возвращается (поток завершается), когда runLoop() дошёл до конца
+     * игры — вызывающий (LobbyManager) в ответ на это возвращает обоих
+     * ещё подключённых игроков в комнату лобби через gameEndListener,
+     * переданный в конструктор.
+     */
+    public void start() {
         runLoop();
+        if (gameEndListener != null) {
+            gameEndListener.run();
+        }
     }
 
     private void runLoop() {
         long lastTimeNanos = System.nanoTime();
-        while (true) {
+        while (!gameOver) {
             long now = System.nanoTime();
             float deltaTime = (now - lastTimeNanos) / 1_000_000_000f;
             lastTimeNanos = now;
@@ -244,25 +312,51 @@ public class GameServer {
             // handleMoveUnit / handleAttackUnit / handleDisconnect из сетевого
             // потока KryoNet. Без этой синхронизации это гонка данных.
             synchronized (this) {
-                if (!gameOver) {
-                    engine.update(deltaTime);
-                    checkGameOver();
+                engine.update(deltaTime);
+                checkGameOver();
 
-                    snapshotAccumulator += deltaTime;
-                    timeSinceLastResourceRateUpdate += deltaTime;
-                    timeSinceLastFogUpdate += deltaTime;
-                    if (snapshotAccumulator >= GameConstants.SNAPSHOT_RATE) {
-                        snapshotAccumulator = 0f;
-                        snapshotToSend = buildWorldSnapshot();
-                    }
+                snapshotAccumulator += deltaTime;
+                timeSinceLastResourceRateUpdate += deltaTime;
+                timeSinceLastFogUpdate += deltaTime;
+                if (snapshotAccumulator >= GameConstants.SNAPSHOT_RATE) {
+                    snapshotAccumulator = 0f;
+                    snapshotToSend = buildWorldSnapshot();
                 }
             }
 
             if (snapshotToSend != null) {
-                server.sendToAllTCP(snapshotToSend);
+                broadcastToSession(snapshotToSend);
             }
 
             sleep(GameConstants.SERVER_TICK_RATE);
+        }
+
+        // Пауза ПОСЛЕ финального GameOverMessage (уже отправлен внутри
+        // checkGameOver выше) — чтобы игроки успели увидеть на экране
+        // "Победа"/"Поражение"/"Ничья", прежде чем LobbyManager (сразу
+        // после того как start() вернётся) переключит их обратно на
+        // комнату лобби. Блокирует только поток ЭТОГО матча — на
+        // остальные лобби и на сетевой поток KryoNet не влияет.
+        sleep(GameConstants.POST_GAME_OVER_DELAY_SECONDS);
+    }
+
+    /**
+     * Рассылает сообщение только двум игрокам ЭТОГО матча — общий на все
+     * лобби процесса Server.sendToAllTCP() отправил бы его вообще всем
+     * подключённым к процессу клиентам, включая сидящих в браузере лобби
+     * и играющих СОВСЕМ ДРУГОЙ, не связанный с этим, матч, так что везде
+     * внутри GameServer теперь используется этот метод, а не
+     * server.sendToAllTCP() напрямую. Пропускает уже отключившееся
+     * подключение (isConnected() == false) — если игрок отвалился
+     * посреди матча, писать в его сокет уже некуда, а handleDisconnect
+     * ниже сам уберёт его юнитов и достаточно для checkGameOver, чтобы
+     * увидеть его поражение на следующем тике.
+     */
+    private void broadcastToSession(Object message) {
+        for (Connection connection : connections) {
+            if (connection != null && connection.isConnected()) {
+                connection.sendTCP(message);
+            }
         }
     }
 
@@ -280,33 +374,15 @@ public class GameServer {
 
     // ---- Жизненный цикл игрока ----
 
-    synchronized JoinResponse handleJoin(Connection connection, JoinRequest request) {
-        int playerId = -1;
-        for (int i = 0; i < GameConstants.MAX_PLAYERS; i++) {
-            if (!playerSlotUsed[i]) {
-                playerId = i;
-                break;
-            }
-        }
-
-        JoinResponse response = new JoinResponse();
-        if (playerId == -1) {
-            response.accepted = false;
-            response.message = "Server full (" + GameConstants.MAX_PLAYERS + " players max)";
-            return response;
-        }
-
-        playerSlotUsed[playerId] = true;
-        connectionToPlayer.put(connection.getID(), playerId);
-        resourcesByPlayer.put(playerId, startingResources(playerId));
-        spawnHomeAndBuilder(playerId);
-
-        response.accepted = true;
-        response.playerId = playerId;
-        response.message = "Welcome, player " + playerId;
-        return response;
-    }
-
+    /**
+     * Отключение игрока ПОСРЕДИ этого матча (не путать с выходом из лобби
+     * до старта — тем занимается LobbyManager.handleLeaveLobby/handleDisconnect,
+     * этот метод вообще не вызывается, пока матч не начался). Специальной
+     * логики "засчитать поражение отключившемуся" тут нет и не нужно —
+     * убираем все его сущности, включая дом, и на следующем же тике
+     * checkGameOver сам увидит пропавший дом и объявит победителя ровно
+     * так же, как при обычной потере дома в бою.
+     */
     synchronized void handleDisconnect(Connection connection) {
         Integer playerId = connectionToPlayer.remove(connection.getID());
         if (playerId == null) {
@@ -329,7 +405,6 @@ public class GameServer {
         buildingIdByPlayer.remove(playerId);
         resourcesByPlayer.remove(playerId);
         previousResourceValues.remove(playerId);
-        playerSlotUsed[playerId] = false;
     }
 
     /**
@@ -1687,7 +1762,7 @@ public class GameServer {
         event.fromY = fromY;
         event.toX = toX;
         event.toY = toY;
-        server.sendToAllTCP(event);
+        broadcastToSession(event);
     }
 
     /**
@@ -1738,7 +1813,7 @@ public class GameServer {
                 }
             }
         }
-        server.sendToAllTCP(message);
+        broadcastToSession(message);
     }
 
     // ---- Рассылка снапшота ----
@@ -1752,7 +1827,7 @@ public class GameServer {
      * использует, см. javadoc buildWorldSnapshot, почему.
      */
     private void broadcastSnapshot() {
-        server.sendToAllTCP(buildWorldSnapshot());
+        broadcastToSession(buildWorldSnapshot());
     }
 
     /**
@@ -1761,19 +1836,19 @@ public class GameServer {
      * ресурсов) — эта часть обязана идти под тем же synchronized-локом,
      * что и engine.update()/сетевые обработчики, потому что читает и
      * пишет то же самое общее состояние (unitsById, resourcesByPlayer,
-     * fogTimeSinceVisible). А вот САМА отправка (server.sendToAllTCP —
-     * Kryo-сериализация плюс запись в сокет на каждого клиента) уже не
-     * трогает ничего общего: снапшот к этому моменту — самостоятельный,
-     * ни от чего больше не зависящий объект. Раньше сериализация и запись
-     * в сокет всех клиентов происходили ПРЯМО ВНУТРИ synchronized-блока
-     * runLoop, то есть на время рассылки (15 раз/сек) блокировали не
-     * только следующий тик симуляции, но и приём приказов игроков
-     * (handleMoveUnit и другие handleXxx — тоже synchronized): любая
-     * задержка на сети или на GC от аллокаций внутри этого метода была
-     * заметна как микрофриз всей игры сразу для всех.
+     * fogTimeSinceVisible). А вот САМА отправка (broadcastToSession —
+     * Kryo-сериализация плюс запись в сокет каждому из двух клиентов этого
+     * матча) уже не трогает ничего общего: снапшот к этому моменту —
+     * самостоятельный, ни от чего больше не зависящий объект. Раньше
+     * сериализация и запись в сокет обоих клиентов происходили ПРЯМО
+     * ВНУТРИ synchronized-блока runLoop, то есть на время рассылки (15
+     * раз/сек) блокировали не только следующий тик симуляции, но и приём
+     * приказов игроков (handleMoveUnit и другие handleXxx — тоже
+     * synchronized): любая задержка на сети или на GC от аллокаций внутри
+     * этого метода была заметна как микрофриз всей игры сразу для всех.
      *
      * Поэтому runLoop вызывает этот метод (а не broadcastSnapshot())
-     * внутри своего synchronized(this), а server.sendToAllTCP(...) —
+     * внутри своего synchronized(this), а broadcastToSession(...) —
      * уже ПОСЛЕ выхода из блока, когда лок никого не блокирует. Разовые
      * редкие вызовы (checkGameOver) этой экономии не требуют — там
      * достаточно удобной обёртки broadcastSnapshot() целиком.
