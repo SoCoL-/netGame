@@ -366,7 +366,7 @@ public final class BuildingDefinitions {
         artillery.shellSpeed = 800f;
         artillery.firingConeDegrees = 20f;
         artillery.barrelTurnSpeed = 60f; // от края до края (180°) — за 3 секунды
-        artillery.shellSpreadRadius = 50f; // круг диаметром 100 ед. вокруг точки атаки
+        artillery.shellSpreadRadius = 250f; // круг диаметром 500 ед. вокруг точки атаки
         definitions.put(BuildingType.ARTILLERY, artillery);
 
         // Обломки — не настоящее здание (см. javadoc BuildingType.WRECK),

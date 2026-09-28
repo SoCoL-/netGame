@@ -178,7 +178,7 @@ class ArtilleryTest {
         assertEquals(10f, BuildingDefinitions.activeConsumptionRateFor(ARTILLERY), 0.001f);
         assertEquals(5f, BuildingDefinitions.idleConsumptionRateFor(ARTILLERY), 0.001f);
         assertEquals(200, BuildingDefinitions.shotElectricityCostFor(ARTILLERY));
-        assertEquals(100f, BuildingDefinitions.shellSpreadRadiusFor(ARTILLERY) * 2f, 0.001f, "круг разброса диаметром 100");
+        assertEquals(250f, BuildingDefinitions.shellSpreadRadiusFor(ARTILLERY), 0.001f, "радиус круга разброса");
     }
 
     @Test
