@@ -5,12 +5,15 @@ import com.badlogic.ashley.core.Engine;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
+import com.badlogic.gdx.math.MathUtils;
 import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingType;
+import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.ResourceType;
 import ru.socol.supreme.shared.components.ArtilleryComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
+import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.ProductionComponent;
 import ru.socol.supreme.shared.components.ResourceExtractorComponent;
 
@@ -80,7 +83,15 @@ public class ConstructionSystem extends IteratingSystem {
 
         // Артиллерия начинает строить снаряды (и стрелять) только достроенной.
         if (BuildingDefinitions.shellCapacityFor(buildingType) > 0) {
-            entity.add(engine.createComponent(ArtilleryComponent.class));
+            ArtilleryComponent artillery = engine.createComponent(ArtilleryComponent.class);
+            // Изначально ствол смотрит к центру карты — в сторону противника
+            // (базы стоят в противоположных углах).
+            PositionComponent position = entity.getComponent(PositionComponent.class);
+            if (position != null) {
+                artillery.barrelAngle = MathUtils.atan2(GameConstants.MAP_HEIGHT / 2f - position.position.y,
+                        GameConstants.MAP_WIDTH / 2f - position.position.x);
+            }
+            entity.add(artillery);
         }
     }
 }

@@ -114,7 +114,9 @@
     "shotElectricityCost": 200,
     "shellDamage": 60,
     "shellSplashRadius": 120,
-    "shellSpeed": 800
+    "shellSpeed": 800,
+    "firingConeDegrees": 20,
+    "barrelTurnSpeed": 60
   },
   {
     "type": "WRECK",

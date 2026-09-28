@@ -201,6 +201,16 @@ public final class BuildingDefinitions {
         return DEFINITIONS.get(type).shellSpeed;
     }
 
+    /** Полная ширина конуса стрельбы артиллерии, градусы. */
+    public static float firingConeDegreesFor(BuildingType type) {
+        return DEFINITIONS.get(type).firingConeDegrees;
+    }
+
+    /** Скорость поворота ствола артиллерии, градусы в секунду. */
+    public static float barrelTurnSpeedFor(BuildingType type) {
+        return DEFINITIONS.get(type).barrelTurnSpeed;
+    }
+
     private static Map<BuildingType, BuildingDefinition> load() {
         Map<BuildingType, BuildingDefinition> definitions = defaultDefinitions();
 
@@ -349,6 +359,8 @@ public final class BuildingDefinitions {
         artillery.shellDamage = 60;
         artillery.shellSplashRadius = 120f;
         artillery.shellSpeed = 800f;
+        artillery.firingConeDegrees = 20f;
+        artillery.barrelTurnSpeed = 60f; // от края до края (180°) — за 3 секунды
         definitions.put(BuildingType.ARTILLERY, artillery);
 
         // Обломки — не настоящее здание (см. javadoc BuildingType.WRECK),

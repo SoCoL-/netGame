@@ -40,9 +40,15 @@ import java.util.Map;
  * idleConsumptionRate в секунду на содержание (списывается безусловно,
  * зажимаясь на нуле, как простой казармы).
  *
- * Полёт. Сам выстрел (проверки, списание электричества и снаряда)
- * делает GameServer.handleArtilleryFire и передаёт сюда снаряд через
- * launch — урон наносится не в момент выстрела, а при падении, через
+ * Наведение и выстрел. Игрок отдаёт приказ (GameServer.handleArtilleryFire
+ * кладёт точку в ArtilleryComponent.pendingTargets), а стреляет уже эта
+ * система: ствол поворачивается к первой цели со скоростью barrelTurnSpeed,
+ * и как только цель оказывается в конусе стрельбы (±firingConeDegrees/2
+ * от ствола), башня стреляет — если есть снаряд и shotElectricityCost
+ * электричества; нет электричества — ждёт, как и стройка снаряда. Снаряд
+ * летит точно в указанную точку.
+ *
+ * Полёт. Урон наносится не в момент выстрела, а при падении, через
  * расстояние / shellSpeed секунд. Взрыв задевает всё в радиусе
  * shellSplashRadius, и своих тоже, кроме авиации (снаряд наземный), юнитов
  * под водой и обломков. Гибель от взрыва — через тот же
@@ -58,6 +64,13 @@ public class ArtillerySystem extends IteratingSystem {
             ComponentMapper.getFor(BuildingComponent.class);
     private static final ComponentMapper<OwnerComponent> OWNER =
             ComponentMapper.getFor(OwnerComponent.class);
+    private static final ComponentMapper<PositionComponent> POSITION =
+            ComponentMapper.getFor(PositionComponent.class);
+
+    /** Сообщает GameServer о выстреле — чтобы разослать клиентам ProjectileFiredEvent (чисто визуальный). */
+    public interface ShellLaunchedListener {
+        void onShellLaunched(float fromX, float fromY, float toX, float toY, float flightTime);
+    }
 
     /** Выпущенный, ещё летящий снаряд. */
     private static final class Shell {
@@ -81,19 +94,23 @@ public class ArtillerySystem extends IteratingSystem {
     private final Pathfinding pathfinding;
     private final CombatSystem.UnitDestroyedListener unitDestroyedListener;
     private final CombatSystem.BuildingDestroyedListener buildingDestroyedListener;
+    private final ShellLaunchedListener shellLaunchedListener;
     private final List<Shell> shellsInFlight = new ArrayList<>();
     private Engine engine;
 
     public ArtillerySystem(Map<Integer, Entity> unitsById, Map<Integer, PlayerResources> resourcesByPlayer,
                            Pathfinding pathfinding,
                            CombatSystem.UnitDestroyedListener unitDestroyedListener,
-                           CombatSystem.BuildingDestroyedListener buildingDestroyedListener) {
-        super(Family.all(ArtilleryComponent.class, BuildingComponent.class, OwnerComponent.class).get(), 2);
+                           CombatSystem.BuildingDestroyedListener buildingDestroyedListener,
+                           ShellLaunchedListener shellLaunchedListener) {
+        super(Family.all(ArtilleryComponent.class, BuildingComponent.class, OwnerComponent.class,
+                PositionComponent.class).get(), 2);
         this.unitsById = unitsById;
         this.resourcesByPlayer = resourcesByPlayer;
         this.pathfinding = pathfinding;
         this.unitDestroyedListener = unitDestroyedListener;
         this.buildingDestroyedListener = buildingDestroyedListener;
+        this.shellLaunchedListener = shellLaunchedListener;
     }
 
     @Override
@@ -117,6 +134,64 @@ public class ArtillerySystem extends IteratingSystem {
             return;
         }
 
+        aimAndFire(entity, artillery, type, resources, deltaTime);
+        buildShells(artillery, type, resources, deltaTime);
+    }
+
+    /**
+     * Поворачивает ствол к первой цели из очереди (не больше чем на
+     * barrelTurnSpeed * deltaTime за тик, кратчайшим путём) и стреляет,
+     * как только цель в конусе стрельбы.
+     */
+    private void aimAndFire(Entity entity, ArtilleryComponent artillery, BuildingType type,
+                            PlayerResources resources, float deltaTime) {
+        if (artillery.pendingTargets.isEmpty()) {
+            return;
+        }
+        Vector2 position = POSITION.get(entity).position;
+        Vector2 target = artillery.pendingTargets.get(0);
+
+        float desiredAngle = MathUtils.atan2(target.y - position.y, target.x - position.x);
+        float difference = angleDifference(desiredAngle, artillery.barrelAngle);
+        float maxTurn = BuildingDefinitions.barrelTurnSpeedFor(type) * MathUtils.degreesToRadians * deltaTime;
+        artillery.barrelAngle = normalizeAngle(artillery.barrelAngle + MathUtils.clamp(difference, -maxTurn, maxTurn));
+
+        float halfCone = BuildingDefinitions.firingConeDegreesFor(type) * 0.5f * MathUtils.degreesToRadians;
+        if (Math.abs(angleDifference(desiredAngle, artillery.barrelAngle)) > halfCone + 0.0001f) {
+            return; // ещё доворачиваемся
+        }
+
+        int shotCost = BuildingDefinitions.shotElectricityCostFor(type);
+        if (artillery.shells <= 0 || resources.electricity < shotCost - GameConstants.RESOURCE_EPSILON) {
+            return; // наведены, но стрелять нечем — ждём снаряд или электричество
+        }
+
+        artillery.pendingTargets.remove(0);
+        artillery.shells--;
+        resources.electricity = Math.max(0f, resources.electricity - shotCost);
+        float flightTime = launch(type, position.x, position.y, target.x, target.y);
+        if (shellLaunchedListener != null) {
+            shellLaunchedListener.onShellLaunched(position.x, position.y, target.x, target.y, flightTime);
+        }
+    }
+
+    /** Разница углов to - from, приведённая к (-PI, PI] — кратчайший поворот. */
+    private static float angleDifference(float to, float from) {
+        return normalizeAngle(to - from);
+    }
+
+    private static float normalizeAngle(float angle) {
+        while (angle > MathUtils.PI) {
+            angle -= MathUtils.PI2;
+        }
+        while (angle <= -MathUtils.PI) {
+            angle += MathUtils.PI2;
+        }
+        return angle;
+    }
+
+    /** Стройка следующего снаряда или, при полном запасе, содержание — см. javadoc класса. */
+    private void buildShells(ArtilleryComponent artillery, BuildingType type, PlayerResources resources, float deltaTime) {
         if (artillery.shells >= BuildingDefinitions.shellCapacityFor(type)) {
             artillery.shellProgress = 0f;
             float upkeep = BuildingDefinitions.idleConsumptionRateFor(type) * deltaTime;
@@ -139,12 +214,11 @@ public class ArtillerySystem extends IteratingSystem {
     }
 
     /**
-     * Выпускает снаряд башни типа type из (fromX, fromY) в (toX, toY).
-     * Вызывающий (GameServer) уже проверил дальность, запас снарядов и
-     * электричества и списал их — здесь только полёт и взрыв. Возвращает
-     * время полёта в секундах (для клиентской анимации).
+     * Выпускает снаряд башни типа type из (fromX, fromY) в (toX, toY) —
+     * снаряд и электричество уже списаны вызывающим (aimAndFire), здесь
+     * только полёт и взрыв. Возвращает время полёта в секундах.
      */
-    public float launch(BuildingType type, float fromX, float fromY, float toX, float toY) {
+    private float launch(BuildingType type, float fromX, float fromY, float toX, float toY) {
         float distance = Vector2.dst(fromX, fromY, toX, toY);
         float speed = BuildingDefinitions.shellSpeedFor(type);
         float flightTime = speed > 0f ? distance / speed : 0f;

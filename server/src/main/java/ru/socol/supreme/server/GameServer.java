@@ -268,7 +268,7 @@ public class GameServer {
         engine.addSystem(new ScavengeSystem(unitsById, resourcesByPlayer, pathfinding));
         engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit, pathfinding));
         artillerySystem = new ArtillerySystem(unitsById, resourcesByPlayer, pathfinding,
-                this::spawnWreck, this::spawnBuildingRubble);
+                this::spawnWreck, this::spawnBuildingRubble, this::handleShellLaunched);
         engine.addSystem(artillerySystem);
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
@@ -1823,14 +1823,16 @@ public class GameServer {
     }
 
     /**
-     * Выстрел артиллерийской башни в указанную игроком точку. Видимость
-     * точки не проверяется — стрелять можно и в неисследованную часть карты.
-     * Нужны: своя достроенная башня (есть ArtilleryComponent), точка в
-     * пределах artilleryRange, хотя бы один готовый снаряд и
-     * shotElectricityCost электричества — всё это списывается сразу, а урон
-     * наносит ArtillerySystem при падении снаряда. При отказе игрок
-     * получает ErrorResponse (кроме явно чужих/невалидных запросов, которые
-     * молча игнорируются, как и везде).
+     * Приказ артиллерийской башне выстрелить в указанную игроком точку.
+     * Видимость точки не проверяется — стрелять можно и в неисследованную
+     * часть карты. Сам выстрел делает ArtillerySystem: башня сначала
+     * доворачивает ствол, пока цель не окажется в конусе стрельбы, и только
+     * тогда тратит снаряд и shotElectricityCost электричества (см. её
+     * javadoc). Здесь — только проверки, чтобы сразу ответить игроку
+     * ErrorResponse: своя достроенная башня, точка в пределах
+     * artilleryRange, есть снаряд, не занятый уже отданными приказами, и
+     * хватает электричества хотя бы на этот выстрел прямо сейчас. Явно
+     * чужие/невалидные запросы молча игнорируются, как и везде.
      */
     synchronized void handleArtilleryFire(Connection connection, ArtilleryFireRequest request) {
         if (gameOver) {
@@ -1868,7 +1870,7 @@ public class GameServer {
             connection.sendTCP(new ErrorResponse("Target is out of artillery range"));
             return;
         }
-        if (artillery.shells <= 0) {
+        if (artillery.shells - artillery.pendingTargets.size() <= 0) {
             connection.sendTCP(new ErrorResponse("No artillery shells ready"));
             return;
         }
@@ -1879,19 +1881,24 @@ public class GameServer {
             return;
         }
 
-        resources.electricity = Math.max(0f, resources.electricity - shotCost);
-        artillery.shells--;
-        float flightTime = artillerySystem.launch(BuildingType.ARTILLERY,
-                position.position.x, position.position.y, targetX, targetY);
+        artillery.pendingTargets.add(new Vector2(targetX, targetY));
+    }
 
+    /** Выстрел артиллерии (ArtillerySystem.ShellLaunchedListener) — клиентам только картинка полёта снаряда. */
+    private void handleShellLaunched(float fromX, float fromY, float toX, float toY, float flightTime) {
         ProjectileFiredEvent event = new ProjectileFiredEvent();
-        event.fromX = position.position.x;
-        event.fromY = position.position.y;
-        event.toX = targetX;
-        event.toY = targetY;
+        event.fromX = fromX;
+        event.fromY = fromY;
+        event.toX = toX;
+        event.toY = toY;
         event.artillery = true;
         event.flightTime = flightTime;
         broadcastToSession(event);
+    }
+
+    /** Снарядов артиллерии в полёте — только для тестов. */
+    int artilleryShellsInFlight() {
+        return artillerySystem.shellsInFlightCount();
     }
 
     /** Живое (не копия) состояние ресурсов игрока — только для тестов, чтобы выставить нужный запас. */
@@ -1899,10 +1906,6 @@ public class GameServer {
         return resourcesByPlayer.get(playerId);
     }
 
-    /** Снарядов артиллерии в полёте — только для тестов. */
-    int artilleryShellsInFlight() {
-        return artillerySystem.shellsInFlightCount();
-    }
 
     // ---- Визуальный эффект полёта снаряда (см. CombatSystem.ShotFiredListener) ----
 
@@ -2099,6 +2102,13 @@ public class GameServer {
             if (artilleryState != null) {
                 unitSnapshot.artilleryShells = artilleryState.shells;
                 unitSnapshot.artilleryShellProgress = artilleryState.shellProgress;
+                // Угол ствола — в те же поля, что и у башни турели/техники:
+                // клиент рисует его через тот же TurretDisplayComponent.
+                unitSnapshot.turretDirX = MathUtils.cos(artilleryState.barrelAngle);
+                unitSnapshot.turretDirY = MathUtils.sin(artilleryState.barrelAngle);
+                for (Vector2 target : artilleryState.pendingTargets) {
+                    unitSnapshot.artilleryTargets.add(new PathPoint(target.x, target.y));
+                }
             }
 
             ConstructionComponent construction = unit.getComponent(ConstructionComponent.class);

@@ -105,6 +105,9 @@ public class UnitSnapshot {
     /** Секунд прошло с начала постройки следующего снаряда (ArtilleryComponent.shellProgress). */
     public float artilleryShellProgress;
 
+    /** Точки ещё не выполненных приказов на выстрел артиллерии, по порядку (ArtilleryComponent.pendingTargets). */
+    public List<PathPoint> artilleryTargets = new ArrayList<>();
+
     /**
      * Точки оставшегося маршрута (текущая цель direction.target + все
      * оставшиеся waypoints из PathComponent, если юнит обходит препятствие)

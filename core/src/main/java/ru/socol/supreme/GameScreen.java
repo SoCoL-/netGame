@@ -26,6 +26,7 @@ import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.QueuedOrder;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
+import ru.socol.supreme.components.TurretDisplayComponent;
 import ru.socol.supreme.components.BuildBeamComponent;
 import ru.socol.supreme.components.DebugPathComponent;
 import ru.socol.supreme.components.OrderQueueDisplayComponent;
@@ -409,6 +410,7 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final Color ARTILLERY_RANGE_COLOR = Color.valueOf("FF7043");
     private static final float ARTILLERY_SHELL_RADIUS = 7f;
     private static final float ARTILLERY_EXPLOSION_DURATION = 0.6f;
+    private static final float ARTILLERY_TARGET_MARKER_SIZE = 14f;
     private final List<ArtilleryShellVisual> activeShells = new ArrayList<>();
     private final List<ArtilleryExplosionVisual> activeExplosions = new ArrayList<>();
 
@@ -1192,17 +1194,48 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.end();
     }
 
-    /** Круг дальности стрельбы выделенной СВОЕЙ достроенной артиллерии — куда можно кликнуть ПКМ для выстрела. */
+    /**
+     * Для выделенной СВОЕЙ достроенной артиллерии: круг дальности (куда
+     * можно кликнуть ПКМ), конус стрельбы вдоль текущего направления ствола
+     * (цель должна попасть в него, чтобы башня выстрелила) и отданные, ещё
+     * не выполненные приказы — пунктир от башни к каждой цели и крестик.
+     */
     private void drawArtilleryRange() {
         Entity artillery = selectedOwnArtillery();
         if (artillery == null) {
             return;
         }
-        PositionComponent position = artillery.getComponent(PositionComponent.class);
+        Vector2 center = artillery.getComponent(PositionComponent.class).position;
+        float range = BuildingDefinitions.artilleryRangeFor(BuildingType.ARTILLERY);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
         shapeRenderer.setColor(ARTILLERY_RANGE_COLOR);
-        shapeRenderer.circle(position.position.x, position.position.y,
-                BuildingDefinitions.artilleryRangeFor(BuildingType.ARTILLERY), 128);
+        shapeRenderer.circle(center.x, center.y, range, 128);
+
+        TurretDisplayComponent barrel = artillery.getComponent(TurretDisplayComponent.class);
+        if (barrel != null && (barrel.dirX != 0f || barrel.dirY != 0f)) {
+            float barrelAngle = MathUtils.atan2(barrel.dirY, barrel.dirX);
+            float halfCone = BuildingDefinitions.firingConeDegreesFor(BuildingType.ARTILLERY) * 0.5f * MathUtils.degreesToRadians;
+            for (float edge : new float[]{barrelAngle - halfCone, barrelAngle + halfCone}) {
+                shapeRenderer.line(center.x, center.y,
+                        center.x + MathUtils.cos(edge) * range, center.y + MathUtils.sin(edge) * range);
+            }
+        }
+        shapeRenderer.end();
+
+        List<Vector2> targets = artillery.getComponent(ArtilleryComponent.class).pendingTargets;
+        if (targets.isEmpty()) {
+            return;
+        }
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        for (Vector2 target : targets) {
+            drawDashedLine(center.x, center.y, target.x, target.y, ARTILLERY_RANGE_COLOR);
+        }
+        shapeRenderer.setColor(ARTILLERY_EXPLOSION_COLOR);
+        float cross = ARTILLERY_TARGET_MARKER_SIZE;
+        for (Vector2 target : targets) {
+            shapeRenderer.rectLine(target.x - cross, target.y - cross, target.x + cross, target.y + cross, 3f);
+            shapeRenderer.rectLine(target.x - cross, target.y + cross, target.x + cross, target.y - cross, 3f);
+        }
         shapeRenderer.end();
     }
 
@@ -1806,8 +1839,9 @@ public class GameScreen extends InputAdapter implements Screen {
             int capacity = BuildingDefinitions.shellCapacityFor(buildingType);
             uiFont.draw(spriteBatch, "Shells: " + artillery.shells + "/" + capacity,
                     ACTION_BUTTON_X, ACTION_BUTTON_Y + ACTION_BUTTON_HEIGHT - 4f);
+            String pending = artillery.pendingTargets.isEmpty() ? "" : ", queued: " + artillery.pendingTargets.size();
             uiFont.draw(spriteBatch, "RMB on map: fire (" + BuildingDefinitions.shotElectricityCostFor(buildingType)
-                    + " electricity per shot)", ACTION_BUTTON_X, ACTION_BUTTON_Y + 10f);
+                    + " electricity per shot" + pending + ")", ACTION_BUTTON_X, ACTION_BUTTON_Y + 10f);
             String shellStatus = artillery.shells >= capacity ? "Full" : "Next shell";
             uiFont.draw(spriteBatch, shellStatus, PROGRESS_BAR_X + PROGRESS_BAR_WIDTH + 20f, PROGRESS_BAR_Y + 11f);
         }
@@ -2138,8 +2172,10 @@ public class GameScreen extends InputAdapter implements Screen {
             dragging = true;
         } else if (button == Input.Buttons.RIGHT && selectedOwnArtillery() != null) {
             // ПКМ по любой точке карты при выделенной своей артиллерии —
-            // выстрел туда, в том числе в туман войны (дальность, снаряды и
-            // электричество проверяет сервер и при отказе пришлёт ошибку).
+            // приказ выстрелить туда, в том числе в туман войны. Башня
+            // сначала доворачивается, несколько кликов встают в очередь
+            // (дальность, снаряды и электричество проверяет сервер и при
+            // отказе пришлёт ошибку).
             Vector3 world = camera.unproject(new Vector3(screenX, screenY, 0));
             client.requestArtilleryFire(selectedBuildingId, world.x, world.y);
         } else if (button == Input.Buttons.RIGHT && selectedBuildingId != null) {

@@ -22,6 +22,8 @@ import ru.socol.supreme.shared.components.ResourceExtractorComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.components.WreckComponent;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
+import ru.socol.supreme.components.TurretDisplayComponent;
+import ru.socol.supreme.shared.network.messages.PathPoint;
 
 import java.util.List;
 
@@ -265,11 +267,18 @@ class EntityFactoryTest {
         UnitSnapshot ready = buildingSnapshot(50, BuildingType.ARTILLERY, 1500f, 1500f);
         ready.artilleryShells = 3;
         ready.artilleryShellProgress = 2.5f;
+        ready.artilleryTargets.add(new PathPoint(3000f, 3100f));
+        ready.turretDirX = 0f;
+        ready.turretDirY = 1f;
         factory.applySnapshot(List.of(ready));
 
         ArtilleryComponent artillery = factory.getEntity(50).getComponent(ArtilleryComponent.class);
         assertNotNull(artillery);
         assertEquals(3, artillery.shells);
         assertEquals(2.5f, artillery.shellProgress);
+        assertEquals(1, artillery.pendingTargets.size());
+        assertEquals(3100f, artillery.pendingTargets.get(0).y);
+        assertEquals(1f, factory.getEntity(50).getComponent(TurretDisplayComponent.class).dirY,
+                "угол ствола артиллерии — через тот же TurretDisplayComponent, что и у турели");
     }
 }

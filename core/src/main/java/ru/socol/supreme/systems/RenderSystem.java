@@ -494,7 +494,7 @@ public class RenderSystem extends IteratingSystem {
                 drawWaveMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
                 break;
             case ARTILLERY:
-                drawArtilleryMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
+                drawArtilleryMarker(entity, position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
                 break;
             case HOME:
             default:
@@ -599,14 +599,22 @@ public class RenderSystem extends IteratingSystem {
      * силуэтом похоже на "~".
      */
     /**
-     * Артиллерия — круглое основание и длинный толстый ствол. Ствол смотрит
-     * к центру карты, то есть в сторону противника (базы стоят в
-     * противоположных углах): реальный угол последнего выстрела сервер не
-     * шлёт, а для узнаваемости силуэта его и не нужно.
+     * Артиллерия — круглое основание и длинный толстый ствол. Направление
+     * ствола — реальный угол с сервера (TurretDisplayComponent, те же поля
+     * снапшота, что и у турели), он доворачивается к цели перед выстрелом.
+     * Пока угла нет (башня ещё строится), ствол смотрит к центру карты.
      */
-    private void drawArtilleryMarker(float cx, float cy, float halfSize) {
-        float dx = GameConstants.MAP_WIDTH / 2f - cx;
-        float dy = GameConstants.MAP_HEIGHT / 2f - cy;
+    private void drawArtilleryMarker(Entity entity, float cx, float cy, float halfSize) {
+        TurretDisplayComponent barrel = TURRET_DISPLAY.get(entity);
+        float dx;
+        float dy;
+        if (barrel != null && (barrel.dirX != 0f || barrel.dirY != 0f)) {
+            dx = barrel.dirX;
+            dy = barrel.dirY;
+        } else {
+            dx = GameConstants.MAP_WIDTH / 2f - cx;
+            dy = GameConstants.MAP_HEIGHT / 2f - cy;
+        }
         float length = (float) Math.sqrt(dx * dx + dy * dy);
         if (length < 0.0001f) {
             dx = 1f;

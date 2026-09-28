@@ -1,5 +1,6 @@
 package ru.socol.supreme.server;
 
+import com.badlogic.gdx.math.Vector2;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,8 +30,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Артиллерийская башня: стройка снарядов с расходом электричества,
- * содержание при полном запасе, проверки выстрела (снаряды, электричество,
- * дальность — но не видимость) и взрыв при падении. Тот же подход, что и в
+ * содержание при полном запасе, проверки приказа на выстрел (снаряды,
+ * электричество, дальность — но не видимость), доворот ствола до конуса
+ * стрельбы перед выстрелом и взрыв при падении. Тот же подход, что и в
  * GameServerTest: без сети, симуляция шагается вручную, числа баланса — из
  * BuildingDefinitions.
  */
@@ -40,6 +42,13 @@ class ArtilleryTest {
     /** Свободное место на стороне игрока 0 — как FREE_SPOT в GameServerTest. */
     private static final float TOWER_X = 1500f;
     private static final float TOWER_Y = 1500f;
+    /**
+     * Точка по направлению, куда ствол смотрит сразу после постройки (к
+     * центру карты, 45°) — в неё башня стреляет без доворота. Далеко от
+     * своих юнитов и зданий, поэтому ещё не разведана.
+     */
+    private static final float AHEAD_X = TOWER_X + 1000f;
+    private static final float AHEAD_Y = TOWER_Y + 1000f;
 
     private FakeConnection player0;
     private FakeConnection player1;
@@ -114,6 +123,28 @@ class ArtilleryTest {
         request.x = x;
         request.y = y;
         game.handleArtilleryFire(player0, request);
+    }
+
+    /** Отдаёт приказ и ждёт, пока башня довернётся, выстрелит и снаряд упадёт. */
+    private void fireAndWaitForImpact(int towerId, float x, float y) {
+        fire(towerId, x, y);
+        for (int i = 0; i < 400 && (!artilleryOf(towerId).pendingTargets.isEmpty() || game.artilleryShellsInFlight() > 0); i++) {
+            game.tick(0.05f);
+        }
+        assertTrue(artilleryOf(towerId).pendingTargets.isEmpty(), "башня выстрелила");
+        assertEquals(0, game.artilleryShellsInFlight(), "снаряд упал");
+    }
+
+    private float barrelErrorDegrees(int towerId, float x, float y) {
+        float desired = (float) Math.atan2(y - TOWER_Y, x - TOWER_X);
+        float difference = desired - artilleryOf(towerId).barrelAngle;
+        while (difference > Math.PI) {
+            difference -= 2 * Math.PI;
+        }
+        while (difference <= -Math.PI) {
+            difference += 2 * Math.PI;
+        }
+        return (float) Math.toDegrees(Math.abs(difference));
     }
 
     private void tickFor(float seconds) {
@@ -196,9 +227,9 @@ class ArtilleryTest {
     void cannotFireWithoutShells() {
         int towerId = buildTower();
         resources().electricity = 1000f;
-        fire(towerId, TOWER_X + 500f, TOWER_Y);
+        fire(towerId, AHEAD_X, AHEAD_Y);
         assertNotNull(player0.lastSent(ErrorResponse.class));
-        assertEquals(0, game.artilleryShellsInFlight());
+        assertTrue(artilleryOf(towerId).pendingTargets.isEmpty());
     }
 
     @Test
@@ -207,10 +238,10 @@ class ArtilleryTest {
         artilleryOf(towerId).shells = 1;
         resources().electricity = BuildingDefinitions.shotElectricityCostFor(ARTILLERY) - 1f;
 
-        fire(towerId, TOWER_X + 500f, TOWER_Y);
+        fire(towerId, AHEAD_X, AHEAD_Y);
 
         assertNotNull(player0.lastSent(ErrorResponse.class));
-        assertEquals(1, artilleryOf(towerId).shells, "снаряд не потрачен");
+        assertTrue(artilleryOf(towerId).pendingTargets.isEmpty(), "приказ не принят");
     }
 
     @Test
@@ -223,31 +254,143 @@ class ArtilleryTest {
         fire(towerId, TOWER_X + range + 50f, TOWER_Y);
 
         assertNotNull(player0.lastSent(ErrorResponse.class));
-        assertEquals(1, artilleryOf(towerId).shells);
+        assertTrue(artilleryOf(towerId).pendingTargets.isEmpty());
     }
 
     @Test
-    void canFireIntoFogAndPaysShellAndElectricity() {
+    void orderIntoFogIsAcceptedAndShotPaysShellAndElectricity() {
         int towerId = buildTower();
         artilleryOf(towerId).shells = 3;
         resources().electricity = 1000f;
-        float targetX = TOWER_X + BuildingDefinitions.artilleryRangeFor(ARTILLERY) - 100f;
-        float targetY = TOWER_Y;
-        assertFalse(isRevealedForPlayer0(targetX, targetY), "цель — в неисследованной области");
+        assertFalse(isRevealedForPlayer0(AHEAD_X, AHEAD_Y), "цель — в неисследованной области");
 
-        fire(towerId, targetX, targetY);
+        fire(towerId, AHEAD_X, AHEAD_Y);
 
         assertNull(player0.lastSent(ErrorResponse.class));
+        assertEquals(1, artilleryOf(towerId).pendingTargets.size(), "приказ принят, стреляет уже система");
+        assertEquals(3, artilleryOf(towerId).shells);
+        assertEquals(1000f, resources().electricity, 0.001f);
+
+        game.tick(0.01f); // цель прямо по стволу — выстрел на ближайшем тике
+
         assertEquals(2, artilleryOf(towerId).shells);
-        assertEquals(1000f - BuildingDefinitions.shotElectricityCostFor(ARTILLERY), resources().electricity, 0.001f);
+        assertTrue(artilleryOf(towerId).pendingTargets.isEmpty());
+        assertEquals(1000f - BuildingDefinitions.shotElectricityCostFor(ARTILLERY), resources().electricity, 0.5f);
         assertEquals(1, game.artilleryShellsInFlight());
         for (FakeConnection connection : new FakeConnection[]{player0, player1}) {
             ProjectileFiredEvent event = connection.lastSent(ProjectileFiredEvent.class);
             assertNotNull(event);
             assertTrue(event.artillery);
-            assertEquals(targetX, event.toX, 0.001f);
+            assertEquals(AHEAD_X, event.toX, 0.001f);
+            assertEquals(AHEAD_Y, event.toY, 0.001f);
             assertTrue(event.flightTime > 0f);
         }
+    }
+
+    @Test
+    void ordersCannotExceedReadyShells() {
+        int towerId = buildTower();
+        artilleryOf(towerId).shells = 2;
+        resources().electricity = 1000f;
+
+        fire(towerId, AHEAD_X, AHEAD_Y);
+        fire(towerId, AHEAD_X + 50f, AHEAD_Y);
+        assertNull(player0.lastSent(ErrorResponse.class));
+        fire(towerId, AHEAD_X + 100f, AHEAD_Y);
+
+        assertNotNull(player0.lastSent(ErrorResponse.class), "третий приказ — снарядов уже нет");
+        assertEquals(2, artilleryOf(towerId).pendingTargets.size());
+    }
+
+    @Test
+    void queuedOrdersAreFiredOneByOne() {
+        int towerId = buildTower();
+        artilleryOf(towerId).shells = 3;
+        resources().electricity = 1000f;
+        fire(towerId, AHEAD_X, AHEAD_Y);
+        fire(towerId, AHEAD_X + 100f, AHEAD_Y);
+        fire(towerId, AHEAD_X, AHEAD_Y + 100f);
+
+        tickFor(0.5f);
+
+        assertTrue(artilleryOf(towerId).pendingTargets.isEmpty());
+        assertEquals(0, artilleryOf(towerId).shells);
+        assertEquals(3, player0.sentOf(ProjectileFiredEvent.class).size());
+    }
+
+    // ---- Конус стрельбы и поворот ствола ----
+
+    @Test
+    void towerTurnsUntilTargetIsInsideFiringConeBeforeFiring() {
+        int towerId = buildTower();
+        artilleryOf(towerId).shells = 1;
+        resources().electricity = 1000f;
+        // 90° левее начального направления ствола (45° -> 135°).
+        float targetX = TOWER_X - 700f;
+        float targetY = TOWER_Y + 700f;
+        float halfCone = BuildingDefinitions.firingConeDegreesFor(ARTILLERY) / 2f;
+        float turnSpeed = BuildingDefinitions.barrelTurnSpeedFor(ARTILLERY);
+        float timeToCone = (90f - halfCone) / turnSpeed;
+
+        fire(towerId, targetX, targetY);
+        tickFor(timeToCone - 0.15f);
+        assertEquals(1, artilleryOf(towerId).pendingTargets.size(), "цель ещё вне конуса — не стреляем");
+        assertTrue(barrelErrorDegrees(towerId, targetX, targetY) > halfCone);
+
+        tickFor(0.3f);
+        assertTrue(artilleryOf(towerId).pendingTargets.isEmpty(), "довернулись до конуса — выстрел");
+        assertTrue(barrelErrorDegrees(towerId, targetX, targetY) <= halfCone + 0.01f);
+    }
+
+    @Test
+    void halfTurnFromEdgeToEdgeTakesThreeSeconds() {
+        int towerId = buildTower();
+        // Цель прямо позади ствола (45° -> 225°): максимальный разворот, 180°.
+        float targetX = TOWER_X - 700f;
+        float targetY = TOWER_Y - 700f;
+        artilleryOf(towerId).shells = 0; // без снарядов — чтобы видеть чистый поворот
+        artilleryOf(towerId).pendingTargets.add(new Vector2(targetX, targetY));
+        resources().electricity = 0f;
+
+        tickFor(2.8f);
+        assertTrue(barrelErrorDegrees(towerId, targetX, targetY) > 5f, "за 2.8 с ещё не развернулись");
+
+        tickFor(0.3f);
+        assertTrue(barrelErrorDegrees(towerId, targetX, targetY) < 0.5f, "за ~3 с развернулись на 180°");
+    }
+
+    @Test
+    void aimedTowerWaitsForElectricityInsteadOfDroppingOrder() {
+        int towerId = buildTower();
+        artilleryOf(towerId).shells = 1;
+        resources().electricity = 1000f;
+        fire(towerId, AHEAD_X, AHEAD_Y);
+        resources().electricity = 0f;
+
+        tickFor(1f);
+        assertEquals(1, artilleryOf(towerId).pendingTargets.size(), "нечем платить за выстрел — ждём");
+        assertEquals(1, artilleryOf(towerId).shells);
+
+        resources().electricity = 1000f;
+        game.tick(0.01f);
+        assertTrue(artilleryOf(towerId).pendingTargets.isEmpty());
+        assertEquals(0, artilleryOf(towerId).shells);
+    }
+
+    @Test
+    void snapshotCarriesBarrelDirectionAndPendingTargets() {
+        int towerId = buildTower();
+        artilleryOf(towerId).shells = 1;
+        resources().electricity = 0f;
+        artilleryOf(towerId).pendingTargets.add(new Vector2(AHEAD_X, AHEAD_Y));
+
+        UnitSnapshot tower = unitById(towerId);
+
+        float expected = (float) Math.sqrt(0.5);
+        assertEquals(expected, tower.turretDirX, 0.01f, "ствол к центру карты");
+        assertEquals(expected, tower.turretDirY, 0.01f);
+        assertEquals(1, tower.artilleryTargets.size());
+        assertEquals(AHEAD_X, tower.artilleryTargets.get(0).x, 0.001f);
     }
 
     @Test
@@ -257,10 +400,10 @@ class ArtilleryTest {
         resources().electricity = 1000f;
         ArtilleryFireRequest request = new ArtilleryFireRequest();
         request.buildingUnitId = towerId;
-        request.x = TOWER_X + 500f;
-        request.y = TOWER_Y;
+        request.x = AHEAD_X;
+        request.y = AHEAD_Y;
         game.handleArtilleryFire(player1, request);
-        assertEquals(1, artilleryOf(towerId).shells);
+        assertTrue(artilleryOf(towerId).pendingTargets.isEmpty());
     }
 
     // ---- Взрыв ----
@@ -275,6 +418,10 @@ class ArtilleryTest {
         int damage = BuildingDefinitions.shellDamageFor(ARTILLERY);
 
         fire(towerId, builder.x, builder.y);
+        for (int i = 0; i < 200 && game.artilleryShellsInFlight() == 0; i++) {
+            game.tick(0.05f); // доворот до цели
+        }
+        assertEquals(1, game.artilleryShellsInFlight(), "выстрелили");
         assertEquals(maxHealth, unitById(builder.unitId).health, "урон — при падении, а не при выстреле");
 
         tickFor(flightTimeTo(builder) + 0.1f);
@@ -291,8 +438,7 @@ class ArtilleryTest {
         UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal());
         game.unitById(builder.unitId).getComponent(HealthComponent.class).currentHealth = 1;
 
-        fire(towerId, builder.x, builder.y);
-        tickFor(flightTimeTo(builder) + 0.1f);
+        fireAndWaitForImpact(towerId, builder.x, builder.y);
 
         assertNull(game.unitById(builder.unitId), "строитель погиб");
         assertNotNull(find(GameConstants.NEUTRAL_OWNER_ID, true, BuildingType.WRECK.ordinal()), "остались обломки");
@@ -306,8 +452,7 @@ class ArtilleryTest {
         UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal());
         float farX = builder.x + BuildingDefinitions.shellSplashRadiusFor(ARTILLERY) * 3f;
 
-        fire(towerId, farX, builder.y);
-        tickFor(3f);
+        fireAndWaitForImpact(towerId, farX, builder.y);
 
         assertEquals(UnitDefinitions.healthFor(UnitType.BUILDER),
                 game.unitById(builder.unitId).getComponent(HealthComponent.class).currentHealth);

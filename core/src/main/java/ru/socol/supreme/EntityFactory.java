@@ -208,7 +208,7 @@ public class EntityFactory {
             // его и не читает. Обновление угла на уже созданной сущности
             // ниже в applySnapshot уже общее для юнитов и зданий, отдельного
             // кода для зданий там дописывать не пришлось.
-            if (type == BuildingType.TURRET) {
+            if (type == BuildingType.TURRET || type == BuildingType.ARTILLERY) {
                 TurretDisplayComponent turretDisplay = new TurretDisplayComponent();
                 turretDisplay.dirX = snapshot.turretDirX;
                 turretDisplay.dirY = snapshot.turretDirY;
@@ -332,6 +332,10 @@ public class EntityFactory {
         }
         artillery.shells = snapshot.artilleryShells;
         artillery.shellProgress = snapshot.artilleryShellProgress;
+        artillery.pendingTargets.clear();
+        for (PathPoint target : snapshot.artilleryTargets) {
+            artillery.pendingTargets.add(new Vector2(target.x, target.y));
+        }
     }
 
     /** Добавляет/обновляет/снимает BuildBeamComponent по snapshot.buildTargetUnitId — актуально только для юнитов, только для строителей, которые СЕЙЧАС реально строят (не просто идут к цели). */
