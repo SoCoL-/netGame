@@ -17,6 +17,7 @@ import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
 import ru.socol.supreme.shared.network.messages.CreateLobbyRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
+import ru.socol.supreme.shared.network.messages.FillCraterRequest;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.GameStartedMessage;
 import ru.socol.supreme.shared.network.messages.JoinLobbyRequest;
@@ -239,6 +240,14 @@ public class GameClient implements Disposable {
         request.builderUnitId = builderUnitId;
         request.targetWreckUnitId = targetWreckUnitId;
         request.queue = queue;
+        client.sendTCP(request);
+    }
+
+    /** Строителю засыпать воронку — см. javadoc FillCraterRequest. */
+    public void requestFillCrater(int builderUnitId, int craterId) {
+        FillCraterRequest request = new FillCraterRequest();
+        request.builderUnitId = builderUnitId;
+        request.craterId = craterId;
         client.sendTCP(request);
     }
 

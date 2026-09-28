@@ -7,8 +7,10 @@ import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.BuildingExplosionEvent;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
+import ru.socol.supreme.shared.network.messages.CraterSnapshot;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
+import ru.socol.supreme.shared.network.messages.FillCraterRequest;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.GameStartedMessage;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
@@ -98,5 +100,7 @@ public final class NetworkRegistration {
         // Артиллерия — тоже строго в конец.
         kryo.register(ArtilleryFireRequest.class);
         kryo.register(BuildingExplosionEvent.class);
+        kryo.register(CraterSnapshot.class);
+        kryo.register(FillCraterRequest.class);
     }
 }

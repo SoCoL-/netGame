@@ -24,6 +24,7 @@ import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.CollectOrderComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
+import ru.socol.supreme.shared.components.FillCraterOrderComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OrderQueueComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
@@ -37,13 +38,17 @@ import ru.socol.supreme.shared.components.TurretComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.components.WreckComponent;
+import ru.socol.supreme.shared.craters.Crater;
+import ru.socol.supreme.shared.craters.CraterField;
 import ru.socol.supreme.shared.network.messages.ArtilleryFireRequest;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.BuildingExplosionEvent;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
+import ru.socol.supreme.shared.network.messages.CraterSnapshot;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
+import ru.socol.supreme.shared.network.messages.FillCraterRequest;
 import ru.socol.supreme.shared.network.messages.FogSnapshot;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.MoveUnitRequest;
@@ -68,6 +73,7 @@ import ru.socol.supreme.shared.systems.AircraftMovementSystem;
 import ru.socol.supreme.shared.systems.BuildSystem;
 import ru.socol.supreme.shared.systems.CollisionSystem;
 import ru.socol.supreme.shared.systems.CombatSystem;
+import ru.socol.supreme.shared.systems.CraterSystem;
 import ru.socol.supreme.shared.systems.ConstructionSystem;
 import ru.socol.supreme.shared.systems.MovementSystem;
 import ru.socol.supreme.shared.systems.OrderQueueSystem;
@@ -136,6 +142,9 @@ public class GameServer {
 
     /** Стройка снарядов и полёт выпущенных — нужна напрямую, чтобы выпускать снаряды из handleArtilleryFire. */
     private final ArtillerySystem artillerySystem;
+
+    /** Воронки этого матча (см. CraterField) — от снарядов артиллерии и взрывов электростанций. */
+    private final CraterField craterField = new CraterField();
 
     /**
      * connections[playerId] — соединение игрока этого матча, playerId
@@ -270,7 +279,7 @@ public class GameServer {
         engine.addSystem(new ScavengeSystem(unitsById, resourcesByPlayer, pathfinding));
         engine.addSystem(new ProductionSystem(unitsById, resourcesByPlayer, this::createUnit, pathfinding));
         artillerySystem = new ArtillerySystem(unitsById, resourcesByPlayer, pathfinding,
-                this::spawnWreck, this::handleBuildingDestroyed, this::handleShellLaunched);
+                this::spawnWreck, this::handleBuildingDestroyed, this::handleShellLaunched, craterField);
         engine.addSystem(artillerySystem);
         engine.addSystem(new ConstructionSystem());
         engine.addSystem(new ResourceExtractionSystem(unitsById, resourcesByPlayer));
@@ -279,6 +288,7 @@ public class GameServer {
         engine.addSystem(new OrderQueueSystem(this::startAttackOrder, this::assignBuilderToBuild,
                 this::assignBuilderToRepair, this::assignBuilderToCollect, pathfinding));
         engine.addSystem(new PatrolSystem(pathfinding));
+        engine.addSystem(new CraterSystem(craterField, pathfinding));
         engine.addSystem(new CollisionSystem(unitsById, collisionGrid));
 
         for (int playerId = 0; playerId < GameConstants.MAX_PLAYERS; playerId++) {
@@ -789,6 +799,15 @@ public class GameServer {
             return; // некорректный индекс — либо баг клиента, либо модифицированный клиент
         }
 
+        float[] depositForCraterCheck = GameConstants.IRON_DEPOSITS[request.depositIndex];
+        float mineHalfWidth = BuildingDefinitions.halfWidthFor(BuildingType.IRON_MINE);
+        float mineHalfHeight = BuildingDefinitions.halfHeightFor(BuildingType.IRON_MINE);
+        if (craterField.overlapsRect(depositForCraterCheck[0] - mineHalfWidth, depositForCraterCheck[1] - mineHalfHeight,
+                depositForCraterCheck[0] + mineHalfWidth, depositForCraterCheck[1] + mineHalfHeight)) {
+            server.sendToTCP(connection.getID(), new ErrorResponse(CRATER_BLOCKS_BUILDING_MESSAGE));
+            return;
+        }
+
         if (isDepositOccupied(request.depositIndex)) {
             server.sendToTCP(connection.getID(), new ErrorResponse("Это месторождение уже занято"));
             return;
@@ -827,6 +846,11 @@ public class GameServer {
             return; // дом строит только сервер, шахта — только через handlePlaceIronMine
         }
 
+        if (craterField.overlapsRect(request.x - BuildingDefinitions.halfWidthFor(type), request.y - BuildingDefinitions.halfHeightFor(type),
+                request.x + BuildingDefinitions.halfWidthFor(type), request.y + BuildingDefinitions.halfHeightFor(type))) {
+            server.sendToTCP(connection.getID(), new ErrorResponse(CRATER_BLOCKS_BUILDING_MESSAGE));
+            return;
+        }
         if (!BuildingPlacement.canPlaceBuilding(type, unitsById.values(), request.x, request.y)) {
             server.sendToTCP(connection.getID(), new ErrorResponse("Здесь строить нельзя"));
             return;
@@ -920,6 +944,7 @@ public class GameServer {
         if (unit.getComponent(CollectOrderComponent.class) != null) {
             unit.remove(CollectOrderComponent.class);
         }
+        unit.remove(FillCraterOrderComponent.class); // и засыпку воронки
 
         PositionComponent position = unit.getComponent(PositionComponent.class);
 
@@ -1072,6 +1097,7 @@ public class GameServer {
         if (attacker.getComponent(CollectOrderComponent.class) != null) {
             attacker.remove(CollectOrderComponent.class);
         }
+        attacker.remove(FillCraterOrderComponent.class); // и засыпку воронки
         // И патруль — см. javadoc PatrolComponent, "любая другая команда
         // отменяет патруль"; это не касается АВТОагрессии (AggroSystem),
         // которая AttackComponent назначает сама и патруль не трогает —
@@ -1194,6 +1220,7 @@ public class GameServer {
         if (builder.getComponent(CollectOrderComponent.class) != null) {
             builder.remove(CollectOrderComponent.class);
         }
+        builder.remove(FillCraterOrderComponent.class); // и засыпку воронки
         // И патруль — см. javadoc PatrolComponent, "любая другая команда отменяет патруль".
         if (builder.getComponent(PatrolComponent.class) != null) {
             builder.remove(PatrolComponent.class);
@@ -1374,6 +1401,7 @@ public class GameServer {
         if (builder.getComponent(CollectOrderComponent.class) != null) {
             builder.remove(CollectOrderComponent.class);
         }
+        builder.remove(FillCraterOrderComponent.class); // и засыпку воронки
         // И патруль — см. javadoc PatrolComponent, "любая другая команда отменяет патруль".
         if (builder.getComponent(PatrolComponent.class) != null) {
             builder.remove(PatrolComponent.class);
@@ -1478,6 +1506,10 @@ public class GameServer {
      */
     private void handleBuildingDestroyed(BuildingType destroyedType, float x, float y) {
         spawnBuildingRubble(destroyedType, x, y);
+        float craterRadius = BuildingDefinitions.craterRadiusFor(destroyedType);
+        if (craterRadius > 0f) {
+            craterField.addExplosion(x, y, craterRadius); // взрыв электростанции оставляет воронку на её месте
+        }
         if (BuildingDefinitions.destructionBlastDamageFor(destroyedType) > 0) {
             BuildingExplosionEvent event = new BuildingExplosionEvent();
             event.x = x;
@@ -1682,6 +1714,7 @@ public class GameServer {
         if (builder.getComponent(RepairOrderComponent.class) != null) {
             builder.remove(RepairOrderComponent.class);
         }
+        builder.remove(FillCraterOrderComponent.class); // и засыпку воронки
         // И патруль — см. javadoc PatrolComponent, "любая другая команда отменяет патруль".
         if (builder.getComponent(PatrolComponent.class) != null) {
             builder.remove(PatrolComponent.class);
@@ -1752,6 +1785,7 @@ public class GameServer {
         if (unit.getComponent(CollectOrderComponent.class) != null) {
             unit.remove(CollectOrderComponent.class);
         }
+        unit.remove(FillCraterOrderComponent.class); // и засыпку воронки
 
         PatrolComponent patrol = unit.getComponent(PatrolComponent.class);
         if (patrol == null) {
@@ -1932,6 +1966,61 @@ public class GameServer {
         return resourcesByPlayer.get(playerId);
     }
 
+
+    private static final String CRATER_BLOCKS_BUILDING_MESSAGE = "Здесь воронка — сначала засыпьте её строителем";
+
+    /**
+     * Приказ строителю засыпать воронку (ПКМ по воронке при выделенных
+     * строителях) — саму засыпку ведёт CraterSystem. Как и любой
+     * немедленный приказ, отменяет всё, чем строитель занимался, и его
+     * очередь приказов. Молча игнорируется для чужого юнита, не строителя и
+     * несуществующей (уже засыпанной или заросшей) воронки.
+     */
+    synchronized void handleFillCrater(Connection connection, FillCraterRequest request) {
+        if (gameOver) {
+            return;
+        }
+        Integer playerId = connectionToPlayer.get(connection.getID());
+        if (playerId == null) {
+            return;
+        }
+        Entity builder = unitsById.get(request.builderUnitId);
+        if (builder == null) {
+            return;
+        }
+        OwnerComponent owner = builder.getComponent(OwnerComponent.class);
+        if (owner == null || owner.playerId != playerId) {
+            return; // не ваш юнит
+        }
+        UnitTypeComponent builderType = builder.getComponent(UnitTypeComponent.class);
+        if (builderType == null || builderType.type != UnitType.BUILDER) {
+            return; // засыпать может только строитель
+        }
+        if (craterField.find(request.craterId) == null) {
+            return;
+        }
+
+        clearOrderQueue(builder);
+        builder.remove(AttackComponent.class);
+        builder.remove(BuildOrderComponent.class);
+        builder.remove(RepairOrderComponent.class);
+        builder.remove(CollectOrderComponent.class);
+        builder.remove(PatrolComponent.class);
+
+        FillCraterOrderComponent order = builder.getComponent(FillCraterOrderComponent.class);
+        if (order == null) {
+            order = engine.createComponent(FillCraterOrderComponent.class);
+            builder.add(order);
+        }
+        order.craterId = request.craterId;
+        order.inRange = false;
+        builder.getComponent(DirectionComponent.class).moving = false; // CraterSystem сама проложит путь к воронке
+    }
+
+    /** Воронки матча — только для тестов. */
+    CraterField craterField() {
+        return craterField;
+    }
 
     // ---- Визуальный эффект полёта снаряда (см. CombatSystem.ShotFiredListener) ----
 
@@ -2233,6 +2322,17 @@ public class GameServer {
         }
         timeSinceLastResourceRateUpdate = 0f;
         snapshot.playerResources.addAll(resourcesByPlayer.values());
+
+        for (Crater crater : craterField.all()) {
+            CraterSnapshot craterSnapshot = new CraterSnapshot();
+            craterSnapshot.id = crater.id;
+            craterSnapshot.x = crater.x;
+            craterSnapshot.y = crater.y;
+            craterSnapshot.radius = crater.radius;
+            craterSnapshot.life = 1f - crater.age / GameConstants.CRATER_LIFETIME_SECONDS;
+            craterSnapshot.fill = Math.min(1f, crater.fillProgress / crater.fillTime());
+            snapshot.craters.add(craterSnapshot);
+        }
 
         for (Map.Entry<Integer, float[]> entry : fogTimeSinceVisible.entrySet()) {
             FogSnapshot fogSnapshot = new FogSnapshot(entry.getKey());

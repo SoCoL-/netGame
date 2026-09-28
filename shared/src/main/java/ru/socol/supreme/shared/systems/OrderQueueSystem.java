@@ -8,6 +8,7 @@ import ru.socol.supreme.shared.QueuedOrder;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.BuildOrderComponent;
 import ru.socol.supreme.shared.components.CollectOrderComponent;
+import ru.socol.supreme.shared.components.FillCraterOrderComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.OrderQueueComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
@@ -99,6 +100,7 @@ public class OrderQueueSystem extends IteratingSystem {
                 && entity.getComponent(BuildOrderComponent.class) == null
                 && entity.getComponent(RepairOrderComponent.class) == null
                 && entity.getComponent(CollectOrderComponent.class) == null
+                && entity.getComponent(FillCraterOrderComponent.class) == null
                 && !DIRECTION.get(entity).moving;
         if (!idle) {
             return;

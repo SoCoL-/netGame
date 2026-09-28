@@ -8,6 +8,7 @@ import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
 import ru.socol.supreme.shared.network.messages.CreateLobbyRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
+import ru.socol.supreme.shared.network.messages.FillCraterRequest;
 import ru.socol.supreme.shared.network.messages.JoinLobbyRequest;
 import ru.socol.supreme.shared.network.messages.JoinRequest;
 import ru.socol.supreme.shared.network.messages.LeaveLobbyRequest;
@@ -116,6 +117,11 @@ public class ServerNetworkListener extends Listener {
             GameServer session = lobbyManager.sessionFor(connection);
             if (session != null) {
                 session.handlePatrolUnit(connection, (PatrolUnitRequest) object);
+            }
+        } else if (object instanceof FillCraterRequest) {
+            GameServer session = lobbyManager.sessionFor(connection);
+            if (session != null) {
+                session.handleFillCrater(connection, (FillCraterRequest) object);
             }
         } else if (object instanceof ArtilleryFireRequest) {
             GameServer session = lobbyManager.sessionFor(connection);

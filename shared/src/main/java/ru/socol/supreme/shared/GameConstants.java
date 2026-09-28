@@ -353,4 +353,22 @@ public final class GameConstants {
      * комнату лобби, а не переключает его мгновенно.
      */
     public static final float POST_GAME_OVER_DELAY_SECONDS = 3f;
+
+    // ---- Воронки (см. Crater/CraterField/CraterSystem) ----
+
+    /** Через сколько секунд воронка зарастает сама. */
+    public static final float CRATER_LIFETIME_SECONDS = 180f;
+
+    /** Во сколько раз медленнее едут наземные юниты внутри воронки. */
+    public static final float CRATER_SPEED_MULTIPLIER = 0.6f;
+
+    /** Насколько растёт радиус воронки при повторном взрыве внутри неё. */
+    public static final float CRATER_GROWTH_PER_HIT = 10f;
+
+    /** Больше этого радиуса воронка не растёт. */
+    public static final float CRATER_MAX_RADIUS = 120f;
+
+    /** Секунд работы одного строителя на засыпку воронки радиусом CRATER_FILL_REFERENCE_RADIUS (больше — пропорционально площади). */
+    public static final float CRATER_FILL_SECONDS = 3f;
+    public static final float CRATER_FILL_REFERENCE_RADIUS = 60f;
 }

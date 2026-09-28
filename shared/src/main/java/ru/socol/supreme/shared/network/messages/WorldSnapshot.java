@@ -14,6 +14,9 @@ public class WorldSnapshot {
     /** Туман войны обоих игроков — см. javadoc FogSnapshot, почему шлются оба, а не только свой. */
     public List<FogSnapshot> fog = new ArrayList<>();
 
+    /** Все воронки матча (см. Crater) — шрамы на земле, видны обоим игрокам. */
+    public List<CraterSnapshot> craters = new ArrayList<>();
+
     public WorldSnapshot() {
     }
 }

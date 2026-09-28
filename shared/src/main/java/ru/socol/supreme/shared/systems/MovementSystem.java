@@ -94,7 +94,7 @@ public class MovementSystem extends IteratingSystem {
         // курс не сходится к ней. С пересчётом юнит каждый тик "доворачивает"
         // на цель и всегда в итоге доходит, даже если его постоянно толкают.
         direction.direction.set(direction.target).sub(position.position).nor();
-        position.position.mulAdd(direction.direction, direction.speed * deltaTime);
+        position.position.mulAdd(direction.direction, direction.speed * direction.speedMultiplier * deltaTime);
     }
 
     private void advanceToNextWaypointOrStop(Entity entity, PositionComponent position, DirectionComponent direction) {

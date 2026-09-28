@@ -24,6 +24,8 @@ import ru.socol.supreme.shared.components.WreckComponent;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
+import ru.socol.supreme.shared.craters.CraterField;
+
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -82,13 +84,15 @@ public class ArtillerySystem extends IteratingSystem {
         final float targetY;
         final int damage;
         final float splashRadius;
+        final float craterRadius;
         float remainingFlightTime;
 
-        Shell(float targetX, float targetY, int damage, float splashRadius, float flightTime) {
+        Shell(float targetX, float targetY, int damage, float splashRadius, float craterRadius, float flightTime) {
             this.targetX = targetX;
             this.targetY = targetY;
             this.damage = damage;
             this.splashRadius = splashRadius;
+            this.craterRadius = craterRadius;
             this.remainingFlightTime = flightTime;
         }
     }
@@ -99,6 +103,7 @@ public class ArtillerySystem extends IteratingSystem {
     private final CombatSystem.UnitDestroyedListener unitDestroyedListener;
     private final CombatSystem.BuildingDestroyedListener buildingDestroyedListener;
     private final ShellLaunchedListener shellLaunchedListener;
+    private final CraterField craterField;
     private final List<Shell> shellsInFlight = new ArrayList<>();
     private Random random = new Random();
     private Engine engine;
@@ -107,7 +112,7 @@ public class ArtillerySystem extends IteratingSystem {
                            Pathfinding pathfinding,
                            CombatSystem.UnitDestroyedListener unitDestroyedListener,
                            CombatSystem.BuildingDestroyedListener buildingDestroyedListener,
-                           ShellLaunchedListener shellLaunchedListener) {
+                           ShellLaunchedListener shellLaunchedListener, CraterField craterField) {
         super(Family.all(ArtilleryComponent.class, BuildingComponent.class, OwnerComponent.class,
                 PositionComponent.class).get(), 2);
         this.unitsById = unitsById;
@@ -116,6 +121,7 @@ public class ArtillerySystem extends IteratingSystem {
         this.unitDestroyedListener = unitDestroyedListener;
         this.buildingDestroyedListener = buildingDestroyedListener;
         this.shellLaunchedListener = shellLaunchedListener;
+        this.craterField = craterField;
     }
 
     @Override
@@ -249,7 +255,7 @@ public class ArtillerySystem extends IteratingSystem {
         float speed = BuildingDefinitions.shellSpeedFor(type);
         float flightTime = speed > 0f ? distance / speed : 0f;
         shellsInFlight.add(new Shell(toX, toY, BuildingDefinitions.shellDamageFor(type),
-                BuildingDefinitions.shellSplashRadiusFor(type), flightTime));
+                BuildingDefinitions.shellSplashRadiusFor(type), BuildingDefinitions.craterRadiusFor(type), flightTime));
         return flightTime;
     }
 
@@ -279,6 +285,11 @@ public class ArtillerySystem extends IteratingSystem {
     }
 
     private void explode(Shell shell) {
+        // Шрам на карте — воронка (или углубление уже существующей), см. CraterField.
+        if (craterField != null && shell.craterRadius > 0f) {
+            craterField.addExplosion(shell.targetX, shell.targetY, shell.craterRadius);
+        }
+
         // Сначала только урон и список погибших, уничтожение — отдельным
         // проходом: EntityDestruction удаляет из unitsById, по которому мы
         // сейчас итерируемся.

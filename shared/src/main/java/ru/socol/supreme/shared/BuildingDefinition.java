@@ -104,6 +104,12 @@ public class BuildingDefinition {
     public int destructionBlastDamage;
     public float destructionBlastRadius;
 
+    /**
+     * Радиус воронки (см. Crater), которую оставляет взрыв: у ARTILLERY —
+     * каждый упавший снаряд, у POWER_PLANT — её разрушение. 0 — воронки нет.
+     */
+    public float craterRadius;
+
     // ---- Только для ARTILLERY (у остальных 0) ----
     //
     // Потребление электричества у артиллерии — через те же общие поля, что

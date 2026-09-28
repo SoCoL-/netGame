@@ -50,7 +50,8 @@
     "electricityCost": 50,
     "sightRadius": 420,
     "destructionBlastDamage": 500,
-    "destructionBlastRadius": 75
+    "destructionBlastRadius": 75,
+    "craterRadius": 75
   },
   {
     "type": "IRON_STORAGE",
@@ -120,7 +121,8 @@
     "firingConeDegrees": 20,
     "barrelTurnSpeed": 60,
     "shellSpreadRadius": 250,
-    "shotCooldown": 1.5
+    "shotCooldown": 1.5,
+    "craterRadius": 60
   },
   {
     "type": "WRECK",

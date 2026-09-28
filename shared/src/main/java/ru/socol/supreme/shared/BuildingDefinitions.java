@@ -176,6 +176,11 @@ public final class BuildingDefinitions {
         return DEFINITIONS.get(type).destructionBlastDamage;
     }
 
+    /** Радиус воронки от взрыва: у артиллерии — от снаряда, у электростанции — от её разрушения. 0 — не оставляет. */
+    public static float craterRadiusFor(BuildingType type) {
+        return DEFINITIONS.get(type).craterRadius;
+    }
+
     /** Радиус взрыва при разрушении, от центра здания. */
     public static float destructionBlastRadiusFor(BuildingType type) {
         return DEFINITIONS.get(type).destructionBlastRadius;
@@ -311,6 +316,7 @@ public final class BuildingDefinitions {
         // "радиуса" станции (50 / 2 = 25) от её стен — радиус от центра 50 + 25.
         powerPlant.destructionBlastDamage = 500;
         powerPlant.destructionBlastRadius = 75f;
+        powerPlant.craterRadius = 75f;
         definitions.put(BuildingType.POWER_PLANT, powerPlant);
 
         BuildingDefinition ironStorage = new BuildingDefinition();
@@ -386,6 +392,7 @@ public final class BuildingDefinitions {
         artillery.firingConeDegrees = 20f;
         artillery.barrelTurnSpeed = 60f; // от края до края (180°) — за 3 секунды
         artillery.shotCooldown = 1.5f;
+        artillery.craterRadius = 60f;
         artillery.shellSpreadRadius = 250f; // круг диаметром 500 ед. вокруг точки атаки
         definitions.put(BuildingType.ARTILLERY, artillery);
 

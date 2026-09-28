@@ -52,9 +52,12 @@ import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.PatrolPoint;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.network.messages.BuildingExplosionEvent;
+import ru.socol.supreme.shared.network.messages.CraterSnapshot;
 import ru.socol.supreme.shared.network.messages.ProjectileFiredEvent;
 import ru.socol.supreme.shared.network.messages.QueuedOrderPoint;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
+import ru.socol.supreme.shared.craters.Crater;
+import ru.socol.supreme.shared.craters.CraterField;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
 import java.util.ArrayList;
@@ -567,6 +570,15 @@ public class GameScreen extends InputAdapter implements Screen {
     // выковыривать из десятка мест ради одного всегда-false условия.
     private String connectionStatusText = null;
 
+    // Воронки (см. Crater) из последнего снапшота: craterSnapshots — для
+    // отрисовки (жизнь, засыпка), craters — те же воронки как CraterField,
+    // для проверки клика и превью стройки той же логикой, что и на сервере.
+    private List<CraterSnapshot> craterSnapshots = new ArrayList<>();
+    private final CraterField craters = new CraterField();
+    private static final Color CRATER_COLOR = Color.valueOf("3E2A1C");
+    private static final Color CRATER_CORE_COLOR = Color.valueOf("24170F");
+    private static final int CRATER_EDGE_POINTS = 18;
+
     private static final float ERROR_TOAST_SECONDS = 3f;
     private String errorToastText = null;
     private float errorToastRemaining = 0f;
@@ -609,6 +621,11 @@ public class GameScreen extends InputAdapter implements Screen {
     /** Раньше вызывался напрямую из анонимного GameClientListener этого экрана — см. javadoc client, почему теперь снаружи, из Main. */
     public void onWorldSnapshot(WorldSnapshot snapshot) {
         entityFactory.applySnapshot(snapshot.units);
+        craterSnapshots = snapshot.craters;
+        craters.clear();
+        for (CraterSnapshot crater : snapshot.craters) {
+            craters.add(new Crater(crater.id, crater.x, crater.y, crater.radius));
+        }
         // Юниты, погибшие в этом снапшоте, уже удалены из
         // entityFactory — вычищаем их id из выделения, чтобы
         // не пытаться командовать мёртвыми.
@@ -920,6 +937,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
         drawGround(); // до engine.update() — юниты должны рисоваться поверх земли/воды, а не под ними
         drawIronDeposits(); // тоже до engine.update() — поверх земли, но под юнитами/зданиями
+        drawCraters(); // шрамы на земле — тоже под юнитами и зданиями
 
         // Кроссфейд тактический/стратегический вид (см. strategicFactor) —
         // тактический слой (RenderSystem, внутри engine.update) рисуется с
@@ -1011,6 +1029,53 @@ public class GameScreen extends InputAdapter implements Screen {
      * (обычном и отладочном) одинаково — в отличие от земли/воды, это не
      * часть "слоя земли", а отдельный, всегда видимый маркер.
      */
+    /**
+     * Воронки — тёмно-бурые пятна с неровным краем и тёмной серединой.
+     * Край неровный, но у каждой воронки всегда один и тот же (зависит от
+     * её id), чтобы он не "дрожал" от кадра к кадру. Бледнеют по мере
+     * зарастания (life) и засыпки строителями (fill).
+     */
+    private void drawCraters() {
+        if (craterSnapshots.isEmpty()) {
+            return;
+        }
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        for (CraterSnapshot crater : craterSnapshots) {
+            // Полная яркость большую часть жизни, бледнеет в последней трети.
+            float alpha = MathUtils.clamp(crater.life * 3f, 0f, 1f) * (1f - 0.7f * crater.fill) * 0.85f;
+            shapeRenderer.setColor(CRATER_COLOR.r, CRATER_COLOR.g, CRATER_COLOR.b, alpha);
+            float previousX = 0f;
+            float previousY = 0f;
+            float firstX = 0f;
+            float firstY = 0f;
+            for (int i = 0; i <= CRATER_EDGE_POINTS; i++) {
+                int point = i % CRATER_EDGE_POINTS;
+                float angle = MathUtils.PI2 * point / CRATER_EDGE_POINTS;
+                // Детерминированный "шум" края: псевдослучайное число из id воронки и номера точки.
+                int hash = (crater.id * 73856093) ^ (point * 19349663);
+                float jitter = ((hash >>> 8) & 0xFF) / 255f;
+                float edge = crater.radius * (0.82f + 0.18f * jitter);
+                float x = crater.x + MathUtils.cos(angle) * edge;
+                float y = crater.y + MathUtils.sin(angle) * edge;
+                if (i == 0) {
+                    firstX = x;
+                    firstY = y;
+                } else {
+                    shapeRenderer.triangle(crater.x, crater.y, previousX, previousY, i == CRATER_EDGE_POINTS ? firstX : x,
+                            i == CRATER_EDGE_POINTS ? firstY : y);
+                }
+                previousX = x;
+                previousY = y;
+            }
+            shapeRenderer.setColor(CRATER_CORE_COLOR.r, CRATER_CORE_COLOR.g, CRATER_CORE_COLOR.b, alpha);
+            shapeRenderer.circle(crater.x, crater.y, crater.radius * 0.45f, 20);
+        }
+        shapeRenderer.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+    }
+
     private void drawIronDeposits() {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         shapeRenderer.setColor(IRON_DEPOSIT_COLOR);
@@ -1056,12 +1121,17 @@ public class GameScreen extends InputAdapter implements Screen {
                 buildGhostX = cursorWorld.x;
                 buildGhostY = cursorWorld.y;
             }
-            buildGhostValid = ironMineSnapDepositIndex >= 0;
+            float mineHalfWidth = BuildingDefinitions.halfWidthFor(BuildingType.IRON_MINE);
+            float mineHalfHeight = BuildingDefinitions.halfHeightFor(BuildingType.IRON_MINE);
+            buildGhostValid = ironMineSnapDepositIndex >= 0
+                    && !craters.overlapsRect(buildGhostX - mineHalfWidth, buildGhostY - mineHalfHeight,
+                    buildGhostX + mineHalfWidth, buildGhostY + mineHalfHeight);
         } else {
             // Казарма стрелков / электростанция — свободное размещение, не привязано к точке.
             buildGhostX = cursorWorld.x;
             buildGhostY = cursorWorld.y;
-            buildGhostValid = BuildingPlacement.canPlaceBuilding(placingBuildingType, engine.getEntities(), buildGhostX, buildGhostY);
+            buildGhostValid = BuildingPlacement.canPlaceBuilding(placingBuildingType, engine.getEntities(), craters,
+                    buildGhostX, buildGhostY);
         }
     }
 
@@ -2329,6 +2399,10 @@ public class GameScreen extends InputAdapter implements Screen {
                 // см. её javadoc) — строители из выделения идут собирать
                 // с него железо (см. javadoc issueCollectOrder).
                 issueCollectOrder(target.getComponent(UnitComponent.class).unitId, queue);
+            } else if (target == null && craters.craterAt(world.x, world.y) != null && selectionHasBuilder()) {
+                // ПКМ по воронке — строители из выделения идут её засыпать
+                // (остальные юниты этот клик игнорируют, как и приказ на стройку).
+                issueFillCraterOrder(craters.craterAt(world.x, world.y).id);
             } else {
                 issueMoveOrder(world.x, world.y, queue);
             }
@@ -2694,6 +2768,28 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     /** Зеркально issueRepairOrder, только для сбора железа с обломков (WreckComponent) — по одному CollectOrderRequest на каждого строителя в выделении, остальные юниты выделения (не строители) просто игнорируют этот клик. */
+    private boolean selectionHasBuilder() {
+        for (int unitId : selectedUnitIds) {
+            Entity unit = entityFactory.getEntity(unitId);
+            UnitTypeComponent unitType = unit != null ? unit.getComponent(UnitTypeComponent.class) : null;
+            if (unitType != null && unitType.type == UnitType.BUILDER) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Засыпка воронки — только строители из выделения, по запросу на каждого (см. FillCraterRequest). */
+    private void issueFillCraterOrder(int craterId) {
+        for (int unitId : selectedUnitIds) {
+            Entity unit = entityFactory.getEntity(unitId);
+            UnitTypeComponent unitType = unit != null ? unit.getComponent(UnitTypeComponent.class) : null;
+            if (unitType != null && unitType.type == UnitType.BUILDER) {
+                client.requestFillCrater(unitId, craterId);
+            }
+        }
+    }
+
     private void issueCollectOrder(int targetWreckUnitId, boolean queue) {
         for (int unitId : selectedUnitIds) {
             Entity unit = entityFactory.getEntity(unitId);
