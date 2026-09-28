@@ -146,10 +146,13 @@ public class ArtillerySystem extends IteratingSystem {
     /**
      * Поворачивает ствол к первой цели из очереди (не больше чем на
      * barrelTurnSpeed * deltaTime за тик, кратчайшим путём) и стреляет,
-     * как только цель в конусе стрельбы.
+     * как только цель в конусе стрельбы и закончилась перезарядка
+     * (shotCooldown после предыдущего выстрела). Во время перезарядки ствол
+     * продолжает доворачиваться к следующей цели.
      */
     private void aimAndFire(Entity entity, ArtilleryComponent artillery, BuildingType type,
                             PlayerResources resources, float deltaTime) {
+        artillery.cooldownRemaining = Math.max(0f, artillery.cooldownRemaining - deltaTime);
         if (artillery.pendingTargets.isEmpty()) {
             return;
         }
@@ -165,6 +168,9 @@ public class ArtillerySystem extends IteratingSystem {
         if (Math.abs(angleDifference(desiredAngle, artillery.barrelAngle)) > halfCone + 0.0001f) {
             return; // ещё доворачиваемся
         }
+        if (artillery.cooldownRemaining > 0f) {
+            return; // перезарядка
+        }
 
         int shotCost = BuildingDefinitions.shotElectricityCostFor(type);
         if (artillery.shells <= 0 || resources.electricity < shotCost - GameConstants.RESOURCE_EPSILON) {
@@ -173,6 +179,7 @@ public class ArtillerySystem extends IteratingSystem {
 
         artillery.pendingTargets.remove(0);
         artillery.shells--;
+        artillery.cooldownRemaining = BuildingDefinitions.shotCooldownFor(type);
         resources.electricity = Math.max(0f, resources.electricity - shotCost);
 
         // Разброс: случайная точка круга радиусом spread вокруг цели. sqrt —

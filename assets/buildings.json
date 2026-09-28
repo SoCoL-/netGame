@@ -119,7 +119,8 @@
     "shellSpeed": 800,
     "firingConeDegrees": 20,
     "barrelTurnSpeed": 60,
-    "shellSpreadRadius": 250
+    "shellSpreadRadius": 250,
+    "shotCooldown": 1.5
   },
   {
     "type": "WRECK",

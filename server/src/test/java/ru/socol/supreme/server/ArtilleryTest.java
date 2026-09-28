@@ -180,6 +180,7 @@ class ArtilleryTest {
         assertEquals(5f, BuildingDefinitions.idleConsumptionRateFor(ARTILLERY), 0.001f);
         assertEquals(200, BuildingDefinitions.shotElectricityCostFor(ARTILLERY));
         assertEquals(250f, BuildingDefinitions.shellSpreadRadiusFor(ARTILLERY), 0.001f, "радиус круга разброса");
+        assertEquals(1.5f, BuildingDefinitions.shotCooldownFor(ARTILLERY), 0.001f);
     }
 
     @Test
@@ -325,11 +326,30 @@ class ArtilleryTest {
         fire(towerId, AHEAD_X + 100f, AHEAD_Y);
         fire(towerId, AHEAD_X, AHEAD_Y + 100f);
 
-        tickFor(0.5f);
+        tickFor(2 * BuildingDefinitions.shotCooldownFor(ARTILLERY) + 0.5f);
 
         assertTrue(artilleryOf(towerId).pendingTargets.isEmpty());
         assertEquals(0, artilleryOf(towerId).shells);
         assertEquals(3, player0.sentOf(ProjectileFiredEvent.class).size());
+    }
+
+    @Test
+    void shotsAreSeparatedByCooldown() {
+        int towerId = buildTower();
+        artilleryOf(towerId).shells = 2;
+        resources().electricity = 1000f;
+        float cooldown = BuildingDefinitions.shotCooldownFor(ARTILLERY);
+        fire(towerId, AHEAD_X, AHEAD_Y);
+        fire(towerId, AHEAD_X, AHEAD_Y); // та же точка — доворачиваться не нужно
+
+        game.tick(0.01f);
+        assertEquals(1, player0.sentOf(ProjectileFiredEvent.class).size(), "первый выстрел сразу");
+
+        tickFor(cooldown - 0.2f);
+        assertEquals(1, player0.sentOf(ProjectileFiredEvent.class).size(), "второй ждёт перезарядку");
+
+        tickFor(0.3f);
+        assertEquals(2, player0.sentOf(ProjectileFiredEvent.class).size(), "после перезарядки — второй выстрел");
     }
 
     // ---- Конус стрельбы и поворот ствола ----
@@ -434,7 +454,7 @@ class ArtilleryTest {
         for (int i = 0; i < shots; i++) {
             fire(towerId, AHEAD_X, AHEAD_Y);
         }
-        tickFor(1f);
+        tickFor(shots * BuildingDefinitions.shotCooldownFor(ARTILLERY) + 1f);
 
         assertEquals(shots, player0.sentOf(ProjectileFiredEvent.class).size());
         float largestDeviation = 0f;

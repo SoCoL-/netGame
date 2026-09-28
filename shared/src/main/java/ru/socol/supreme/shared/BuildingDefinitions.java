@@ -221,6 +221,11 @@ public final class BuildingDefinitions {
         return DEFINITIONS.get(type).shellSpreadRadius;
     }
 
+    /** Перезарядка артиллерии — минимум секунд между выстрелами. */
+    public static float shotCooldownFor(BuildingType type) {
+        return DEFINITIONS.get(type).shotCooldown;
+    }
+
     /** Скорость поворота ствола артиллерии, градусы в секунду. */
     public static float barrelTurnSpeedFor(BuildingType type) {
         return DEFINITIONS.get(type).barrelTurnSpeed;
@@ -380,6 +385,7 @@ public final class BuildingDefinitions {
         artillery.shellSpeed = 800f;
         artillery.firingConeDegrees = 20f;
         artillery.barrelTurnSpeed = 60f; // от края до края (180°) — за 3 секунды
+        artillery.shotCooldown = 1.5f;
         artillery.shellSpreadRadius = 250f; // круг диаметром 500 ед. вокруг точки атаки
         definitions.put(BuildingType.ARTILLERY, artillery);
 

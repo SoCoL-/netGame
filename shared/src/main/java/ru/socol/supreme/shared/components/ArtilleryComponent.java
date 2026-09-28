@@ -26,6 +26,9 @@ public class ArtilleryComponent implements Component, Pool.Poolable {
     /** Секунд прошло с начала постройки следующего снаряда. 0, когда снарядов максимум. */
     public float shellProgress;
 
+    /** Секунд до конца перезарядки после последнего выстрела; 0 — можно стрелять. */
+    public float cooldownRemaining;
+
     /** Куда смотрит ствол, радианы (0 — вправо, против часовой стрелки). */
     public float barrelAngle;
 
@@ -45,6 +48,7 @@ public class ArtilleryComponent implements Component, Pool.Poolable {
     public void reset() {
         shells = 0;
         shellProgress = 0f;
+        cooldownRemaining = 0f;
         barrelAngle = 0f;
         pendingTargets.clear();
     }

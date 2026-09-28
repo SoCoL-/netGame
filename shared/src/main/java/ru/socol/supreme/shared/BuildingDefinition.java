@@ -139,6 +139,9 @@ public class BuildingDefinition {
      */
     public float firingConeDegrees;
 
+    /** Перезарядка: минимум секунд между двумя выстрелами одной башни. */
+    public float shotCooldown;
+
     /** Скорость поворота ствола, градусы в секунду (60 — разворот на 180° за 3 с). */
     public float barrelTurnSpeed;
 
