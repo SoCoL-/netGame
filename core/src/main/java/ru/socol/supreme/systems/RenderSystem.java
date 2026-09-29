@@ -4,7 +4,10 @@ import com.badlogic.ashley.core.ComponentMapper;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import ru.socol.supreme.components.SelectedComponent;
@@ -22,6 +25,8 @@ import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.components.WreckComponent;
 
+import java.util.ArrayList;
+import java.util.List;
 /**
  * Рисует каждую сущность. Наземная техника (WARRIOR/ARCHER/BUILDER) —
  * прямоугольный корпус, повёрнутый по направлению движения, и отдельная
@@ -167,9 +172,28 @@ public class RenderSystem extends IteratingSystem {
     private boolean[] fogRevealed;
     private int localPlayerId = -1;
 
-    public RenderSystem(ShapeRenderer shapeRenderer) {
+    /**
+     * Стрелки (ARCHER) рисуются не фигурами, а спрайтом (см. ArcherSprite) —
+     * SpriteBatch и ShapeRenderer нельзя держать открытыми одновременно,
+     * поэтому в основном проходе стрелки только копятся в этот список, а
+     * рисуются отдельным проходом SpriteBatch после всех фигур (и поверх
+     * них ещё раз ShapeRenderer — их полоски здоровья), см. update().
+     */
+    private final SpriteBatch spriteBatch;
+    private final ArcherSprite archerSprite = new ArcherSprite();
+    private final List<Entity> pendingArchers = new ArrayList<>();
+
+    /** Кольцо выделения стрелка шире, чем у остальной техники — спрайт крупнее прямоугольника. */
+    private static final float ARCHER_SELECTION_RING_RADIUS = 20f;
+
+    public RenderSystem(ShapeRenderer shapeRenderer, SpriteBatch spriteBatch) {
         super(Family.all(PositionComponent.class, OwnerComponent.class, HealthComponent.class).get(), 10);
         this.shapeRenderer = shapeRenderer;
+        this.spriteBatch = spriteBatch;
+    }
+
+    public void dispose() {
+        archerSprite.dispose();
     }
 
     public void setRenderAlpha(float renderAlpha) {
@@ -210,6 +234,47 @@ public class RenderSystem extends IteratingSystem {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         super.update(deltaTime);
         shapeRenderer.end();
+        drawPendingArchers();
+    }
+
+    /** Второй проход: спрайты стрелков (SpriteBatch), затем их полоски здоровья поверх (ShapeRenderer). */
+    private void drawPendingArchers() {
+        if (pendingArchers.isEmpty()) {
+            return;
+        }
+        spriteBatch.setProjectionMatrix(shapeRenderer.getProjectionMatrix());
+        spriteBatch.begin();
+        for (Entity entity : pendingArchers) {
+            PositionComponent position = POSITION.get(entity);
+            DirectionComponent bodyDirection = DIRECTION.get(entity);
+            float hullDx = bodyDirection != null ? bodyDirection.direction.x : 0f;
+            float hullDy = bodyDirection != null ? bodyDirection.direction.y : 0f;
+            if (hullDx == 0f && hullDy == 0f) {
+                hullDx = 1f; // ещё ни разу не двигался — направление не определено
+            }
+            TurretDisplayComponent turretDisplay = TURRET_DISPLAY.get(entity);
+            float turretDx = turretDisplay != null ? turretDisplay.dirX : 0f;
+            float turretDy = turretDisplay != null ? turretDisplay.dirY : 0f;
+            if (turretDx == 0f && turretDy == 0f) {
+                turretDx = hullDx;
+                turretDy = hullDy;
+            }
+            Color playerColor = PLAYER_COLORS[OWNER.get(entity).playerId % PLAYER_COLORS.length];
+            archerSprite.draw(spriteBatch, position.position.x, position.position.y,
+                    hullDx, hullDy, turretDx, turretDy, playerColor, renderAlpha);
+        }
+        spriteBatch.end();
+
+        // SpriteBatch.end() выключает смешивание — полоскам здоровья с
+        // альфой (кроссфейд видов) оно нужно, включаем обратно.
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        for (Entity entity : pendingArchers) {
+            drawHealthBar(POSITION.get(entity), HEALTH.get(entity), UNIT_HEALTH_BAR_Y_OFFSET, UNIT_HEALTH_BAR_WIDTH);
+        }
+        shapeRenderer.end();
+        pendingArchers.clear();
     }
 
     /**
@@ -279,8 +344,14 @@ public class RenderSystem extends IteratingSystem {
         // пределы (см. javadoc GROUND_SELECTION_RING_RADIUS).
         if (SELECTED.has(entity)) {
             setColor(SELECTION_RING_COLOR);
-            float ringRadius = groundVehicle ? GROUND_SELECTION_RING_RADIUS : SELECTION_RING_RADIUS;
+            float ringRadius = type == UnitType.ARCHER ? ARCHER_SELECTION_RING_RADIUS
+                    : groundVehicle ? GROUND_SELECTION_RING_RADIUS : SELECTION_RING_RADIUS;
             shapeRenderer.circle(position.position.x, position.position.y, ringRadius);
+        }
+
+        if (type == UnitType.ARCHER) {
+            pendingArchers.add(entity); // спрайт и полоска здоровья — во втором проходе, см. drawPendingArchers
+            return;
         }
 
         Color playerColor = PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length];

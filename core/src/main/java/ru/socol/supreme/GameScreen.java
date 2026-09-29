@@ -348,7 +348,7 @@ public class GameScreen extends InputAdapter implements Screen {
     // Именованное поле (не анонимный addSystem(new RenderSystem(...))), так
     // как GameScreen каждый кадр должен сообщать ей текущую альфу
     // тактического слоя (см. render()/strategicFactor).
-    private final RenderSystem renderSystem = new RenderSystem(shapeRenderer);
+    private final RenderSystem renderSystem = new RenderSystem(shapeRenderer, spriteBatch);
     private final EntityFactory entityFactory = new EntityFactory(engine);
     /**
      * Уже подключённый, живущий дольше одного матча GameClient — передаётся
@@ -2913,6 +2913,7 @@ public class GameScreen extends InputAdapter implements Screen {
      */
     @Override
     public void dispose() {
+        renderSystem.dispose();
         shapeRenderer.dispose();
         spriteBatch.dispose();
         font.dispose();
