@@ -65,6 +65,7 @@ import ru.socol.supreme.shared.map.GameMap;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -150,6 +151,9 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float STRATEGIC_UNIT_ICON_RADIUS_PX = 8f;
     private static final float STRATEGIC_BUILDING_ICON_HALF_SIZE_PX = 11f;
     private static final float STRATEGIC_SELECTION_RING_EXTRA_PX = 3f;
+    private static final float STRATEGIC_DEPOSIT_ICON_SIZE_PX = 18f;
+    /** Пиктограмма на подложке — такая доля её размера. */
+    private static final float ICON_GLYPH_SCALE = 0.68f;
 
     private static final float DRAG_THRESHOLD = 6f; // world units — отличает клик от протяжки рамки
     private static final float MOVE_ORDER_SPACING = 24f; // world units между юнитами в сетке при групповом приказе
@@ -158,7 +162,10 @@ public class GameScreen extends InputAdapter implements Screen {
     // Серое затенение непросвеченных клеток тумана войны — полупрозрачное
     // (не сплошной чёрный), чтобы "затенение", как просили, а не полное
     // перекрытие.
-    private static final float IRON_DEPOSIT_RADIUS = 18f;
+    /** Иконка месторождения в тактическом виде — в мировых единицах (вдвое больше юнита). */
+    private static final float IRON_DEPOSIT_ICON_SIZE = 44f;
+    /** Прозрачность того, что видно под туманом: запомненных зданий (и, чуть плотнее, месторождений). */
+    private static final float REMEMBERED_ALPHA = 0.55f;
     private static final float RALLY_POINT_RADIUS = 10f;
     private static final float RALLY_DASH_LENGTH = 15f;
     private static final float RALLY_GAP_LENGTH = 10f;
@@ -323,6 +330,8 @@ public class GameScreen extends InputAdapter implements Screen {
     private final BitmapFont uiFont; // помельче — для панелей
     private final BitmapFont buttonFont; // подписи кнопок — русские названия длиннее английских
     private final Palette palette;
+    private final GameAssets assets;
+    private final FogMemory fogMemory = new FogMemory();
     private final GlyphLayout buttonLayout = new GlyphLayout();
     private final OrthographicCamera camera = new OrthographicCamera();
     // Отдельная неподвижная камера для HUD (панель постройки) — рисуется в
@@ -568,6 +577,7 @@ public class GameScreen extends InputAdapter implements Screen {
         uiFont = assets.font(GameAssets.GameFont.UI);
         buttonFont = assets.font(GameAssets.GameFont.BUTTON);
         palette = assets.palette();
+        this.assets = assets;
         terrainRenderer = new TerrainRenderer(assets);
         renderSystem = new RenderSystem(shapeRenderer, spriteBatch, assets);
         camera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
@@ -848,60 +858,87 @@ public class GameScreen extends InputAdapter implements Screen {
         }
 
         float unitRadius = STRATEGIC_UNIT_ICON_RADIUS_PX * camera.zoom;
-        float buildingHalfSize = STRATEGIC_BUILDING_ICON_HALF_SIZE_PX * camera.zoom;
         float selectionRingRadius = unitRadius + STRATEGIC_SELECTION_RING_EXTRA_PX * camera.zoom;
 
+        // Кольца выделения — под значками, отдельным проходом ShapeRenderer.
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-
+        shapeRenderer.setColor(1f, 1f, 1f, alpha);
         for (Entity entity : engine.getEntities()) {
             PositionComponent position = entity.getComponent(PositionComponent.class);
-            OwnerComponent owner = entity.getComponent(OwnerComponent.class);
-            if (position == null || owner == null) {
-                continue;
-            }
-            if (entity.getComponent(WreckComponent.class) != null) {
-                // Обломки нейтральны (owner.playerId ==
-                // GameConstants.NEUTRAL_OWNER_ID, см. её javadoc) — не
-                // "чей-то" стратегический значок, у них вообще нет
-                // соответствующего playerColor. Без этой проверки
-                // palette.player(owner.playerId) упал бы с
-                // отрицательным индексом (-1 % 2 == -1 в Java). Сами
-                // обломки в стратегическом виде не рисуются вовсе —
-                // некрупный, временный объект, тактического значка
-                // достаточно.
-                continue;
-            }
-            if (isHiddenByFog(owner, position)) {
-                continue; // тот же принцип, что и в RenderSystem.isHiddenByFog — чужой значок в тумане вообще не рисуем
-            }
-
-            Color playerColor = palette.player(owner.playerId);
-            boolean isBuilding = entity.getComponent(BuildingComponent.class) != null;
-
-            if (!isBuilding && entity.getComponent(SelectedComponent.class) != null) {
-                // Тот же приём, что и в RenderSystem: сперва больший белый
-                // круг, потом обычный поверх него — снизу выглядывает
-                // кольцом, без отдельного прохода ShapeType.Line.
-                shapeRenderer.setColor(1f, 1f, 1f, alpha);
+            if (position != null && entity.getComponent(SelectedComponent.class) != null
+                    && entity.getComponent(BuildingComponent.class) == null) {
                 shapeRenderer.circle(position.position.x, position.position.y, selectionRingRadius, 14);
             }
+        }
+        shapeRenderer.end();
 
-            shapeRenderer.setColor(playerColor.r, playerColor.g, playerColor.b, playerColor.a * alpha);
-            if (isBuilding) {
-                shapeRenderer.rect(
-                        position.position.x - buildingHalfSize,
-                        position.position.y - buildingHalfSize,
-                        buildingHalfSize * 2f,
-                        buildingHalfSize * 2f);
-            } else {
-                shapeRenderer.circle(position.position.x, position.position.y, unitRadius, 14);
+        // Сначала здания, потом юниты — юниты поверх.
+        List<Entity> visibleBuildings = new ArrayList<>();
+        for (Entity entity : engine.getEntities()) {
+            if (isStrategicIconVisible(entity) && entity.getComponent(BuildingComponent.class) != null) {
+                visibleBuildings.add(entity);
             }
         }
+        drawStrategicBuildingIcons(visibleBuildings, alpha);
 
-        shapeRenderer.end();
+        spriteBatch.setProjectionMatrix(camera.combined);
+        spriteBatch.begin();
+        float unitSize = unitRadius * 2f + 2f * camera.zoom;
+        for (Entity entity : engine.getEntities()) {
+            UnitTypeComponent unitType = entity.getComponent(UnitTypeComponent.class);
+            if (!isStrategicIconVisible(entity) || entity.getComponent(BuildingComponent.class) != null || unitType == null) {
+                continue;
+            }
+            drawIcon(entity, assets.texture(GameAssets.ICON_BADGE_UNIT), assets.icon(unitType.type), unitSize, alpha);
+        }
+        spriteBatch.end();
+        spriteBatch.setColor(Color.WHITE);
         Gdx.gl.glDisable(GL20.GL_BLEND);
+    }
+
+    /**
+     * Есть ли у сущности значок на стратегической карте прямо сейчас:
+     * обломков нет вовсе (нейтральны и временны), чужое под туманом не
+     * рисуется (чужие здания оттуда рисует память, см. FogMemory).
+     */
+    private boolean isStrategicIconVisible(Entity entity) {
+        PositionComponent position = entity.getComponent(PositionComponent.class);
+        OwnerComponent owner = entity.getComponent(OwnerComponent.class);
+        return position != null && owner != null && entity.getComponent(WreckComponent.class) == null
+                && !isHiddenByFog(owner, position);
+    }
+
+    /** Значки зданий (живых или запомненных) — квадратная подложка в цвете владельца и пиктограмма типа. */
+    private void drawStrategicBuildingIcons(Iterable<Entity> buildings, float alpha) {
+        if (alpha <= 0f) {
+            return;
+        }
+        float size = (STRATEGIC_BUILDING_ICON_HALF_SIZE_PX * 2f + 2f) * camera.zoom;
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        spriteBatch.setProjectionMatrix(camera.combined);
+        spriteBatch.begin();
+        for (Entity building : buildings) {
+            Texture glyph = assets.icon(building.getComponent(BuildingComponent.class).type);
+            if (glyph != null) {
+                drawIcon(building, assets.texture(GameAssets.ICON_BADGE_BUILDING), glyph, size, alpha);
+            }
+        }
+        spriteBatch.end();
+        spriteBatch.setColor(Color.WHITE);
+    }
+
+    /** Подложка badge в цвете владельца, поверх — пиктограмма glyph цветом ICON_GLYPH (внутри spriteBatch.begin/end). */
+    private void drawIcon(Entity entity, Texture badge, Texture glyph, float size, float alpha) {
+        Vector2 position = entity.getComponent(PositionComponent.class).position;
+        Color owner = palette.player(entity.getComponent(OwnerComponent.class).playerId);
+        spriteBatch.setColor(owner.r, owner.g, owner.b, alpha);
+        spriteBatch.draw(badge, position.x - size / 2f, position.y - size / 2f, size, size);
+        Color glyphColor = palette.get(GameColor.ICON_GLYPH);
+        float glyphSize = size * ICON_GLYPH_SCALE;
+        spriteBatch.setColor(glyphColor.r, glyphColor.g, glyphColor.b, alpha);
+        spriteBatch.draw(glyph, position.x - glyphSize / 2f, position.y - glyphSize / 2f, glyphSize, glyphSize);
     }
 
     // ---- Рендер ----
@@ -920,8 +957,12 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.setProjectionMatrix(camera.combined);
         spriteBatch.setProjectionMatrix(camera.combined);
 
+        float strategicFactor = strategicFactor();
+        // Память о чужих зданиях под туманом — по текущему миру и маске видимости (см. FogMemory).
+        fogMemory.update(engine.getEntities(), fogRevealed, client.getPlayerId());
+
         drawGround(); // до engine.update() — юниты должны рисоваться поверх земли/воды, а не под ними
-        drawIronDeposits(); // тоже до engine.update() — поверх земли, но под юнитами/зданиями
+        drawIronDeposits(strategicFactor, false); // видимые — до engine.update(): поверх земли, но под юнитами/зданиями
         drawCraters(); // шрамы на земле — тоже под юнитами и зданиями
 
         // Кроссфейд тактический/стратегический вид (см. strategicFactor) —
@@ -931,7 +972,6 @@ public class GameScreen extends InputAdapter implements Screen {
         // не зумированный вид) он не меняет картинку (dst-вклад умножается
         // на 1-1=0), но без него частичная альфа при кроссфейде просто не
         // применялась бы (RenderSystem рисовал бы непрозрачно всегда).
-        float strategicFactor = strategicFactor();
         renderSystem.setRenderAlpha(1f - strategicFactor);
         renderSystem.setFogVisibility(fogRevealed, client.getPlayerId());
         Gdx.gl.glEnable(GL20.GL_BLEND);
@@ -945,6 +985,14 @@ public class GameScreen extends InputAdapter implements Screen {
         drawArrows();
         drawBuildBeams();
         drawFogOfWar(); // поверх всего мирового — юнитов, зданий, лучей стройки — но до HUD
+        // Под туманом видно то, что игрок уже знает: месторождения (всегда) и
+        // чужие здания в последнем увиденном состоянии (FogMemory). Рисуются
+        // поверх тумана полупрозрачными — сам туман почти непрозрачный и
+        // скрыл бы их целиком.
+        drawIronDeposits(strategicFactor, true);
+        Collection<Entity> rememberedBuildings = fogMemory.hiddenBuildings(fogRevealed);
+        renderSystem.drawRemembered(rememberedBuildings, REMEMBERED_ALPHA);
+        drawStrategicBuildingIcons(rememberedBuildings, strategicFactor * REMEMBERED_ALPHA);
         // После тумана, не до него: и точка сбора, и очередь приказов —
         // это всегда СВОИ же здание/юнит, включая точки, ведущие в ещё не
         // открытую туманом территорию (можно назначить точку сбора или
@@ -1055,13 +1103,35 @@ public class GameScreen extends InputAdapter implements Screen {
         Gdx.gl.glDisable(GL20.GL_BLEND);
     }
 
-    private void drawIronDeposits() {
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(palette.get(GameColor.IRON_DEPOSIT));
+    /**
+     * Месторождения железа — иконкой, видны всегда: в тактическом виде —
+     * на земле (размер в мировых единицах), в стратегическом — значком
+     * постоянного экранного размера, кроссфейдом между ними. fogged=false —
+     * те, что сейчас видно (рисуются под зданиями, до engine.update),
+     * true — те, что под туманом (поверх тумана, чуть прозрачнее).
+     */
+    private void drawIronDeposits(float strategicFactor, boolean fogged) {
+        Texture icon = assets.texture(GameAssets.ICON_IRON_DEPOSIT);
+        float alpha = fogged ? REMEMBERED_ALPHA + 0.2f : 1f;
+        float tacticalSize = IRON_DEPOSIT_ICON_SIZE;
+        float strategicSize = STRATEGIC_DEPOSIT_ICON_SIZE_PX * camera.zoom;
+        spriteBatch.setProjectionMatrix(camera.combined);
+        spriteBatch.begin();
         for (float[] deposit : GameMap.current().ironDeposits()) {
-            shapeRenderer.circle(deposit[0], deposit[1], IRON_DEPOSIT_RADIUS);
+            if (FogMemory.isRevealed(fogRevealed, deposit[0], deposit[1]) == fogged) {
+                continue;
+            }
+            if (strategicFactor < 1f) {
+                spriteBatch.setColor(1f, 1f, 1f, alpha * (1f - strategicFactor));
+                spriteBatch.draw(icon, deposit[0] - tacticalSize / 2f, deposit[1] - tacticalSize / 2f, tacticalSize, tacticalSize);
+            }
+            if (strategicFactor > 0f) {
+                spriteBatch.setColor(1f, 1f, 1f, alpha * strategicFactor);
+                spriteBatch.draw(icon, deposit[0] - strategicSize / 2f, deposit[1] - strategicSize / 2f, strategicSize, strategicSize);
+            }
         }
-        shapeRenderer.end();
+        spriteBatch.end();
+        spriteBatch.setColor(Color.WHITE);
     }
 
     /**

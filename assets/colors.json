@@ -24,6 +24,8 @@
   "ui.patrol-button-active": "CC66FF",
   "ui.fps": "00FF00",
 
+  "icon.glyph": "1B1B1B",
+
   "bar.background": "404040",
   "bar.health-high": "00FF00",
   "bar.health-low": "FF0000",

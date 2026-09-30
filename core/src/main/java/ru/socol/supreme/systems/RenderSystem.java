@@ -277,13 +277,40 @@ public class RenderSystem extends IteratingSystem {
 
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
+        if (isHiddenByFog(OWNER.get(entity), POSITION.get(entity))) {
+            return;
+        }
+        drawEntity(entity);
+    }
+
+    /**
+     * Запомненные чужие здания под туманом (см. FogMemory) — сущности-копии
+     * вне движка, рисуются тем же кодом, что и живые, но полупрозрачными:
+     * alphaFactor домножается на общую альфу (кроссфейд видов). Вызывается
+     * ПОСЛЕ тумана войны, иначе почти непрозрачный туман их бы скрыл.
+     */
+    public void drawRemembered(Iterable<Entity> ghosts, float alphaFactor) {
+        float savedAlpha = renderAlpha;
+        renderAlpha = savedAlpha * alphaFactor;
+        if (renderAlpha > 0f) {
+            Gdx.gl.glEnable(GL20.GL_BLEND);
+            Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+            for (Entity ghost : ghosts) {
+                drawEntity(ghost);
+            }
+            shapeRenderer.end();
+            drawPendingSprites();
+            Gdx.gl.glDisable(GL20.GL_BLEND);
+        }
+        renderAlpha = savedAlpha;
+    }
+
+    /** Рисует одну сущность (внутри shapeRenderer.begin/end; спрайты — отложенно, см. drawPendingSprites). */
+    private void drawEntity(Entity entity) {
         PositionComponent position = POSITION.get(entity);
         OwnerComponent owner = OWNER.get(entity);
         HealthComponent health = HEALTH.get(entity);
-
-        if (isHiddenByFog(owner, position)) {
-            return;
-        }
 
         if (BUILDING.has(entity)) {
             BuildingComponent buildingComponent = BUILDING.get(entity);

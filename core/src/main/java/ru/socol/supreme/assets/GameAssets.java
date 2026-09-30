@@ -10,6 +10,11 @@ import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGeneratorLoader;
 import com.badlogic.gdx.graphics.g2d.freetype.FreetypeFontLoader;
 import com.badlogic.gdx.utils.Disposable;
+import ru.socol.supreme.shared.BuildingType;
+import ru.socol.supreme.shared.UnitType;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Все ассеты клиента — шрифты, текстуры и палитра цветов — в одном
@@ -74,6 +79,15 @@ public final class GameAssets implements Disposable {
     public static final String TERRAIN_WATER_DEEP = "terrain/water-deep.jpg";
     private static final String[] TERRAIN = {TERRAIN_GRASS, TERRAIN_DIRT, TERRAIN_WATER_SHALLOW, TERRAIN_WATER_DEEP};
 
+    /**
+     * Иконки стратегической карты (tools/make_icons.py): подложки — здания и
+     * юниты, красятся цветом игрока; пиктограммы по типу — поверх, одним
+     * цветом (GameColor.ICON_GLYPH); месторождение — готовое, в цвете.
+     */
+    public static final String ICON_BADGE_BUILDING = "icons/badge-building.png";
+    public static final String ICON_BADGE_UNIT = "icons/badge-unit.png";
+    public static final String ICON_IRON_DEPOSIT = "icons/iron-deposit.png";
+
     private final AssetManager manager;
 
     public GameAssets() {
@@ -106,6 +120,9 @@ public final class GameAssets implements Disposable {
                 manager.load(unitTexturePath(name, layer), Texture.class, mipmapped(Texture.TextureWrap.ClampToEdge));
             }
         }
+        for (String path : iconPaths()) {
+            manager.load(path, Texture.class, mipmapped(Texture.TextureWrap.ClampToEdge));
+        }
         for (String path : TERRAIN) {
             // Повтор по всей карте — требует размер степени двойки (1024).
             manager.load(path, Texture.class, mipmapped(Texture.TextureWrap.Repeat));
@@ -127,6 +144,40 @@ public final class GameAssets implements Disposable {
         parameter.wrapU = wrap;
         parameter.wrapV = wrap;
         return parameter;
+    }
+
+    /** Все иконки: подложки, месторождение и пиктограммы всех зданий (кроме обломков) и юнитов (кроме турели — она здание). */
+    private static List<String> iconPaths() {
+        List<String> paths = new ArrayList<>();
+        paths.add(ICON_BADGE_BUILDING);
+        paths.add(ICON_BADGE_UNIT);
+        paths.add(ICON_IRON_DEPOSIT);
+        for (BuildingType type : BuildingType.values()) {
+            if (type != BuildingType.WRECK) {
+                paths.add(iconPath(type.name()));
+            }
+        }
+        for (UnitType type : UnitType.values()) {
+            if (type != UnitType.TURRET) {
+                paths.add(iconPath(type.name()));
+            }
+        }
+        return paths;
+    }
+
+    /** HOME -> icons/home.png, ARCHER_BARRACKS -> icons/archer-barracks.png. */
+    private static String iconPath(String enumName) {
+        return "icons/" + enumName.toLowerCase().replace('_', '-') + ".png";
+    }
+
+    /** Пиктограмма здания для стратегической карты; null — у обломков её нет. */
+    public Texture icon(BuildingType type) {
+        return type == BuildingType.WRECK ? null : texture(iconPath(type.name()));
+    }
+
+    /** Пиктограмма юнита для стратегической карты (TURRET — это здание, см. icon(BuildingType)). */
+    public Texture icon(UnitType type) {
+        return texture(iconPath((type == UnitType.TURRET ? BuildingType.TURRET : type).name()));
     }
 
     public static String unitTexturePath(String name, String layer) {
