@@ -1010,17 +1010,9 @@ public class GameScreen extends InputAdapter implements Screen {
         }
     }
 
-    /** Трава и грунт текстурами (TerrainRenderer), вода поверх — пока заливкой, своей текстуры у неё ещё нет. */
+    /** Трава, грунт и вода — текстурами, см. TerrainRenderer. */
     private void drawFilledGround() {
-        terrainRenderer.draw(spriteBatch);
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(WATER_COLOR);
-        shapeRenderer.rect(
-                GameConstants.WATER_MIN_X,
-                GameConstants.WATER_MIN_Y,
-                GameConstants.WATER_MAX_X - GameConstants.WATER_MIN_X,
-                GameConstants.WATER_MAX_Y - GameConstants.WATER_MIN_Y);
-        shapeRenderer.end();
+        terrainRenderer.draw(spriteBatch, elapsedTime);
     }
 
     /**

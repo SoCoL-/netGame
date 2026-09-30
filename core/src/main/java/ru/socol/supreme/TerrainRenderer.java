@@ -12,21 +12,31 @@ import com.badlogic.gdx.utils.GdxRuntimeException;
 import ru.socol.supreme.shared.GameConstants;
 
 /**
- * Земля из текстур: бесшовные трава и грунт (assets/terrain/*.jpg)
- * повторяются по всей карте и смешиваются по маске — одним прямоугольником
- * на всю карту через SpriteBatch со своим шейдером.
+ * Земля и вода из текстур (assets/terrain/*.jpg): бесшовные трава, грунт,
+ * мелководье и глубокая вода повторяются по всей карте и смешиваются
+ * шейдером по маске — одним прямоугольником на всю карту через
+ * SpriteBatch со своим шейдером.
  *
  * Маска — маленькая текстура, пиксель на клетку поиска пути
- * (PATH_GRID_CELL_SIZE): 0 — трава, 1 — грунт. Пока карты как данных нет,
- * маска строится здесь же детерминированным шумом (одинаково у всех
- * игроков): пятна вытоптанной земли по полю плюс полоса грунта вдоль
- * берега озера. Когда появятся файлы карт, достаточно грузить маску из
- * них — шейдер не изменится.
+ * (PATH_GRID_CELL_SIZE), три канала:
+ *  - R — грунт (0 — трава, 1 — грунт);
+ *  - G — расстояние до берега со знаком: 0.5 — ровно берег, больше — вода
+ *    (1 — на 100 единиц вглубь и дальше), меньше — суша. Расстояние, а
+ *    не "вода да/нет": билинейная выборка из грубой маски даёт точную и
+ *    ровную линию берега, по нему же считаются пена и мокрый грунт;
+ *  - B — глубина: 0 у берега, 1 в 600 единицах от него — мелководье
+ *    плавно темнеет к середине водоёма.
+ * Пока карты как данных нет, маска строится здесь же детерминированно
+ * (одинаково у всех игроков): вода — прямоугольник GameConstants.WATER_*
+ * (тот же, что у поиска пути), пятна грунта по шуму и полоса грунта вдоль
+ * берега. Когда появятся файлы карт, достаточно грузить маску из них —
+ * шейдер не изменится.
  *
- * Граница трава/грунт — не гладкий градиент маски, а рваный край:
- * шейдер сдвигает порог смешивания на яркость самой текстуры травы.
- * Чтобы не бросался в глаза повтор тайла на отдалении, трава и грунт
- * слегка подкрашиваются этой же текстурой, взятой в крупном масштабе.
+ * Края не гладкие: порог трава/грунт и линия берега сдвигаются на
+ * яркость текстуры травы (рваный край, берег "гуляет" на ~20 единиц).
+ * Против заметного повтора тайла на отдалении суша подкрашивается той
+ * же текстурой травы в крупном масштабе, а вода — сумма двух выборок,
+ * медленно плывущих в разные стороны (заодно это и анимация ряби).
  */
 final class TerrainRenderer implements Disposable {
 
@@ -57,24 +67,50 @@ final class TerrainRenderer implements Disposable {
             + "uniform sampler2D u_texture;\n" // трава, юнит 0 — его привязывает сам SpriteBatch
             + "uniform sampler2D u_dirt;\n"
             + "uniform sampler2D u_mask;\n"
-            + "uniform float u_alpha;\n"
+            + "uniform sampler2D u_waterShallow;\n"
+            + "uniform sampler2D u_waterDeep;\n"
+            + "uniform float u_time;\n"
             + "varying vec2 v_tileUv;\n"
             + "varying vec2 v_maskUv;\n"
+            + "const vec3 LUMA = vec3(0.333);\n"
+            + "const float GRASS_MEAN_LUMA = 0.332;\n"
             + "void main() {\n"
+            + "    vec4 mask = texture2D(u_mask, v_maskUv);\n"
             + "    vec3 grass = texture2D(u_texture, v_tileUv).rgb;\n"
             + "    vec3 dirt = texture2D(u_dirt, v_tileUv).rgb;\n"
             // Крупномасштабная вариация яркости против заметного повтора тайла.
-            + "    float macro = dot(texture2D(u_texture, v_tileUv * 0.137 + vec2(0.31, 0.77)).rgb, vec3(0.333));\n"
+            + "    float macro = dot(texture2D(u_texture, v_tileUv * 0.137 + vec2(0.31, 0.77)).rgb, LUMA);\n"
             + "    float shade = 0.82 + 0.55 * macro;\n"
-            + "    float mask = texture2D(u_mask, v_maskUv).r;\n"
             // Рваный край: порог смещается на яркость травы — пучки травы "заходят" на грунт.
-            + "    float breakup = dot(grass, vec3(0.333)) - 0.3;\n"
-            + "    float blend = smoothstep(0.35, 0.65, mask - breakup * 0.9);\n"
-            + "    gl_FragColor = vec4(mix(grass, dirt, blend) * shade, u_alpha);\n"
+            + "    float breakup = dot(grass, LUMA) - 0.3;\n"
+            + "    float dirtBlend = smoothstep(0.35, 0.65, mask.r - breakup * 0.9);\n"
+            + "    vec3 land = mix(grass, dirt, dirtBlend) * shade;\n"
+            // Берег: 0.5 — кромка; шум сдвигает её на ~20 единиц в обе стороны.
+            // Только крупные масштабы травы: мелкий шум рвал кромку на крапинки грунта в воде.
+            + "    float broad = dot(texture2D(u_texture, v_tileUv * 0.053 + vec2(0.61, 0.08)).rgb, LUMA);\n"
+            + "    float shore = mask.g + (broad - GRASS_MEAN_LUMA) * 0.9 + (macro - GRASS_MEAN_LUMA) * 0.35;\n"
+            // Мокрый грунт — полоса ~25 единиц суши у самой воды, темнее.
+            + "    land *= mix(1.0, 0.68, smoothstep(0.37, 0.5, shore));\n"
+            // Вода: две выборки плывут в разные стороны — рябь движется и повтор не так заметен.
+            + "    vec2 flowA = v_tileUv + vec2(u_time * 0.004, u_time * 0.0015);\n"
+            + "    vec2 flowB = v_tileUv * 0.77 + vec2(-u_time * 0.0025, u_time * 0.0035);\n"
+            + "    vec3 shallowA = texture2D(u_waterShallow, flowA).rgb;\n"
+            + "    vec3 shallow = mix(shallowA, texture2D(u_waterShallow, flowB).rgb, 0.35);\n"
+            + "    vec3 deep = mix(texture2D(u_waterDeep, flowA).rgb, texture2D(u_waterDeep, flowB).rgb, 0.35);\n"
+            + "    vec3 water = mix(shallow, deep, smoothstep(0.0, 1.0, mask.b));\n"
+            // Пена — узкая полоса у кромки, "дышит" волнами и рвётся по бликам ряби.
+            + "    float foamBand = 1.0 - smoothstep(0.5, 0.56, shore);\n"
+            + "    float surf = 0.55 + 0.45 * sin(u_time * 1.6 - shore * 70.0);\n"
+            + "    float foam = foamBand * surf * clamp(dot(shallowA, LUMA) * 1.8 - 0.35, 0.0, 1.0);\n"
+            + "    water = mix(water, vec3(0.9, 0.95, 0.94), foam * 0.75);\n"
+            + "    float isWater = smoothstep(0.485, 0.515, shore);\n"
+            + "    gl_FragColor = vec4(mix(land, water, isWater), 1.0);\n"
             + "}\n";
 
     private final Texture grass = loadTiled("terrain/grass.jpg");
     private final Texture dirt = loadTiled("terrain/dirt.jpg");
+    private final Texture waterShallow = loadTiled("terrain/water-shallow.jpg");
+    private final Texture waterDeep = loadTiled("terrain/water-deep.jpg");
     private final Texture mask = buildMask();
     private final ShaderProgram shader;
 
@@ -92,10 +128,16 @@ final class TerrainRenderer implements Disposable {
         return texture;
     }
 
-    /** Рисует землю на всю карту. Вызывается вне batch.begin()/end(); проекцию batch уже должен знать. */
-    void draw(SpriteBatch batch) {
+    /**
+     * Рисует землю и воду на всю карту. Вызывается вне batch.begin()/end();
+     * проекцию batch уже должен знать. time — секунды с начала экрана, для
+     * анимации воды.
+     */
+    void draw(SpriteBatch batch, float time) {
         dirt.bind(1);
         mask.bind(2);
+        waterShallow.bind(3);
+        waterDeep.bind(4);
         Gdx.gl.glActiveTexture(GL20.GL_TEXTURE0);
 
         batch.setShader(shader);
@@ -105,14 +147,17 @@ final class TerrainRenderer implements Disposable {
         shader.setUniformi("u_mask", 2);
         shader.setUniformf("u_mapSize", GameConstants.MAP_WIDTH, GameConstants.MAP_HEIGHT);
         shader.setUniformf("u_tileSize", TILE_WORLD_SIZE);
-        shader.setUniformf("u_alpha", 1f);
+        shader.setUniformi("u_waterShallow", 3);
+        shader.setUniformi("u_waterDeep", 4);
+        // Остаток от деления — чтобы float не терял точность за долгую партию (фазы волн сдвинутся раз в ~40 минут, незаметно).
+        shader.setUniformf("u_time", time % 2400f);
         batch.draw(grass, 0f, 0f, GameConstants.MAP_WIDTH, GameConstants.MAP_HEIGHT);
         batch.end();
         batch.enableBlending();
         batch.setShader(null);
     }
 
-    /** Маска грунта: пятна по шуму и полоса вдоль берега озера. Детерминирована — у всех игроков одинаковая. */
+    /** Маска (см. javadoc класса): R — грунт, G — расстояние до берега, B — глубина. Детерминирована — у всех игроков одинаковая. */
     private static Texture buildMask() {
         float cell = GameConstants.PATH_GRID_CELL_SIZE;
         int width = MathUtils.ceil(GameConstants.MAP_WIDTH / cell);
@@ -123,15 +168,19 @@ final class TerrainRenderer implements Disposable {
                 float worldX = (x + 0.5f) * cell;
                 float worldY = (y + 0.5f) * cell;
                 float noise = fbm(worldX / 900f, worldY / 900f);
+                float shoreDistance = signedDistanceToWater(worldX, worldY);
                 // Пятна: верхние ~15% значений шума.
                 float patches = MathUtils.clamp((noise - 0.58f) / 0.12f, 0f, 1f);
-                // Берег: грунт в пределах ~150 единиц от воды, ширина полосы "гуляет" по шуму.
+                // Береговой грунт в пределах ~90..210 единиц от воды, ширина полосы "гуляет" по шуму.
                 float shoreWidth = 90f + 120f * noise;
-                float shore = 1f - MathUtils.clamp(distanceToWater(worldX, worldY) / shoreWidth, 0f, 1f);
-                float value = Math.max(patches, shore);
+                float shoreDirt = 1f - MathUtils.clamp(shoreDistance / shoreWidth, 0f, 1f);
+                float dirt = Math.max(patches, shoreDirt);
+                float shore = MathUtils.clamp(0.5f - shoreDistance / 200f, 0f, 1f);
+                float depth = MathUtils.clamp(-shoreDistance / 600f, 0f, 1f);
                 // Строка 0 Pixmap уходит в текстуру как v = 0 — это и есть низ карты
                 // (в шейдере v = y / высота карты), так что без переворота.
-                pixmap.drawPixel(x, y, Math.round(value * 255f) << 24 | 0xFF);
+                pixmap.drawPixel(x, y, Math.round(dirt * 255f) << 24 | Math.round(shore * 255f) << 16
+                        | Math.round(depth * 255f) << 8 | 0xFF);
             }
         }
         Texture texture = new Texture(pixmap);
@@ -139,6 +188,13 @@ final class TerrainRenderer implements Disposable {
         texture.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
         pixmap.dispose();
         return texture;
+    }
+
+    /** Расстояние до кромки воды: положительное на суше, отрицательное в воде. */
+    private static float signedDistanceToWater(float x, float y) {
+        float inside = Math.min(Math.min(x - GameConstants.WATER_MIN_X, GameConstants.WATER_MAX_X - x),
+                Math.min(y - GameConstants.WATER_MIN_Y, GameConstants.WATER_MAX_Y - y));
+        return inside > 0f ? -inside : distanceToWater(x, y);
     }
 
     private static float distanceToWater(float x, float y) {
@@ -185,6 +241,8 @@ final class TerrainRenderer implements Disposable {
     public void dispose() {
         grass.dispose();
         dirt.dispose();
+        waterShallow.dispose();
+        waterDeep.dispose();
         mask.dispose();
         shader.dispose();
     }
