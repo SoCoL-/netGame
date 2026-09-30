@@ -336,6 +336,7 @@ public class GameScreen extends InputAdapter implements Screen {
     private final Engine engine = new Engine();
     private final ShapeRenderer shapeRenderer = new ShapeRenderer();
     private final SpriteBatch spriteBatch = new SpriteBatch();
+    private final TerrainRenderer terrainRenderer = new TerrainRenderer();
     private final BitmapFont font = Fonts.create(45); // крупный — для "ПОБЕДА"/"Подключение..." по центру экрана
     private final BitmapFont uiFont = Fonts.create(19); // помельче — для панелей
     private final BitmapFont buttonFont = Fonts.create(16); // подписи кнопок — русские названия длиннее английских
@@ -1009,10 +1010,10 @@ public class GameScreen extends InputAdapter implements Screen {
         }
     }
 
+    /** Трава и грунт текстурами (TerrainRenderer), вода поверх — пока заливкой, своей текстуры у неё ещё нет. */
     private void drawFilledGround() {
+        terrainRenderer.draw(spriteBatch);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(GRASS_COLOR);
-        shapeRenderer.rect(0, 0, GameConstants.MAP_WIDTH, GameConstants.MAP_HEIGHT);
         shapeRenderer.setColor(WATER_COLOR);
         shapeRenderer.rect(
                 GameConstants.WATER_MIN_X,
@@ -2914,6 +2915,7 @@ public class GameScreen extends InputAdapter implements Screen {
     @Override
     public void dispose() {
         renderSystem.dispose();
+        terrainRenderer.dispose();
         shapeRenderer.dispose();
         spriteBatch.dispose();
         font.dispose();
