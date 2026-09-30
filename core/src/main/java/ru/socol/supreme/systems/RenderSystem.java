@@ -84,11 +84,7 @@ public class RenderSystem extends IteratingSystem {
     // стратегический вид не менял ещё и цвет заодно с формой/размером.
     public static final Color[] PLAYER_COLORS = {Color.SKY, Color.ORANGE};
     private static final Color SELECTION_RING_COLOR = Color.WHITE;
-    private static final Color ARCHER_MARKER_COLOR = Color.WHITE;
-    private static final float ARCHER_MARKER_RADIUS = GameConstants.UNIT_RADIUS * 0.4f;
     private static final Color BUILDER_MARKER_COLOR = Color.LIGHT_GRAY; // тот же цвет, что у "стройки" (UNDER_CONSTRUCTION_COLOR) — тематическая связь
-    private static final Color ANTI_AIR_MARKER_COLOR = Color.RED; // тот же цвет, что у метки ATTACK_AIRCRAFT — тематическая связь "оружие против воздуха"
-    private static final float ANTI_AIR_MARKER_HALF_SIZE = GameConstants.UNIT_RADIUS * 0.4f;
 
     /**
      * Цвет башни наземной техники (drawGroundVehicle) — намеренно НЕ
@@ -139,7 +135,6 @@ public class RenderSystem extends IteratingSystem {
     // цвет игрока 1 соответственно), маркер на его фоне был бы почти
     // невидим.
     private static final Color AIRCRAFT_FACTORY_MARKER_COLOR = Color.CYAN;
-    private static final Color ARTILLERY_MARKER_COLOR = Color.valueOf("37474F");
     private static final Color UNDER_CONSTRUCTION_COLOR = Color.GRAY;
     /** Обломки на суше — тускло-ржавый, чтобы не путались ни с одним цветом игрока (SKY/ORANGE) и не выглядели как здание. */
     private static final Color WRECK_COLOR = Color.valueOf("6B5B4B");
@@ -173,18 +168,22 @@ public class RenderSystem extends IteratingSystem {
     private int localPlayerId = -1;
 
     /**
-     * Стрелки (ARCHER) рисуются не фигурами, а спрайтом (см. ArcherSprite) —
-     * SpriteBatch и ShapeRenderer нельзя держать открытыми одновременно,
-     * поэтому в основном проходе стрелки только копятся в этот список, а
+     * Стрелки (ARCHER), ПВО (ANTI_AIR) и готовые артиллерийские башни
+     * рисуются не фигурами, а спрайтами (см. LayeredSprite) — SpriteBatch и
+     * ShapeRenderer нельзя держать открытыми одновременно, поэтому в
+     * основном проходе такие сущности только копятся в этот список, а
      * рисуются отдельным проходом SpriteBatch после всех фигур (и поверх
      * них ещё раз ShapeRenderer — их полоски здоровья), см. update().
      */
     private final SpriteBatch spriteBatch;
-    private final ArcherSprite archerSprite = new ArcherSprite();
-    private final List<Entity> pendingArchers = new ArrayList<>();
+    private final LayeredSprite archerSprite = LayeredSprite.archer();
+    private final LayeredSprite antiAirSprite = LayeredSprite.antiAir();
+    private final LayeredSprite artillerySprite = LayeredSprite.artillery();
+    private final List<Entity> pendingSprites = new ArrayList<>();
 
-    /** Кольцо выделения стрелка шире, чем у остальной техники — спрайт крупнее прямоугольника. */
+    /** Кольцо выделения у техники со спрайтом шире, чем у остальной — спрайт крупнее прямоугольника. */
     private static final float ARCHER_SELECTION_RING_RADIUS = 20f;
+    private static final float ANTI_AIR_SELECTION_RING_RADIUS = 22f;
 
     public RenderSystem(ShapeRenderer shapeRenderer, SpriteBatch spriteBatch) {
         super(Family.all(PositionComponent.class, OwnerComponent.class, HealthComponent.class).get(), 10);
@@ -194,6 +193,8 @@ public class RenderSystem extends IteratingSystem {
 
     public void dispose() {
         archerSprite.dispose();
+        antiAirSprite.dispose();
+        artillerySprite.dispose();
     }
 
     public void setRenderAlpha(float renderAlpha) {
@@ -234,18 +235,26 @@ public class RenderSystem extends IteratingSystem {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         super.update(deltaTime);
         shapeRenderer.end();
-        drawPendingArchers();
+        drawPendingSprites();
     }
 
-    /** Второй проход: спрайты стрелков (SpriteBatch), затем их полоски здоровья поверх (ShapeRenderer). */
-    private void drawPendingArchers() {
-        if (pendingArchers.isEmpty()) {
+    /** Второй проход: спрайты (SpriteBatch), затем их полоски здоровья поверх (ShapeRenderer). */
+    private void drawPendingSprites() {
+        if (pendingSprites.isEmpty()) {
             return;
         }
         spriteBatch.setProjectionMatrix(shapeRenderer.getProjectionMatrix());
         spriteBatch.begin();
-        for (Entity entity : pendingArchers) {
+        for (Entity entity : pendingSprites) {
             PositionComponent position = POSITION.get(entity);
+            Color playerColor = PLAYER_COLORS[OWNER.get(entity).playerId % PLAYER_COLORS.length];
+            if (BUILDING.has(entity)) {
+                // Артиллерийская башня: корпус здания неподвижен (носом вверх), крутится только излучатель.
+                float[] barrel = artilleryBarrelDirection(entity, position.position.x, position.position.y);
+                artillerySprite.draw(spriteBatch, position.position.x, position.position.y,
+                        0f, 1f, barrel[0], barrel[1], playerColor, renderAlpha);
+                continue;
+            }
             DirectionComponent bodyDirection = DIRECTION.get(entity);
             float hullDx = bodyDirection != null ? bodyDirection.direction.x : 0f;
             float hullDy = bodyDirection != null ? bodyDirection.direction.y : 0f;
@@ -259,8 +268,8 @@ public class RenderSystem extends IteratingSystem {
                 turretDx = hullDx;
                 turretDy = hullDy;
             }
-            Color playerColor = PLAYER_COLORS[OWNER.get(entity).playerId % PLAYER_COLORS.length];
-            archerSprite.draw(spriteBatch, position.position.x, position.position.y,
+            LayeredSprite sprite = UNIT_TYPE.get(entity).type == UnitType.ANTI_AIR ? antiAirSprite : archerSprite;
+            sprite.draw(spriteBatch, position.position.x, position.position.y,
                     hullDx, hullDy, turretDx, turretDy, playerColor, renderAlpha);
         }
         spriteBatch.end();
@@ -270,11 +279,17 @@ public class RenderSystem extends IteratingSystem {
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        for (Entity entity : pendingArchers) {
-            drawHealthBar(POSITION.get(entity), HEALTH.get(entity), UNIT_HEALTH_BAR_Y_OFFSET, UNIT_HEALTH_BAR_WIDTH);
+        for (Entity entity : pendingSprites) {
+            if (BUILDING.has(entity)) {
+                float halfWidth = BuildingSizes.halfWidth(entity);
+                float halfHeight = BuildingSizes.halfHeight(entity);
+                drawHealthBar(POSITION.get(entity), HEALTH.get(entity), halfHeight + BUILDING_HEALTH_BAR_Y_MARGIN, halfWidth * 2f);
+            } else {
+                drawHealthBar(POSITION.get(entity), HEALTH.get(entity), UNIT_HEALTH_BAR_Y_OFFSET, UNIT_HEALTH_BAR_WIDTH);
+            }
         }
         shapeRenderer.end();
-        pendingArchers.clear();
+        pendingSprites.clear();
     }
 
     /**
@@ -309,6 +324,10 @@ public class RenderSystem extends IteratingSystem {
             // как только CONSTRUCTION.get(entity) == null.
             if (buildingComponent.type == BuildingType.TURRET && CONSTRUCTION.get(entity) == null) {
                 drawTurretBuilding(entity, position, owner, health);
+            } else if (buildingComponent.type == BuildingType.ARTILLERY && CONSTRUCTION.get(entity) == null) {
+                // Готовая артиллерия — спрайт "Прилива" во втором проходе (см. drawPendingSprites);
+                // пока строится — обычный серый квадрат с прогрессом, как у всех зданий.
+                pendingSprites.add(entity);
             } else if (buildingComponent.type == BuildingType.WRECK) {
                 // Обломки — не настоящее здание и не принадлежат никому
                 // (OwnerComponent.playerId == GameConstants.NEUTRAL_OWNER_ID,
@@ -345,12 +364,13 @@ public class RenderSystem extends IteratingSystem {
         if (SELECTED.has(entity)) {
             setColor(SELECTION_RING_COLOR);
             float ringRadius = type == UnitType.ARCHER ? ARCHER_SELECTION_RING_RADIUS
+                    : type == UnitType.ANTI_AIR ? ANTI_AIR_SELECTION_RING_RADIUS
                     : groundVehicle ? GROUND_SELECTION_RING_RADIUS : SELECTION_RING_RADIUS;
             shapeRenderer.circle(position.position.x, position.position.y, ringRadius);
         }
 
-        if (type == UnitType.ARCHER) {
-            pendingArchers.add(entity); // спрайт и полоска здоровья — во втором проходе, см. drawPendingArchers
+        if (type == UnitType.ARCHER || type == UnitType.ANTI_AIR) {
+            pendingSprites.add(entity); // спрайт и полоска здоровья — во втором проходе, см. drawPendingSprites
             return;
         }
 
@@ -376,7 +396,8 @@ public class RenderSystem extends IteratingSystem {
     }
 
     /**
-     * Наземная техника (воин/стрелок/строитель) — прямоугольный корпус
+     * Наземная техника без спрайта (воин/строитель; стрелок и ПВО —
+     * спрайтами, см. LayeredSprite) — прямоугольный корпус
      * вместо круга, повёрнутый по направлению движения
      * (DirectionComponent.direction — куда юнит реально сейчас едет, не
      * куда "смотрит" произвольно), и отдельная башня-треугольник поверх
@@ -388,9 +409,8 @@ public class RenderSystem extends IteratingSystem {
      * их было видно раздельно, а не одним слитным силуэтом. Вершина
      * треугольника — дуло, откуда визуально вылетает снаряд (см.
      * GameScreen.onProjectileFired).
-     * Маленькая метка типа (белая точка у стрелка, серый квадратик у
-     * строителя — как и раньше) рисуется на корпусе ПОД башней, у воина
-     * по-прежнему нет отдельной метки.
+     * Маленькая метка типа (серый квадратик у строителя) рисуется на
+     * корпусе ПОД башней, у воина отдельной метки нет.
      */
     private void drawGroundVehicle(Entity entity, PositionComponent position, Color playerColor, UnitType type) {
         DirectionComponent bodyDirection = DIRECTION.get(entity);
@@ -403,19 +423,10 @@ public class RenderSystem extends IteratingSystem {
         setColor(playerColor);
         drawRotatedRect(position.position.x, position.position.y, hullDx, hullDy, HULL_HALF_LENGTH, HULL_HALF_WIDTH);
 
-        if (type == UnitType.ARCHER) {
-            setColor(ARCHER_MARKER_COLOR);
-            shapeRenderer.circle(position.position.x, position.position.y, ARCHER_MARKER_RADIUS);
-        } else if (type == UnitType.BUILDER) {
+        if (type == UnitType.BUILDER) {
             setColor(BUILDER_MARKER_COLOR);
             float half = BUILDER_MARKER_HALF_SIZE;
             shapeRenderer.rect(position.position.x - half, position.position.y - half, half * 2f, half * 2f);
-        } else if (type == UnitType.ANTI_AIR) {
-            // Ромб — отличается по силуэту и от кружка стрелка, и от
-            // квадратика строителя; тот же drawDiamond, что и у турели,
-            // только маленький и поверх корпуса, а не сам корпус.
-            setColor(ANTI_AIR_MARKER_COLOR);
-            drawDiamond(position.position.x, position.position.y, ANTI_AIR_MARKER_HALF_SIZE, ANTI_AIR_MARKER_HALF_SIZE);
         }
 
         TurretDisplayComponent turretDisplay = TURRET_DISPLAY.get(entity);
@@ -564,9 +575,6 @@ public class RenderSystem extends IteratingSystem {
             case AIRCRAFT_FACTORY:
                 drawWaveMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
                 break;
-            case ARTILLERY:
-                drawArtilleryMarker(entity, position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
-                break;
             case HOME:
             default:
                 drawStar(position.position.x, position.position.y, Math.min(halfWidth, halfHeight) * 0.6f);
@@ -670,12 +678,12 @@ public class RenderSystem extends IteratingSystem {
      * силуэтом похоже на "~".
      */
     /**
-     * Артиллерия — круглое основание и длинный толстый ствол. Направление
-     * ствола — реальный угол с сервера (TurretDisplayComponent, те же поля
-     * снапшота, что и у турели), он доворачивается к цели перед выстрелом.
-     * Пока угла нет (башня ещё строится), ствол смотрит к центру карты.
+     * Направление ствола артиллерии (единичный вектор) — реальный угол с
+     * сервера (TurretDisplayComponent, те же поля снапшота, что и у
+     * турели), он доворачивается к цели перед выстрелом. Пока угла нет
+     * (снапшот ещё не пришёл), ствол смотрит к центру карты.
      */
-    private void drawArtilleryMarker(Entity entity, float cx, float cy, float halfSize) {
+    private float[] artilleryBarrelDirection(Entity entity, float cx, float cy) {
         TurretDisplayComponent barrel = TURRET_DISPLAY.get(entity);
         float dx;
         float dy;
@@ -688,16 +696,9 @@ public class RenderSystem extends IteratingSystem {
         }
         float length = (float) Math.sqrt(dx * dx + dy * dy);
         if (length < 0.0001f) {
-            dx = 1f;
-            dy = 0f;
-        } else {
-            dx /= length;
-            dy /= length;
+            return new float[]{1f, 0f};
         }
-        setColor(ARTILLERY_MARKER_COLOR);
-        shapeRenderer.circle(cx, cy, halfSize * 0.55f);
-        float barrelLength = halfSize * 1.3f;
-        shapeRenderer.rectLine(cx, cy, cx + dx * barrelLength, cy + dy * barrelLength, halfSize * 0.22f);
+        return new float[]{dx / length, dy / length};
     }
 
     private void drawWaveMarker(float cx, float cy, float halfSize) {
