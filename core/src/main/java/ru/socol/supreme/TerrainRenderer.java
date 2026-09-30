@@ -30,7 +30,7 @@ import java.util.List;
  *    ровную линию берега, по нему же считаются пена и мокрый грунт;
  *  - B — глубина: 0 у берега, 1 в 600 единицах от него — мелководье
  *    плавно темнеет к середине водоёма;
- *  - A — скалы (1 — клетка скал).
+ *  - A — расстояние до края скал, как G у воды (0.5 — край, больше — скалы).
  * Вода и скалы берутся из карты (GameMap — та же сетка, по которой сервер
  * считает проходимость), пятна грунта — детерминированный шум (одинаковый
  * у всех игроков) плюс полоса грунта вдоль берега.
@@ -88,14 +88,17 @@ final class TerrainRenderer implements Disposable {
             + "    float breakup = dot(grass, LUMA) - 0.3;\n"
             + "    float dirtBlend = smoothstep(0.35, 0.65, mask.r - breakup * 0.9);\n"
             + "    vec3 land = mix(grass, dirt, dirtBlend) * shade;\n"
+            // Крупный шум для неровных краёв скал и берега (только крупные масштабы травы — мелкий рвал кромку на крапинки).
+            + "    float broad = dot(texture2D(u_texture, v_tileUv * 0.053 + vec2(0.61, 0.08)).rgb, LUMA);\n"
             // Скалы: серый камень из текстуры грунта, неровный по яркости травы; край рваный, как у грунта.
             + "    float dirtLuma = dot(dirt, LUMA);\n"
             + "    vec3 rock = mix(vec3(dirtLuma), dirt, 0.25) * (0.55 + 0.9 * dot(grass, LUMA)) * shade;\n"
-            + "    float rockBlend = smoothstep(0.4, 0.6, mask.a - breakup * 0.7);\n"
+            + "    float rockEdge = mask.a + (broad - GRASS_MEAN_LUMA) * 0.9 + (macro - GRASS_MEAN_LUMA) * 0.35 - breakup * 0.15;\n"
+            + "    float rockBlend = smoothstep(0.47, 0.53, rockEdge);\n"
+            // Тёмная кайма у края — скалы читаются как возвышение, а не как пятно краски.
+            + "    rock *= mix(0.62, 1.0, smoothstep(0.5, 0.66, rockEdge));\n"
             + "    land = mix(land, rock, rockBlend);\n"
             // Берег: 0.5 — кромка; шум сдвигает её на ~20 единиц в обе стороны.
-            // Только крупные масштабы травы: мелкий шум рвал кромку на крапинки грунта в воде.
-            + "    float broad = dot(texture2D(u_texture, v_tileUv * 0.053 + vec2(0.61, 0.08)).rgb, LUMA);\n"
             + "    float shore = mask.g + (broad - GRASS_MEAN_LUMA) * 0.9 + (macro - GRASS_MEAN_LUMA) * 0.35;\n"
             // Мокрый грунт — полоса ~25 единиц суши у самой воды, темнее.
             + "    land *= mix(1.0, 0.68, smoothstep(0.37, 0.5, shore));\n"
@@ -175,8 +178,12 @@ final class TerrainRenderer implements Disposable {
         float cell = GameConstants.PATH_GRID_CELL_SIZE;
         int width = map.width();
         int height = map.height();
-        float[][] shoreDistance = signedDistanceToWater(map);
+        float[][] shoreDistance = signedDistance(map, GameMap.Cell.WATER);
+        float[][] rockDistance = signedDistance(map, GameMap.Cell.ROCK);
         Pixmap pixmap = new Pixmap(width, height, Pixmap.Format.RGBA8888);
+        // Альфа здесь — данные (скалы), а не прозрачность: без этого drawPixel смешивал бы
+        // пиксель с пустым фоном и при альфе 0 обнулял бы и остальные каналы.
+        pixmap.setBlending(Pixmap.Blending.None);
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 float worldX = (x + 0.5f) * cell;
@@ -191,7 +198,8 @@ final class TerrainRenderer implements Disposable {
                 float dirt = Math.max(patches, shoreDirt);
                 float shore = MathUtils.clamp(0.5f - distance / 200f, 0f, 1f);
                 float depth = MathUtils.clamp(-distance / 600f, 0f, 1f);
-                float rock = map.cell(x, y) == GameMap.Cell.ROCK ? 1f : 0f;
+                // Как и берег — расстояние до края скал (0.5 — край), а не "скала да/нет": иначе видна ступенька клеток.
+                float rock = MathUtils.clamp(0.5f - rockDistance[x][y] / 100f, 0f, 1f);
                 // Строка 0 Pixmap уходит в текстуру как v = 0 — это и есть низ карты
                 // (в шейдере v = y / высота карты), так что без переворота.
                 pixmap.drawPixel(x, y, Math.round(dirt * 255f) << 24 | Math.round(shore * 255f) << 16
@@ -206,14 +214,14 @@ final class TerrainRenderer implements Disposable {
     }
 
     /**
-     * Для каждой клетки — расстояние от её центра до кромки воды:
-     * положительное на суше, отрицательное в воде. Кромка — посередине
-     * между центрами соседних клеток суши и воды, поэтому расстояние —
-     * до ближайшей клетки "другого берега" минус полклетки. Перебираются
+     * Для каждой клетки — расстояние от её центра до края области типа
+     * type (воды или скал): положительное снаружи, отрицательное внутри.
+     * Край — посередине между центрами соседних клеток, поэтому
+     * расстояние — до ближайшей клетки "другой стороны" минус полклетки. Перебираются
      * только пограничные клетки — их порядка тысячи, так что даже
      * прямой перебор для 160x160 — доли секунды один раз при входе в игру.
      */
-    private static float[][] signedDistanceToWater(GameMap map) {
+    private static float[][] signedDistance(GameMap map, GameMap.Cell type) {
         int width = map.width();
         int height = map.height();
         float cell = GameConstants.PATH_GRID_CELL_SIZE;
@@ -221,11 +229,11 @@ final class TerrainRenderer implements Disposable {
         List<int[]> waterEdge = new ArrayList<>();
         for (int x = 0; x < width; x++) {
             for (int y = 0; y < height; y++) {
-                boolean water = map.isWaterCell(x, y);
-                boolean edge = (x > 0 && map.isWaterCell(x - 1, y) != water)
-                        || (x < width - 1 && map.isWaterCell(x + 1, y) != water)
-                        || (y > 0 && map.isWaterCell(x, y - 1) != water)
-                        || (y < height - 1 && map.isWaterCell(x, y + 1) != water);
+                boolean water = map.cell(x, y) == type;
+                boolean edge = (x > 0 && (map.cell(x - 1, y) == type) != water)
+                        || (x < width - 1 && (map.cell(x + 1, y) == type) != water)
+                        || (y > 0 && (map.cell(x, y - 1) == type) != water)
+                        || (y < height - 1 && (map.cell(x, y + 1) == type) != water);
                 if (edge) {
                     (water ? waterEdge : landEdge).add(new int[]{x, y});
                 }
@@ -235,7 +243,7 @@ final class TerrainRenderer implements Disposable {
         float[][] result = new float[width][height];
         for (int x = 0; x < width; x++) {
             for (int y = 0; y < height; y++) {
-                boolean water = map.isWaterCell(x, y);
+                boolean water = map.cell(x, y) == type;
                 List<int[]> otherSide = water ? landEdge : waterEdge;
                 float bestSq = Float.MAX_VALUE;
                 for (int[] other : otherSide) {
