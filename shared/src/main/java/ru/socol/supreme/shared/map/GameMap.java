@@ -22,8 +22,10 @@ import java.nio.file.Paths;
  * у каждой базы, старты в противоположных углах.
  *
  * Сетка — клетки PATH_GRID_CELL_SIZE (50 единиц), та же, что у поиска
- * пути. Скалы пока только рисуются — на проходимость и стрельбу не
- * влияют (задел под следующий шаг).
+ * пути. Вода непроходима для всех, кроме строителя; скалы непроходимы
+ * для всей наземной техники, сквозь них нельзя стрелять прямой наводкой
+ * (lineOfFireClear) и на них нельзя строить. Авиация летает и стреляет
+ * поверх всего этого, артиллерия бьёт навесом — тоже поверх скал.
  *
  * Неизменяема после загрузки — безопасно читать из любых потоков и
  * матчей одновременно.
@@ -75,6 +77,34 @@ public final class GameMap {
         return cell(cx, cy) == Cell.WATER;
     }
 
+    public boolean isRockCell(int cx, int cy) {
+        return cell(cx, cy) == Cell.ROCK;
+    }
+
+    /** Скалы ли ровно в точке (x, y) — без запаса на радиус юнита. */
+    public boolean isRockAt(float x, float y) {
+        return isRockCell(cellX(x), cellY(y));
+    }
+
+    /**
+     * Не загораживают ли скалы прямую линию огня из (fromX, fromY) в
+     * (toX, toY). Отрезок проверяется с шагом в четверть клетки — так он
+     * не проскочит даже угол скалы. Вода и здания стрельбе не мешают.
+     */
+    public boolean lineOfFireClear(float fromX, float fromY, float toX, float toY) {
+        float dx = toX - fromX;
+        float dy = toY - fromY;
+        float length = (float) Math.sqrt(dx * dx + dy * dy);
+        int steps = Math.max(1, (int) Math.ceil(length / (GameConstants.PATH_GRID_CELL_SIZE / 4f)));
+        for (int i = 0; i <= steps; i++) {
+            float t = (float) i / steps;
+            if (isRockAt(fromX + dx * t, fromY + dy * t)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Вода ли ровно в точке (x, y) — без запаса на радиус юнита. */
     public boolean isWaterAt(float x, float y) {
         return isWaterCell(cellX(x), cellY(y));
@@ -88,11 +118,16 @@ public final class GameMap {
         return (int) Math.floor(y / GameConstants.PATH_GRID_CELL_SIZE);
     }
 
-    /** Есть ли вода хоть в одной клетке, которую задевает прямоугольник [minX..maxX] x [minY..maxY]. */
-    public boolean rectTouchesWater(float minX, float minY, float maxX, float maxY) {
+    private boolean isPassableCell(int cx, int cy, boolean canEnterWater) {
+        Cell type = cell(cx, cy);
+        return type == Cell.GRASS || (canEnterWater && type == Cell.WATER);
+    }
+
+    /** Есть ли вода или скалы хоть в одной клетке, которую задевает прямоугольник [minX..maxX] x [minY..maxY] — там строить нельзя. */
+    public boolean rectTouchesWaterOrRock(float minX, float minY, float maxX, float maxY) {
         for (int cx = cellX(minX); cx <= cellX(maxX); cx++) {
             for (int cy = cellY(minY); cy <= cellY(maxY); cy++) {
-                if (isWaterCell(cx, cy)) {
+                if (cell(cx, cy) != Cell.GRASS) {
                     return true;
                 }
             }
@@ -101,14 +136,15 @@ public final class GameMap {
     }
 
     /**
-     * Ближайшая к (x, y) точка суши, отступив от кромки воды на margin,
-     * или null, если точка и так на суше. Ищет в клетках вокруг — на
-     * случай, если юнита (не умеющего в воду) протолкнули за кромку.
+     * Ближайшая к (x, y) проходимая точка, отступив от края на margin, или
+     * null, если точка и так проходима. Скалы непроходимы для всех, вода —
+     * если !canEnterWater. Ищет в клетках вокруг — на случай, если юнита
+     * протолкнули в скалы или воду.
      */
-    public float[] nearestLandPoint(float x, float y, float margin) {
+    public float[] nearestPassablePoint(float x, float y, float margin, boolean canEnterWater) {
         int cx = cellX(x);
         int cy = cellY(y);
-        if (!isWaterCell(cx, cy)) {
+        if (isPassableCell(cx, cy, canEnterWater)) {
             return null;
         }
         float cell = GameConstants.PATH_GRID_CELL_SIZE;
@@ -117,7 +153,7 @@ public final class GameMap {
         for (int radius = 1; radius <= 8 && best == null; radius++) {
             for (int nx = cx - radius; nx <= cx + radius; nx++) {
                 for (int ny = cy - radius; ny <= cy + radius; ny++) {
-                    if (nx < 0 || ny < 0 || nx >= width || ny >= height || isWaterCell(nx, ny)) {
+                    if (nx < 0 || ny < 0 || nx >= width || ny >= height || !isPassableCell(nx, ny, canEnterWater)) {
                         continue;
                     }
                     // Ближайшая точка клетки суши, с отступом внутрь неё (но не дальше её центра).

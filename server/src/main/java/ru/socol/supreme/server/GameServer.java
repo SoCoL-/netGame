@@ -2387,10 +2387,15 @@ public class GameServer {
             return currentOrderPointForTarget(collectOrder.targetWreckUnitId, QueuedOrder.Type.COLLECT);
         }
         if (direction != null && direction.moving) {
-            // Обычное перемещение без боевого/строительного компонента —
-            // DirectionComponent.target тут и есть настоящая точка
-            // назначения (handleMoveUnit ставит её напрямую, не через
-            // точку подхода), в отличие от случая погони выше.
+            // Обычное перемещение без боевого/строительного компонента.
+            // При обходном пути (PathComponent) DirectionComponent.target —
+            // лишь ближайшая точка маршрута, а настоящая точка назначения —
+            // последняя точка пути; без обхода target и есть назначение.
+            PathComponent path = unit.getComponent(PathComponent.class);
+            if (path != null && !path.waypoints.isEmpty()) {
+                Vector2 destination = path.waypoints.get(path.waypoints.size() - 1);
+                return new QueuedOrderPoint(destination.x, destination.y, QueuedOrder.Type.MOVE.ordinal());
+            }
             return new QueuedOrderPoint(direction.target.x, direction.target.y, QueuedOrder.Type.MOVE.ordinal());
         }
         return null;

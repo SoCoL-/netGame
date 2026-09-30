@@ -43,6 +43,13 @@ class CraterTest {
 
     private static final float SPOT_X = 1500f;
     private static final float SPOT_Y = 1500f;
+    /**
+     * Открытая трава, где на 500 единиц вправо нет ни скал, ни воды: сюда
+     * переставляется строитель в тестах, где он куда-то едет. У самого
+     * дома (точка старта с карты) может быть что угодно — например, скалы.
+     */
+    private static final float OPEN_GROUND_X = 1500f;
+    private static final float OPEN_GROUND_Y = 1000f;
 
     private FakeConnection player0;
     private FakeConnection player1;
@@ -202,6 +209,7 @@ class CraterTest {
     void groundUnitsAreSlowedInsideCrater() {
         int builderId = builderOf(0);
         PositionComponent position = entity(builderId).getComponent(PositionComponent.class);
+        position.position.set(OPEN_GROUND_X, OPEN_GROUND_Y);
         float startX = position.position.x;
         float startY = position.position.y;
         float speed = UnitDefinitions.speedFor(UnitType.BUILDER);
@@ -251,6 +259,7 @@ class CraterTest {
     void builderFillsCraterAndOrderEnds() {
         int builderId = builderOf(0);
         PositionComponent position = entity(builderId).getComponent(PositionComponent.class);
+        position.position.set(OPEN_GROUND_X, OPEN_GROUND_Y);
         Crater crater = game.craterField().addExplosion(position.position.x + 400f, position.position.y, 60f);
 
         FillCraterRequest request = new FillCraterRequest();

@@ -75,8 +75,8 @@ public final class BuildingPlacement {
             return false; // вылезает за границы карты
         }
 
-        if (GameMap.current().rectTouchesWater(minX, minY, maxX, maxY)) {
-            return false; // на воде строить нельзя
+        if (GameMap.current().rectTouchesWaterOrRock(minX, minY, maxX, maxY)) {
+            return false; // на воде и на скалах строить нельзя
         }
 
         float ownClearance = clearanceRadiusFor(type);

@@ -8,6 +8,7 @@ import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.utils.Array;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
+import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.AttackComponent;
 import ru.socol.supreme.shared.components.BuildOrderComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
@@ -17,6 +18,7 @@ import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.components.WreckComponent;
+import ru.socol.supreme.shared.map.GameMap;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 
@@ -163,6 +165,7 @@ public class AggroSystem extends IteratingSystem {
         }
 
         float aggroRadius = UnitDefinitions.attackRadiusFor(myType);
+        boolean myIsAir = entity.getComponent(AircraftComponent.class) != null;
 
         Array<Entity> nearby = grid.query(position.position.x, position.position.y, aggroRadius);
 
@@ -190,7 +193,17 @@ public class AggroSystem extends IteratingSystem {
                 continue; // разделение целей по стихиям — см. её javadoc: наземный не видит воздух, разведчик не видит землю, никто не видит спрятавшегося под водой строителя
             }
 
-            float distanceSq = position.position.dst2(POSITION.get(other).position);
+            // Сквозь скалы прямой наводкой не стреляют (см. CombatSystem) —
+            // цель за скалой не подхватываем автоматически. Авиация и цели в
+            // воздухе — над скалами, их это не касается.
+            PositionComponent otherPosition = POSITION.get(other);
+            boolean directFire = !myIsAir && !otherIsAir;
+            if (directFire && !GameMap.current().lineOfFireClear(position.position.x, position.position.y,
+                    otherPosition.position.x, otherPosition.position.y)) {
+                continue;
+            }
+
+            float distanceSq = position.position.dst2(otherPosition.position);
             if (distanceSq <= nearestDistanceSq) {
                 nearestDistanceSq = distanceSq;
                 nearestEnemy = other;

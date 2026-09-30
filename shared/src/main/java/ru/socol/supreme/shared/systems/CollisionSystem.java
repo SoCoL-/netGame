@@ -10,11 +10,13 @@ import com.badlogic.gdx.utils.Array;
 import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.GameConstants;
-import ru.socol.supreme.shared.map.GameMap;
+import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
+import ru.socol.supreme.shared.components.UnitTypeComponent;
+import ru.socol.supreme.shared.map.GameMap;
 import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 
 import java.util.Map;
@@ -164,8 +166,13 @@ public class CollisionSystem extends IteratingSystem {
             }
         }
 
-        // Подстраховка: если соседи всё же протолкнули юнита в воду — выталкиваем на ближайшую сушу.
-        float[] land = GameMap.current().nearestLandPoint(position.position.x, position.position.y, GameConstants.UNIT_RADIUS);
+        // Подстраховка: если соседи всё же протолкнули юнита в скалы (или в
+        // воду — кроме строителя, ему туда можно) — выталкиваем на ближайшую
+        // проходимую клетку.
+        UnitTypeComponent unitType = entity.getComponent(UnitTypeComponent.class);
+        boolean canEnterWater = unitType != null && UnitDefinitions.canEnterWater(unitType.type);
+        float[] land = GameMap.current().nearestPassablePoint(position.position.x, position.position.y,
+                GameConstants.UNIT_RADIUS, canEnterWater);
         if (land != null) {
             position.position.set(land[0], land[1]);
         }

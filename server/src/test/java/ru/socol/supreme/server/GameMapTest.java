@@ -49,16 +49,16 @@ class GameMapTest {
     }
 
     @Test
-    void nearestLandPointPullsOutOfWaterOnly() {
+    void nearestPassablePointPullsOutOfWaterOnly() {
         float cell = GameConstants.PATH_GRID_CELL_SIZE;
         for (int cx = 0; cx < map.width(); cx++) {
             for (int cy = 0; cy < map.height(); cy++) {
                 if (map.isWaterCell(cx, cy) && !map.isWaterCell(cx + 1, cy) && cx + 1 < map.width()) {
-                    float[] land = map.nearestLandPoint((cx + 0.5f) * cell, (cy + 0.5f) * cell, GameConstants.UNIT_RADIUS);
+                    float[] land = map.nearestPassablePoint((cx + 0.5f) * cell, (cy + 0.5f) * cell, GameConstants.UNIT_RADIUS, false);
                     assertNotNull(land);
                     assertFalse(map.isWaterAt(land[0], land[1]), "вытолкнуло на сушу");
                     float[] spawn = map.spawnPoint(0);
-                    assertNull(map.nearestLandPoint(spawn[0], spawn[1], GameConstants.UNIT_RADIUS), "на суше не двигает");
+                    assertNull(map.nearestPassablePoint(spawn[0], spawn[1], GameConstants.UNIT_RADIUS, false), "на суше не двигает");
                     return;
                 }
             }

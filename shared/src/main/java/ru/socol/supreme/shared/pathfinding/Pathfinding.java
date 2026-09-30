@@ -22,8 +22,8 @@ import java.util.PriorityQueue;
 import java.util.Set;
 
 /**
- * Поиск пути по сетке в обход препятствий: вода по карте (GameMap,
- * никогда не меняется за партию) и footprint каждого
+ * Поиск пути по сетке в обход препятствий: вода и скалы по карте
+ * (GameMap, никогда не меняются за партию) и footprint каждого
  * СЕЙЧАС существующего здания — динамический список, а не что-то,
  * зафиксированное раз и навсегда. GameServer вызывает
  * addBuildingObstacle при появлении любого здания (в том числе ещё
@@ -111,6 +111,12 @@ public final class Pathfinding {
      */
     private static final boolean[][] WATER_BLOCKED = buildWaterOnlyGrid();
 
+    /**
+     * Клетки скал — так же неизменны за партию, как и вода, но, в отличие
+     * от неё, непроходимы для ВСЕХ наземных юнитов, включая строителя.
+     */
+    private static final boolean[][] ROCK_BLOCKED = buildRockOnlyGrid();
+
     private static boolean[][] buildWaterOnlyGrid() {
         boolean[][] blocked = new boolean[GRID_WIDTH][GRID_HEIGHT];
         for (int cx = 0; cx < GRID_WIDTH; cx++) {
@@ -121,9 +127,19 @@ public final class Pathfinding {
         return blocked;
     }
 
+    private static boolean[][] buildRockOnlyGrid() {
+        boolean[][] blocked = new boolean[GRID_WIDTH][GRID_HEIGHT];
+        for (int cx = 0; cx < GRID_WIDTH; cx++) {
+            for (int cy = 0; cy < GRID_HEIGHT; cy++) {
+                blocked[cx][cy] = isInsideRock(cellCenterX(cx), cellCenterY(cy));
+            }
+        }
+        return blocked;
+    }
+
     /** blocked[cx][cy] (здания) с учётом воды только для тех, кому она вообще препятствие — общий приём и для A* (findPath), и для проверки "срезания" угла. */
     private boolean isCellBlocked(int cx, int cy, boolean canEnterWater) {
-        return blocked[cx][cy] || (!canEnterWater && WATER_BLOCKED[cx][cy]);
+        return blocked[cx][cy] || ROCK_BLOCKED[cx][cy] || (!canEnterWater && WATER_BLOCKED[cx][cy]);
     }
 
     /**
@@ -224,7 +240,7 @@ public final class Pathfinding {
      * без этого юниты зависали, топчась у самого края препятствия.
      */
     public boolean isBlocked(float x, float y, boolean canEnterWater) {
-        return (!canEnterWater && isInsideWater(x, y)) || isInsideAnyBuilding(x, y);
+        return (!canEnterWater && isInsideWater(x, y)) || isInsideRock(x, y) || isInsideAnyBuilding(x, y);
     }
 
     /**
@@ -251,6 +267,20 @@ public final class Pathfinding {
      * UnitDefinitions.canTarget, почему это отдельная, третья проверка
      * помимо разделения на "воздух/земля").
      */
+    /** Скалы с той же PATH_CLEARANCE-инфляцией, что и вода (см. isInsideWater). */
+    public static boolean isInsideRock(float x, float y) {
+        GameMap map = GameMap.current();
+        float margin = GameConstants.PATH_CLEARANCE;
+        return map.isRockAt(x, y)
+                || map.isRockAt(x - margin, y) || map.isRockAt(x + margin, y)
+                || map.isRockAt(x, y - margin) || map.isRockAt(x, y + margin);
+    }
+
+    /** Скалы ли клетка (cellX, cellY) — для отладочной сетки клиента, как и isWaterCell. */
+    public static boolean isRockCell(int cellX, int cellY) {
+        return isInsideRock(cellCenterX(cellX), cellCenterY(cellY));
+    }
+
     public static boolean isInsideWater(float x, float y) {
         // Вода — клетки карты (GameMap), раздутые на PATH_CLEARANCE: точка
         // "в воде", если вода в её клетке или в пределах запаса по любой из осей.

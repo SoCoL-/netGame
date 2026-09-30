@@ -158,6 +158,7 @@ public class GameScreen extends InputAdapter implements Screen {
     // перекрытие.
     private static final Color FOG_COLOR = new Color(0.12f, 0.12f, 0.12f, 0.88f);
     private static final Color GRASS_COLOR = new Color(0.2f, 0.45f, 0.2f, 1f); // зелёный, трава
+    private static final Color ROCK_DEBUG_COLOR = new Color(0.45f, 0.42f, 0.4f, 1f); // серый, скалы (только в отладочной сетке)
     private static final Color DEBUG_PATH_COLOR = Color.ORANGE;
     private static final Color IRON_DEPOSIT_COLOR = new Color(0.55f, 0.35f, 0.2f, 1f); // ржаво-коричневый
     private static final float IRON_DEPOSIT_RADIUS = 18f;
@@ -1234,7 +1235,8 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
         for (int cx = 0; cx < gridWidth; cx++) {
             for (int cy = 0; cy < gridHeight; cy++) {
-                shapeRenderer.setColor(Pathfinding.isWaterCell(cx, cy) ? WATER_COLOR : GRASS_COLOR);
+                shapeRenderer.setColor(Pathfinding.isWaterCell(cx, cy) ? WATER_COLOR
+                        : Pathfinding.isRockCell(cx, cy) ? ROCK_DEBUG_COLOR : GRASS_COLOR);
                 shapeRenderer.rect(cx * cellSize, cy * cellSize, cellSize, cellSize);
             }
         }

@@ -11,6 +11,7 @@ import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
+import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.RepairComponent;
 import ru.socol.supreme.shared.map.GameMap;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
@@ -413,6 +414,8 @@ class GameServerTest {
 
     @Test
     void unitMovesTowardTargetOverTime() {
+        // Сначала — на открытую траву: у дома (точка старта с карты) справа могут быть скалы.
+        game.unitById(builder(0).unitId).getComponent(PositionComponent.class).position.set(1500f, 1000f);
         UnitSnapshot before = builder(0);
         game.handleMoveUnit(player0, move(before.unitId, before.x + 300f, before.y, false));
 
