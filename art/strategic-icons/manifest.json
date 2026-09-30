@@ -1,0 +1,242 @@
+[
+  {
+    "id": "aa",
+    "label": "ПВО",
+    "family": "ground",
+    "meaning": "Дуга прикрытия и вертикаль вверх",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "builder",
+    "label": "Строитель",
+    "family": "ground",
+    "meaning": "Гаечный ключ",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "artillery",
+    "label": "Артиллерия",
+    "family": "ground",
+    "meaning": "Крупная точка",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "tank",
+    "label": "Танк",
+    "family": "ground",
+    "meaning": "Овал бронетехники",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "air-scout",
+    "label": "Авиаразведчик",
+    "family": "air",
+    "meaning": "Глаз наблюдения",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "attack-aircraft",
+    "label": "Штурмовик",
+    "family": "air",
+    "meaning": "Двойной шеврон удара вниз",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "hq",
+    "label": "Штаб",
+    "family": "building",
+    "meaning": "Командный флаг",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "barracks",
+    "label": "Казарма",
+    "family": "building",
+    "meaning": "Крест пехоты",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "air-factory",
+    "label": "Авиазавод",
+    "family": "building",
+    "meaning": "Треугольник авиации внутри здания",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "gun-turret",
+    "label": "Стрелковая турель",
+    "family": "building",
+    "meaning": "Ствол на неподвижной опоре",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "artillery-turret",
+    "label": "Артиллерийская турель",
+    "family": "building",
+    "meaning": "Точка артиллерии внутри здания",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "iron-mine",
+    "label": "Шахта железа",
+    "family": "building",
+    "meaning": "Кирка",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "iron-storage",
+    "label": "Хранилище железа",
+    "family": "building",
+    "meaning": "Три слитка",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "generator",
+    "label": "Генератор энергии",
+    "family": "building",
+    "meaning": "Молния",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  },
+  {
+    "id": "battery",
+    "label": "Аккумулятор",
+    "family": "building",
+    "meaning": "Батарея с двумя секциями",
+    "viewBox": [
+      0,
+      0,
+      64,
+      64
+    ],
+    "anchor": [
+      0.5,
+      0.5
+    ]
+  }
+]

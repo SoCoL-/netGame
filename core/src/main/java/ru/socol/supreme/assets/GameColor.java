@@ -32,9 +32,6 @@ public enum GameColor {
     UI_PATROL_BUTTON_ACTIVE("ui.patrol-button-active"),
     UI_FPS("ui.fps"),
 
-    // Иконки стратегической карты: пиктограмма поверх подложки в цвете игрока
-    ICON_GLYPH("icon.glyph"),
-
     // Полоски и индикаторы
     BAR_BACKGROUND("bar.background"),
     BAR_HEALTH_HIGH("bar.health-high"),

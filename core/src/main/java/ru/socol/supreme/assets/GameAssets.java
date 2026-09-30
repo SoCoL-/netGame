@@ -4,6 +4,7 @@ import com.badlogic.gdx.assets.AssetManager;
 import com.badlogic.gdx.assets.loaders.FileHandleResolver;
 import com.badlogic.gdx.assets.loaders.TextureLoader;
 import com.badlogic.gdx.assets.loaders.resolvers.InternalFileHandleResolver;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
@@ -80,12 +81,32 @@ public final class GameAssets implements Disposable {
     private static final String[] TERRAIN = {TERRAIN_GRASS, TERRAIN_DIRT, TERRAIN_WATER_SHALLOW, TERRAIN_WATER_DEEP};
 
     /**
-     * Иконки стратегической карты (tools/make_icons.py): подложки — здания и
-     * юниты, красятся цветом игрока; пиктограммы по типу — поверх, одним
-     * цветом (GameColor.ICON_GLYPH); месторождение — готовое, в цвете.
+     * Стратегический значок: заливка фона (team — красится цветом игрока)
+     * и рамка со знаком роли в двух вариантах — тёмном и светлом, под
+     * светлый и тёмный цвет игрока (см. overlayFor). Значки —
+     * art/strategic-icons, в игру их готовит tools/import_strategic_icons.py.
      */
-    public static final String ICON_BADGE_BUILDING = "icons/badge-building.png";
-    public static final String ICON_BADGE_UNIT = "icons/badge-unit.png";
+    public static final class StrategicIcon {
+        public final Texture team;
+        public final Texture dark;
+        public final Texture light;
+
+        StrategicIcon(Texture team, Texture dark, Texture light) {
+            this.team = team;
+            this.dark = dark;
+            this.light = light;
+        }
+
+        /** Знак с большим контрастом к цвету игрока: на светлом фоне — тёмный, на тёмном — светлый. */
+        public Texture overlayFor(Color teamColor) {
+            float luminance = 0.2126f * teamColor.r + 0.7152f * teamColor.g + 0.0722f * teamColor.b;
+            return luminance > 0.5f ? dark : light;
+        }
+    }
+
+    private static final String[] ICON_LAYERS = {"team", "dark", "light"};
+
+    /** Месторождение железа — готовая цветная картинка (tools/make_icons.py), не красится. */
     public static final String ICON_IRON_DEPOSIT = "icons/iron-deposit.png";
 
     private final AssetManager manager;
@@ -146,38 +167,47 @@ public final class GameAssets implements Disposable {
         return parameter;
     }
 
-    /** Все иконки: подложки, месторождение и пиктограммы всех зданий (кроме обломков) и юнитов (кроме турели — она здание). */
+    /** Все иконки: месторождение и по три слоя значка на каждое здание (кроме обломков) и юнит (кроме турели — она здание). */
     private static List<String> iconPaths() {
         List<String> paths = new ArrayList<>();
-        paths.add(ICON_BADGE_BUILDING);
-        paths.add(ICON_BADGE_UNIT);
         paths.add(ICON_IRON_DEPOSIT);
+        List<String> names = new ArrayList<>();
         for (BuildingType type : BuildingType.values()) {
             if (type != BuildingType.WRECK) {
-                paths.add(iconPath(type.name()));
+                names.add(type.name());
             }
         }
         for (UnitType type : UnitType.values()) {
             if (type != UnitType.TURRET) {
-                paths.add(iconPath(type.name()));
+                names.add(type.name());
+            }
+        }
+        for (String name : names) {
+            for (String layer : ICON_LAYERS) {
+                paths.add(iconPath(name, layer));
             }
         }
         return paths;
     }
 
-    /** HOME -> icons/home.png, ARCHER_BARRACKS -> icons/archer-barracks.png. */
-    private static String iconPath(String enumName) {
-        return "icons/" + enumName.toLowerCase().replace('_', '-') + ".png";
+    /** HOME, "team" -> icons/home-team.png; ARCHER_BARRACKS, "dark" -> icons/archer-barracks-dark.png. */
+    private static String iconPath(String enumName, String layer) {
+        return "icons/" + enumName.toLowerCase().replace('_', '-') + "-" + layer + ".png";
     }
 
-    /** Пиктограмма здания для стратегической карты; null — у обломков её нет. */
-    public Texture icon(BuildingType type) {
-        return type == BuildingType.WRECK ? null : texture(iconPath(type.name()));
+    private StrategicIcon strategicIcon(String enumName) {
+        return new StrategicIcon(texture(iconPath(enumName, "team")), texture(iconPath(enumName, "dark")),
+                texture(iconPath(enumName, "light")));
     }
 
-    /** Пиктограмма юнита для стратегической карты (TURRET — это здание, см. icon(BuildingType)). */
-    public Texture icon(UnitType type) {
-        return texture(iconPath((type == UnitType.TURRET ? BuildingType.TURRET : type).name()));
+    /** Значок здания для стратегической карты; null — у обломков его нет. */
+    public StrategicIcon icon(BuildingType type) {
+        return type == BuildingType.WRECK ? null : strategicIcon(type.name());
+    }
+
+    /** Значок юнита для стратегической карты (TURRET — это здание, см. icon(BuildingType)). */
+    public StrategicIcon icon(UnitType type) {
+        return strategicIcon((type == UnitType.TURRET ? BuildingType.TURRET : type).name());
     }
 
     public static String unitTexturePath(String name, String layer) {

@@ -148,12 +148,11 @@ public class GameScreen extends InputAdapter implements Screen {
     // drawStrategicIcons, поэтому на любом зуме внутри стратегической
     // полосы значок остаётся одного и того же видимого на экране размера,
     // а не съёживается вместе с остальным миром).
-    private static final float STRATEGIC_UNIT_ICON_RADIUS_PX = 8f;
-    private static final float STRATEGIC_BUILDING_ICON_HALF_SIZE_PX = 11f;
+    // Значки рассчитаны на 24–32 px (вместе с отступами внутри картинки).
+    private static final float STRATEGIC_UNIT_ICON_RADIUS_PX = 13f;
+    private static final float STRATEGIC_BUILDING_ICON_HALF_SIZE_PX = 15f;
     private static final float STRATEGIC_SELECTION_RING_EXTRA_PX = 3f;
     private static final float STRATEGIC_DEPOSIT_ICON_SIZE_PX = 18f;
-    /** Пиктограмма на подложке — такая доля её размера. */
-    private static final float ICON_GLYPH_SCALE = 0.68f;
 
     private static final float DRAG_THRESHOLD = 6f; // world units — отличает клик от протяжки рамки
     private static final float MOVE_ORDER_SPACING = 24f; // world units между юнитами в сетке при групповом приказе
@@ -885,13 +884,13 @@ public class GameScreen extends InputAdapter implements Screen {
 
         spriteBatch.setProjectionMatrix(camera.combined);
         spriteBatch.begin();
-        float unitSize = unitRadius * 2f + 2f * camera.zoom;
+        float unitSize = unitRadius * 2f;
         for (Entity entity : engine.getEntities()) {
             UnitTypeComponent unitType = entity.getComponent(UnitTypeComponent.class);
             if (!isStrategicIconVisible(entity) || entity.getComponent(BuildingComponent.class) != null || unitType == null) {
                 continue;
             }
-            drawIcon(entity, assets.texture(GameAssets.ICON_BADGE_UNIT), assets.icon(unitType.type), unitSize, alpha);
+            drawIcon(entity, assets.icon(unitType.type), unitSize, alpha);
         }
         spriteBatch.end();
         spriteBatch.setColor(Color.WHITE);
@@ -915,30 +914,30 @@ public class GameScreen extends InputAdapter implements Screen {
         if (alpha <= 0f) {
             return;
         }
-        float size = (STRATEGIC_BUILDING_ICON_HALF_SIZE_PX * 2f + 2f) * camera.zoom;
+        float size = STRATEGIC_BUILDING_ICON_HALF_SIZE_PX * 2f * camera.zoom;
         Gdx.gl.glEnable(GL20.GL_BLEND);
         spriteBatch.setProjectionMatrix(camera.combined);
         spriteBatch.begin();
         for (Entity building : buildings) {
-            Texture glyph = assets.icon(building.getComponent(BuildingComponent.class).type);
-            if (glyph != null) {
-                drawIcon(building, assets.texture(GameAssets.ICON_BADGE_BUILDING), glyph, size, alpha);
+            GameAssets.StrategicIcon icon = assets.icon(building.getComponent(BuildingComponent.class).type);
+            if (icon != null) {
+                drawIcon(building, icon, size, alpha);
             }
         }
         spriteBatch.end();
         spriteBatch.setColor(Color.WHITE);
     }
 
-    /** Подложка badge в цвете владельца, поверх — пиктограмма glyph цветом ICON_GLYPH (внутри spriteBatch.begin/end). */
-    private void drawIcon(Entity entity, Texture badge, Texture glyph, float size, float alpha) {
+    /** Значок: заливка в цвете владельца, поверх — рамка и знак роли, контрастный к этому цвету (внутри spriteBatch.begin/end). */
+    private void drawIcon(Entity entity, GameAssets.StrategicIcon icon, float size, float alpha) {
         Vector2 position = entity.getComponent(PositionComponent.class).position;
         Color owner = palette.player(entity.getComponent(OwnerComponent.class).playerId);
+        float x = position.x - size / 2f;
+        float y = position.y - size / 2f;
         spriteBatch.setColor(owner.r, owner.g, owner.b, alpha);
-        spriteBatch.draw(badge, position.x - size / 2f, position.y - size / 2f, size, size);
-        Color glyphColor = palette.get(GameColor.ICON_GLYPH);
-        float glyphSize = size * ICON_GLYPH_SCALE;
-        spriteBatch.setColor(glyphColor.r, glyphColor.g, glyphColor.b, alpha);
-        spriteBatch.draw(glyph, position.x - glyphSize / 2f, position.y - glyphSize / 2f, glyphSize, glyphSize);
+        spriteBatch.draw(icon.team, x, y, size, size);
+        spriteBatch.setColor(1f, 1f, 1f, alpha);
+        spriteBatch.draw(icon.overlayFor(owner), x, y, size, size);
     }
 
     // ---- Рендер ----
