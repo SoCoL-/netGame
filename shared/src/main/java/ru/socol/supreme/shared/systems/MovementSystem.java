@@ -93,8 +93,20 @@ public class MovementSystem extends IteratingSystem {
         // дистанция до цели никогда не попала бы в ARRIVE_THRESHOLD, если
         // курс не сходится к ней. С пересчётом юнит каждый тик "доворачивает"
         // на цель и всегда в итоге доходит, даже если его постоянно толкают.
+        // Шаг за тик (при 30 тиках в секунду и скорости 240 — 8 единиц)
+        // больше порога прибытия: без этой проверки юнит перелетал точку и
+        // начинал качаться вокруг неё туда-обратно, пока случайный толчок
+        // соседей не ставил его ближе ARRIVE_THRESHOLD. Если за этот тик
+        // до точки можно дойти — встаём ровно в неё.
+        float step = direction.speed * direction.speedMultiplier * deltaTime;
+        if (step >= distanceToTarget) {
+            position.position.set(direction.target);
+            advanceToNextWaypointOrStop(entity, position, direction);
+            return;
+        }
+
         direction.direction.set(direction.target).sub(position.position).nor();
-        position.position.mulAdd(direction.direction, direction.speed * direction.speedMultiplier * deltaTime);
+        position.position.mulAdd(direction.direction, step);
     }
 
     private void advanceToNextWaypointOrStop(Entity entity, PositionComponent position, DirectionComponent direction) {
