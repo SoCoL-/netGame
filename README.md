@@ -316,13 +316,24 @@ python3 tools/bake_map.py half.png assets/maps/default.json --mirror bottom-left
 
 ## Технические заметки
 
-- **Шрифт.** Весь текст рисуется шрифтом Exo 2 Medium
-  (`assets/fonts/Exo2-Medium.ttf`, лицензия SIL OFL 1.1 — рядом, в
-  `OFL-Exo2.txt`) через `FreeTypeFontGenerator` (класс `Fonts`), с
-  кириллицей. Встроенный в libGDX `new BitmapFont()` умеет только
-  латиницу — русские буквы им рисовались пустыми прямоугольниками.
-  Новые символы (например, другой алфавит) добавляются в
-  `Fonts.CHARACTERS`.
+- **Ассеты клиента — через `AssetManager`** (класс `GameAssets`,
+  пакет `ru.socol.supreme.assets`): шрифты, текстуры и цвета грузятся
+  один раз при старте (`Main.create`) и освобождаются при выходе. Экраны
+  и системы только берут их у `GameAssets` и сами не освобождают.
+  - **Шрифты** — Exo 2 Medium (`assets/fonts/Exo2-Medium.ttf`, лицензия
+    SIL OFL 1.1 — рядом, в `OFL-Exo2.txt`), генерируются FreeType с
+    кириллицей; размеры — перечисление `GameAssets.GameFont`. Шрифт одного
+    размера общий для всех экранов, поэтому цвет ему задаётся перед
+    каждой отрисовкой. Новые символы (например, другой алфавит)
+    добавляются в `GameAssets.CHARACTERS`.
+  - **Текстуры** — спрайты юнитов и земли, с mip-уровнями; у земли —
+    повтор по всей карте.
+  - **Цвета** — `assets/colors.json` (имя → `RRGGBB` или `RRGGBBAA`),
+    свой загрузчик `PaletteLoader` превращает его в `Palette`. В коде
+    цвет берётся по имени из перечисления `GameColor`:
+    `palette.get(GameColor.UI_TEXT)`. Цвета меняются в json без
+    пересборки; если какого-то цвета из `GameColor` в файле нет, игра
+    при старте падает с их списком.
 - **Спрайты.** Двумя слоями (корпус + башня, класс `LayeredSprite`,
   текстуры в `assets/units/`) рисуются:
 

@@ -10,6 +10,9 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
+import ru.socol.supreme.assets.GameAssets;
+import ru.socol.supreme.assets.GameColor;
+import ru.socol.supreme.assets.Palette;
 import ru.socol.supreme.components.SelectedComponent;
 import ru.socol.supreme.components.TurretDisplayComponent;
 import ru.socol.supreme.shared.BuildingSizes;
@@ -52,7 +55,7 @@ import java.util.List;
  * TURRET (турель) — единственное исключение из "здание = прямоугольник":
  * готовая турель рисуется drawTurretBuilding — ромб (drawDiamond) вместо
  * прямоугольника плюс доворачивающаяся башня-треугольник поверх, той же
- * механикой (TurretDisplayComponent/TURRET_COLOR/drawHeadingTriangleMarker),
+ * механикой (TurretDisplayComponent/GameColor.TURRET/drawHeadingTriangleMarker),
  * что и у наземной техники. Пока строится — обычный вид "стройки", как у
  * любого здания, см. её же диспетчеризацию в processEntity.
  */
@@ -79,22 +82,6 @@ public class RenderSystem extends IteratingSystem {
     private static final ComponentMapper<WreckComponent> WRECK =
             ComponentMapper.getFor(WreckComponent.class);
 
-    // Публичный — GameScreen переиспользует те же цвета для стратегических
-    // значков (drawStrategicIcons), чтобы кроссфейд тактический/
-    // стратегический вид не менял ещё и цвет заодно с формой/размером.
-    public static final Color[] PLAYER_COLORS = {Color.SKY, Color.ORANGE};
-    private static final Color SELECTION_RING_COLOR = Color.WHITE;
-    private static final Color BUILDER_MARKER_COLOR = Color.LIGHT_GRAY; // тот же цвет, что у "стройки" (UNDER_CONSTRUCTION_COLOR) — тематическая связь
-
-    /**
-     * Цвет башни наземной техники (drawGroundVehicle) — намеренно НЕ
-     * playerColor, а один фиксированный тёмно-серый на всех игроков:
-     * иначе башня, будучи того же цвета, что и корпус, визуально
-     * сливалась бы с ним в один силуэт и доворот башни на цель было бы
-     * трудно заметить на глаз. Корпус (drawRotatedRect) по-прежнему
-     * красится в playerColor — по нему различают, чей юнит.
-     */
-    private static final Color TURRET_COLOR = Color.DARK_GRAY;
     private static final float BUILDER_MARKER_HALF_SIZE = GameConstants.UNIT_RADIUS * 0.35f;
     // Вся авиация — единственные юниты с настоящим курсом (см.
     // AircraftMovementSystem), поэтому метка не просто цветная точка, а
@@ -102,8 +89,6 @@ public class RenderSystem extends IteratingSystem {
     // общая форма на любой тип, цвет свой у каждого.
     private static final float AIRCRAFT_MARKER_LENGTH = GameConstants.UNIT_RADIUS * 0.9f;
     private static final float AIRCRAFT_MARKER_WIDTH = GameConstants.UNIT_RADIUS * 0.6f;
-    private static final Color SCOUT_MARKER_COLOR = Color.YELLOW;
-    private static final Color ATTACK_AIRCRAFT_MARKER_COLOR = Color.RED;
 
     private static final float SELECTION_RING_RADIUS = GameConstants.UNIT_RADIUS + 3f;
 
@@ -126,20 +111,6 @@ public class RenderSystem extends IteratingSystem {
     private static final float TURRET_BARREL_LENGTH = GameConstants.UNIT_RADIUS * 1.6f;
     private static final float TURRET_REAR_LENGTH = GameConstants.UNIT_RADIUS * 0.5f;
     private static final float TURRET_HALF_WIDTH = GameConstants.UNIT_RADIUS * 0.35f;
-
-    private static final Color HQ_STAR_COLOR = Color.GOLD;
-    private static final Color ARCHER_ROOF_COLOR = Color.WHITE;
-    private static final Color IRON_MINE_MARKER_COLOR = new Color(0.55f, 0.35f, 0.2f, 1f); // тот же ржавый цвет, что у месторождений
-    private static final Color POWER_PLANT_MARKER_COLOR = Color.YELLOW;
-    // Не жёлтый и не голубой (Color.SKY) — оба уже заняты (станция и
-    // цвет игрока 1 соответственно), маркер на его фоне был бы почти
-    // невидим.
-    private static final Color AIRCRAFT_FACTORY_MARKER_COLOR = Color.CYAN;
-    private static final Color UNDER_CONSTRUCTION_COLOR = Color.GRAY;
-    /** Обломки на суше — тускло-ржавый, чтобы не путались ни с одним цветом игрока (SKY/ORANGE) и не выглядели как здание. */
-    private static final Color WRECK_COLOR = Color.valueOf("6B5B4B");
-    /** Обломки под водой (WreckComponent.underwater) — темнее и холоднее, чтобы читалось "на дне", а не "на суше в тени". */
-    private static final Color WRECK_UNDERWATER_COLOR = Color.valueOf("35465A");
 
     private static final float HEALTH_BAR_HEIGHT = 4f;
     private static final float UNIT_HEALTH_BAR_WIDTH = 24f;
@@ -176,25 +147,26 @@ public class RenderSystem extends IteratingSystem {
      * них ещё раз ShapeRenderer — их полоски здоровья), см. update().
      */
     private final SpriteBatch spriteBatch;
-    private final LayeredSprite archerSprite = LayeredSprite.archer();
-    private final LayeredSprite antiAirSprite = LayeredSprite.antiAir();
-    private final LayeredSprite artillerySprite = LayeredSprite.artillery();
+    private final LayeredSprite archerSprite;
+    private final LayeredSprite antiAirSprite;
+    private final LayeredSprite artillerySprite;
+
+    /** Все цвета отрисовки — из assets/colors.json (см. GameAssets, GameColor). */
+    private final Palette palette;
     private final List<Entity> pendingSprites = new ArrayList<>();
 
     /** Кольцо выделения у техники со спрайтом шире, чем у остальной — спрайт крупнее прямоугольника. */
     private static final float ARCHER_SELECTION_RING_RADIUS = 20f;
     private static final float ANTI_AIR_SELECTION_RING_RADIUS = 22f;
 
-    public RenderSystem(ShapeRenderer shapeRenderer, SpriteBatch spriteBatch) {
+    public RenderSystem(ShapeRenderer shapeRenderer, SpriteBatch spriteBatch, GameAssets assets) {
         super(Family.all(PositionComponent.class, OwnerComponent.class, HealthComponent.class).get(), 10);
         this.shapeRenderer = shapeRenderer;
         this.spriteBatch = spriteBatch;
-    }
-
-    public void dispose() {
-        archerSprite.dispose();
-        antiAirSprite.dispose();
-        artillerySprite.dispose();
+        palette = assets.palette();
+        archerSprite = LayeredSprite.archer(assets);
+        antiAirSprite = LayeredSprite.antiAir(assets);
+        artillerySprite = LayeredSprite.artillery(assets);
     }
 
     public void setRenderAlpha(float renderAlpha) {
@@ -247,7 +219,7 @@ public class RenderSystem extends IteratingSystem {
         spriteBatch.begin();
         for (Entity entity : pendingSprites) {
             PositionComponent position = POSITION.get(entity);
-            Color playerColor = PLAYER_COLORS[OWNER.get(entity).playerId % PLAYER_COLORS.length];
+            Color playerColor = palette.player(OWNER.get(entity).playerId);
             if (BUILDING.has(entity)) {
                 // Артиллерийская башня: корпус здания неподвижен (носом вверх), крутится только излучатель.
                 float[] barrel = artilleryBarrelDirection(entity, position.position.x, position.position.y);
@@ -332,8 +304,8 @@ public class RenderSystem extends IteratingSystem {
                 // Обломки — не настоящее здание и не принадлежат никому
                 // (OwnerComponent.playerId == GameConstants.NEUTRAL_OWNER_ID,
                 // см. javadoc WreckComponent), поэтому не могут пойти через
-                // drawBuilding — та красит корпус в PLAYER_COLORS[owner
-                // .playerId % ...], что упало бы с отрицательным индексом.
+                // drawBuilding — та красит корпус в palette.player(owner
+                // .playerId), что упало бы с отрицательным индексом.
                 drawWreck(entity, position, health);
             } else {
                 drawBuilding(entity, position, owner, health);
@@ -362,7 +334,7 @@ public class RenderSystem extends IteratingSystem {
         // некоторых углах поворота прямоугольный корпус вылезал бы за его
         // пределы (см. javadoc GROUND_SELECTION_RING_RADIUS).
         if (SELECTED.has(entity)) {
-            setColor(SELECTION_RING_COLOR);
+            setColor(palette.get(GameColor.SELECTION_RING));
             float ringRadius = type == UnitType.ARCHER ? ARCHER_SELECTION_RING_RADIUS
                     : type == UnitType.ANTI_AIR ? ANTI_AIR_SELECTION_RING_RADIUS
                     : groundVehicle ? GROUND_SELECTION_RING_RADIUS : SELECTION_RING_RADIUS;
@@ -374,7 +346,7 @@ public class RenderSystem extends IteratingSystem {
             return;
         }
 
-        Color playerColor = PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length];
+        Color playerColor = palette.player(owner.playerId);
 
         if (groundVehicle) {
             drawGroundVehicle(entity, position, playerColor, type);
@@ -386,9 +358,9 @@ public class RenderSystem extends IteratingSystem {
             // разведчик тут тоже авиация), у обычной наземной техники
             // курса в этом смысле нет вовсе, ей занимается drawGroundVehicle.
             if (type == UnitType.SCOUT) {
-                drawHeadingTriangleMarker(entity, position, SCOUT_MARKER_COLOR);
+                drawHeadingTriangleMarker(entity, position, palette.get(GameColor.SCOUT_MARKER));
             } else if (type == UnitType.ATTACK_AIRCRAFT) {
-                drawHeadingTriangleMarker(entity, position, ATTACK_AIRCRAFT_MARKER_COLOR);
+                drawHeadingTriangleMarker(entity, position, palette.get(GameColor.ATTACK_AIRCRAFT_MARKER));
             }
         }
 
@@ -405,7 +377,7 @@ public class RenderSystem extends IteratingSystem {
      * цель атаки независимо от корпуса, TurretAimSystem считает это на
      * сервере (см. её javadoc и TurretComponent), клиент только
      * отображает уже готовый угол. Башня рисуется фиксированным
-     * тёмно-серым (TURRET_COLOR), а не playerColor, как корпус — чтобы
+     * тёмно-серым (GameColor.TURRET), а не playerColor, как корпус — чтобы
      * их было видно раздельно, а не одним слитным силуэтом. Вершина
      * треугольника — дуло, откуда визуально вылетает снаряд (см.
      * GameScreen.onProjectileFired).
@@ -424,7 +396,7 @@ public class RenderSystem extends IteratingSystem {
         drawRotatedRect(position.position.x, position.position.y, hullDx, hullDy, HULL_HALF_LENGTH, HULL_HALF_WIDTH);
 
         if (type == UnitType.BUILDER) {
-            setColor(BUILDER_MARKER_COLOR);
+            setColor(palette.get(GameColor.BUILDER_MARKER));
             float half = BUILDER_MARKER_HALF_SIZE;
             shapeRenderer.rect(position.position.x - half, position.position.y - half, half * 2f, half * 2f);
         }
@@ -439,7 +411,7 @@ public class RenderSystem extends IteratingSystem {
             turretDx = hullDx;
             turretDy = hullDy;
         }
-        drawHeadingTriangleMarker(position, turretDx, turretDy, TURRET_COLOR,
+        drawHeadingTriangleMarker(position, turretDx, turretDy, palette.get(GameColor.TURRET),
                 TURRET_BARREL_LENGTH, TURRET_REAR_LENGTH, TURRET_HALF_WIDTH);
     }
 
@@ -473,7 +445,7 @@ public class RenderSystem extends IteratingSystem {
      * корпус-ромб (drawDiamond) в playerColor вместо прямоугольника
      * обычного здания, и поверх него та же доворачивающаяся
      * башня-треугольник, что и у наземной техники (drawGroundVehicle) —
-     * тот же TurretDisplayComponent/TURRET_COLOR/drawHeadingTriangleMarker,
+     * тот же TurretDisplayComponent/GameColor.TURRET/drawHeadingTriangleMarker,
      * сервер шлёт угол одинаково для обоих случаев (см. javadoc
      * TurretComponent — компонент общий, не завязан на юнит/здание).
      * Полоска здоровья — как у обычного здания (по halfWidth/halfHeight),
@@ -484,13 +456,13 @@ public class RenderSystem extends IteratingSystem {
         float halfWidth = BuildingSizes.halfWidth(entity);
         float halfHeight = BuildingSizes.halfHeight(entity);
 
-        setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
+        setColor(palette.player(owner.playerId));
         drawDiamond(position.position.x, position.position.y, halfWidth, halfHeight);
 
         TurretDisplayComponent turretDisplay = TURRET_DISPLAY.get(entity);
         float turretDx = turretDisplay != null ? turretDisplay.dirX : 0f;
         float turretDy = turretDisplay != null ? turretDisplay.dirY : 0f;
-        drawHeadingTriangleMarker(position, turretDx, turretDy, TURRET_COLOR,
+        drawHeadingTriangleMarker(position, turretDx, turretDy, palette.get(GameColor.TURRET),
                 TURRET_BARREL_LENGTH, TURRET_REAR_LENGTH, TURRET_HALF_WIDTH);
 
         drawHealthBar(position, health, halfHeight + BUILDING_HEALTH_BAR_Y_MARGIN, halfWidth * 2f);
@@ -511,8 +483,8 @@ public class RenderSystem extends IteratingSystem {
 
     /**
      * Обломки погибшего юнита (BuildingType.WRECK, см. её javadoc) —
-     * крестообразный силуэт фиксированного цвета (WRECK_COLOR/
-     * WRECK_UNDERWATER_COLOR — НЕ playerColor, у обломков нет владельца),
+     * крестообразный силуэт фиксированного цвета (GameColor.WRECK/
+     * GameColor.WRECK_UNDERWATER — НЕ playerColor, у обломков нет владельца),
      * а не ровный прямоугольник обычного здания, чтобы на глаз не
      * путались с настоящей постройкой. ironStock — на самом деле
      * HealthComponent той же сущности: currentHealth/maxHealth значат
@@ -526,7 +498,7 @@ public class RenderSystem extends IteratingSystem {
         float halfHeight = BuildingSizes.halfHeight(entity);
 
         WreckComponent wreck = WRECK.get(entity);
-        setColor(wreck != null && wreck.underwater ? WRECK_UNDERWATER_COLOR : WRECK_COLOR);
+        setColor(palette.get(wreck != null && wreck.underwater ? GameColor.WRECK_UNDERWATER : GameColor.WRECK));
         shapeRenderer.rect(
                 position.position.x - halfWidth, position.position.y - halfHeight * 0.35f,
                 halfWidth * 2f, halfHeight * 0.7f);
@@ -548,7 +520,7 @@ public class RenderSystem extends IteratingSystem {
             return;
         }
 
-        setColor(PLAYER_COLORS[owner.playerId % PLAYER_COLORS.length]);
+        setColor(palette.player(owner.playerId));
         shapeRenderer.rect(
                 position.position.x - halfWidth,
                 position.position.y - halfHeight,
@@ -567,10 +539,10 @@ public class RenderSystem extends IteratingSystem {
                 drawPowerPlantMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
                 break;
             case IRON_STORAGE:
-                drawStorageMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight), IRON_MINE_MARKER_COLOR);
+                drawStorageMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight), palette.get(GameColor.IRON_MINE_MARKER));
                 break;
             case ELECTRICITY_STORAGE:
-                drawStorageMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight), POWER_PLANT_MARKER_COLOR);
+                drawStorageMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight), palette.get(GameColor.POWER_PLANT_MARKER));
                 break;
             case AIRCRAFT_FACTORY:
                 drawWaveMarker(position.position.x, position.position.y, Math.min(halfWidth, halfHeight));
@@ -587,7 +559,7 @@ public class RenderSystem extends IteratingSystem {
     /** Стройка (шахта или электростанция) — тускло-серый квадрат вместо цвета игрока (здание ещё не работает) плюс прогресс-бар. */
     private void drawUnderConstruction(PositionComponent position, float halfWidth, float halfHeight,
                                         ConstructionComponent construction) {
-        setColor(UNDER_CONSTRUCTION_COLOR);
+        setColor(palette.get(GameColor.UNDER_CONSTRUCTION));
         shapeRenderer.rect(
                 position.position.x - halfWidth,
                 position.position.y - halfHeight,
@@ -598,23 +570,23 @@ public class RenderSystem extends IteratingSystem {
         float barWidth = halfWidth * 2f;
         float barY = position.position.y - halfHeight - 10f; // под зданием, а не над ним — там уже полоска здоровья
 
-        setColor(Color.DARK_GRAY);
+        setColor(palette.get(GameColor.BAR_BACKGROUND));
         shapeRenderer.rect(position.position.x - halfWidth, barY, barWidth, HEALTH_BAR_HEIGHT);
-        setColor(Color.GOLD);
+        setColor(palette.get(GameColor.BAR_CONSTRUCTION));
         shapeRenderer.rect(position.position.x - halfWidth, barY, barWidth * fraction, HEALTH_BAR_HEIGHT);
     }
 
     /** Маленький ромб в цвете месторождений — единственное, что отличает шахту железа от дома/казармы на глаз. */
     private void drawIronMineMarker(float cx, float cy, float halfSize) {
         float markerHalf = halfSize * 0.5f;
-        setColor(IRON_MINE_MARKER_COLOR);
+        setColor(palette.get(GameColor.IRON_MINE_MARKER));
         shapeRenderer.triangle(cx - markerHalf, cy, cx, cy + markerHalf, cx + markerHalf, cy);
         shapeRenderer.triangle(cx - markerHalf, cy, cx, cy - markerHalf, cx + markerHalf, cy);
     }
 
     /** Жёлтый кружок — единственное, что отличает электростанцию от дома (та же форма 2x2, но с этим значком) на глаз. */
     private void drawPowerPlantMarker(float cx, float cy, float halfSize) {
-        setColor(POWER_PLANT_MARKER_COLOR);
+        setColor(palette.get(GameColor.POWER_PLANT_MARKER));
         shapeRenderer.circle(cx, cy, halfSize * 0.5f);
     }
 
@@ -706,7 +678,7 @@ public class RenderSystem extends IteratingSystem {
         float width = halfSize * 1.6f;
         int segments = 12;
 
-        setColor(AIRCRAFT_FACTORY_MARKER_COLOR);
+        setColor(palette.get(GameColor.AIRCRAFT_FACTORY_MARKER));
         float startX = cx - width / 2f;
         float prevX = startX;
         float prevY = cy;
@@ -730,7 +702,7 @@ public class RenderSystem extends IteratingSystem {
         float tall = radius * 0.8660254f; // radius * sqrt(3)/2
         float half = radius * 0.5f;
 
-        setColor(HQ_STAR_COLOR);
+        setColor(palette.get(GameColor.HQ_STAR));
         shapeRenderer.triangle(cx, cy + radius, cx - tall, cy - half, cx + tall, cy - half);
         shapeRenderer.triangle(cx, cy - radius, cx + tall, cy + half, cx - tall, cy + half);
     }
@@ -738,7 +710,7 @@ public class RenderSystem extends IteratingSystem {
     /** "Крышечка" — залитый треугольник поверх верхней грани здания, силуэтом похожий на двускатную крышу. */
     private void drawRoofCap(float cx, float baseY, float halfWidth) {
         float peakHeight = halfWidth;
-        setColor(ARCHER_ROOF_COLOR);
+        setColor(palette.get(GameColor.ARCHER_ROOF));
         shapeRenderer.triangle(cx - halfWidth, baseY, cx + halfWidth, baseY, cx, baseY + peakHeight);
     }
 
@@ -746,7 +718,7 @@ public class RenderSystem extends IteratingSystem {
         float barX = position.position.x - barWidth / 2f;
         float barY = position.position.y + yOffset;
 
-        setColor(Color.DARK_GRAY);
+        setColor(palette.get(GameColor.BAR_BACKGROUND));
         shapeRenderer.rect(barX, barY, barWidth, HEALTH_BAR_HEIGHT);
 
         // Именные обломки здания (BuildingRubbleComponent), у которого
@@ -765,7 +737,7 @@ public class RenderSystem extends IteratingSystem {
         // health.maxHealth, а не общая константа — у здания и юнита разный максимум.
         float healthFraction = MathUtils.clamp((float) health.currentHealth / health.maxHealth, 0f, 1f);
 
-        setColor(healthFraction > 0.3f ? Color.GREEN : Color.RED);
+        setColor(palette.get(healthFraction > 0.3f ? GameColor.BAR_HEALTH_HIGH : GameColor.BAR_HEALTH_LOW));
         shapeRenderer.rect(barX, barY, barWidth * healthFraction, HEALTH_BAR_HEIGHT);
     }
 }

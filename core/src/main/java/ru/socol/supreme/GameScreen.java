@@ -32,6 +32,9 @@ import ru.socol.supreme.components.DebugPathComponent;
 import ru.socol.supreme.components.OrderQueueDisplayComponent;
 import ru.socol.supreme.components.PatrolDisplayComponent;
 import ru.socol.supreme.components.SelectedComponent;
+import ru.socol.supreme.assets.GameAssets;
+import ru.socol.supreme.assets.GameColor;
+import ru.socol.supreme.assets.Palette;
 import ru.socol.supreme.network.GameClient;
 import ru.socol.supreme.systems.InterpolationSystem;
 import ru.socol.supreme.systems.RenderSystem;
@@ -152,19 +155,10 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float MOVE_ORDER_SPACING = 24f; // world units между юнитами в сетке при групповом приказе
     private static final float UNIT_CLICK_RADIUS = 12f;
     private static final float CAMERA_PAN_SPEED = 400f; // world units в секунду
-    private static final Color WATER_COLOR = new Color(0.25f, 0.55f, 0.85f, 1f); // голубой
     // Серое затенение непросвеченных клеток тумана войны — полупрозрачное
     // (не сплошной чёрный), чтобы "затенение", как просили, а не полное
     // перекрытие.
-    private static final Color FOG_COLOR = new Color(0.12f, 0.12f, 0.12f, 0.88f);
-    private static final Color GRASS_COLOR = new Color(0.2f, 0.45f, 0.2f, 1f); // зелёный, трава
-    private static final Color ROCK_DEBUG_COLOR = new Color(0.45f, 0.42f, 0.4f, 1f); // серый, скалы (только в отладочной сетке)
-    private static final Color DEBUG_PATH_COLOR = Color.ORANGE;
-    private static final Color IRON_DEPOSIT_COLOR = new Color(0.55f, 0.35f, 0.2f, 1f); // ржаво-коричневый
     private static final float IRON_DEPOSIT_RADIUS = 18f;
-    private static final Color IRON_MINE_GHOST_VALID_COLOR = Color.GREEN;
-    private static final Color IRON_MINE_GHOST_INVALID_COLOR = Color.RED;
-    private static final Color RALLY_POINT_COLOR = Color.TEAL;
     private static final float RALLY_POINT_RADIUS = 10f;
     private static final float RALLY_DASH_LENGTH = 15f;
     private static final float RALLY_GAP_LENGTH = 10f;
@@ -175,11 +169,6 @@ public class GameScreen extends InputAdapter implements Screen {
     // orderQueueColorFor) — единого "нейтрального" цвета линии больше нет,
     // раньше он путал: убегающая вперёд линия не говорила, что за приказ
     // её ждёт на другом конце.
-    private static final Color ORDER_QUEUE_MOVE_COLOR = Color.WHITE;
-    private static final Color ORDER_QUEUE_ATTACK_COLOR = Color.valueOf("FF5555");
-    private static final Color ORDER_QUEUE_BUILD_COLOR = Color.valueOf("FF9933");
-    private static final Color ORDER_QUEUE_REPAIR_COLOR = Color.valueOf("77FF77");
-    private static final Color ORDER_QUEUE_COLLECT_COLOR = Color.valueOf("CC9944");
     private static final float ORDER_QUEUE_MARKER_RADIUS = 6f;
 
     // Маршрут патрулирования — сплошной замкнутый цикл точек (см.
@@ -187,21 +176,14 @@ public class GameScreen extends InputAdapter implements Screen {
     // обычных приказов выше). Один и тот же цвет и для уже назначенного
     // маршрута патрулирующего юнита (drawPatrolRoute), и для сегментов
     // предпросмотра между уже поставленными точками во время расстановки
-    // (drawPatrolPlacementPreview) — PATROL_ROUTE_PREVIEW_COLOR чуть
+    // (drawPatrolPlacementPreview) — GameColor.PATROL_ROUTE_PREVIEW чуть
     // тусклее и используется только для "хвоста" до курсора и линии,
     // замыкающей цикл, которых в настоящем маршруте ещё не существует.
-    private static final Color PATROL_ROUTE_COLOR = Color.valueOf("CC66FF");
-    private static final Color PATROL_ROUTE_PREVIEW_COLOR = new Color(0.8f, 0.4f, 1f, 0.55f);
 
     // Голографический луч стройки — три слоя одного отрезка (см.
-    // drawSingleBuildBeam) плюс "бегущие" сегменты вдоль него. Цвета —
-    // свои Color-объекты, не общие константы вроде Color.CYAN: alpha у
-    // них перезаписывается каждый кадр под пульсацию, а мутировать
-    // библиотечный синглтон было бы небезопасно (его используют и в
-    // других местах LibGDX/проекта).
-    private static final Color BEAM_OUTER_COLOR = new Color(0.2f, 0.9f, 1f, 1f);
-    private static final Color BEAM_MID_COLOR = new Color(0.4f, 0.95f, 1f, 1f);
-    private static final Color BEAM_CORE_COLOR = new Color(0.85f, 1f, 1f, 1f);
+    // drawSingleBuildBeam) плюс "бегущие" сегменты вдоль него. Альфа
+    // пульсирует каждый кадр — задаётся при отрисовке (setBeamColor), сами
+    // цвета палитры общие и не меняются.
     private static final float BEAM_PULSE_SPEED = 3f; // рад/сек — период пульсации альфы
     private static final float BEAM_SEGMENT_LENGTH = 14f; // длина одного "бегущего" сегмента
     private static final float BEAM_FLOW_SPEED = 220f; // юнитов/сек — скорость движения сегментов вдоль луча
@@ -305,8 +287,6 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float PATROL_BUTTON_HEIGHT = 34f;
     private static final float PATROL_BUTTON_X = PANEL_X + PANEL_WIDTH - PATROL_BUTTON_WIDTH - 15f;
     private static final float PATROL_BUTTON_Y = PANEL_Y + PANEL_HEIGHT - PATROL_BUTTON_HEIGHT - 15f;
-    private static final Color PATROL_BUTTON_COLOR = Color.LIGHT_GRAY;
-    private static final Color PATROL_BUTTON_ACTIVE_COLOR = Color.valueOf("CC66FF");
 
     // Чисто визуальный полёт снаряда — урон уже применён на сервере в момент
     // выстрела (см. ProjectileFiredEvent), скорость тут только для картинки.
@@ -316,7 +296,6 @@ public class GameScreen extends InputAdapter implements Screen {
     // это событие. Жёлто-оранжевый — по просьбе пользователя, раньше был
     // белым.
     private static final float ARROW_SPEED = 600f; // world units в секунду
-    private static final Color ARROW_COLOR = Color.valueOf("FFC107");
     private static final float ARROW_VISUAL_LENGTH = 8f; // половина длины отрезка, изображающего стрелу
     // Смещение точки вылета вдоль линии огня (см. onProjectileFired) — у
     // наземной техники снаряд должен визуально вылетать из дула башни
@@ -338,12 +317,13 @@ public class GameScreen extends InputAdapter implements Screen {
     private final Engine engine = new Engine();
     private final ShapeRenderer shapeRenderer = new ShapeRenderer();
     private final SpriteBatch spriteBatch = new SpriteBatch();
-    private final TerrainRenderer terrainRenderer = new TerrainRenderer();
-    private final BitmapFont font = Fonts.create(45); // крупный — для "ПОБЕДА"/"Подключение..." по центру экрана
-    private final BitmapFont uiFont = Fonts.create(19); // помельче — для панелей
-    private final BitmapFont buttonFont = Fonts.create(16); // подписи кнопок — русские названия длиннее английских
+    private final TerrainRenderer terrainRenderer;
+    // Шрифты и цвета — из GameAssets (общие для всех экранов, освобождаются там).
+    private final BitmapFont font; // крупный — для "ПОБЕДА"/"Подключение..." по центру экрана
+    private final BitmapFont uiFont; // помельче — для панелей
+    private final BitmapFont buttonFont; // подписи кнопок — русские названия длиннее английских
+    private final Palette palette;
     private final GlyphLayout buttonLayout = new GlyphLayout();
-    private static final Color BUTTON_LABEL_DARK = Color.valueOf("212121");
     private final OrthographicCamera camera = new OrthographicCamera();
     // Отдельная неподвижная камера для HUD (панель постройки) — рисуется в
     // экранных координатах, не должна зависеть от прокрутки world-камеры.
@@ -351,7 +331,7 @@ public class GameScreen extends InputAdapter implements Screen {
     // Именованное поле (не анонимный addSystem(new RenderSystem(...))), так
     // как GameScreen каждый кадр должен сообщать ей текущую альфу
     // тактического слоя (см. render()/strategicFactor).
-    private final RenderSystem renderSystem = new RenderSystem(shapeRenderer, spriteBatch);
+    private final RenderSystem renderSystem;
     private final EntityFactory entityFactory = new EntityFactory(engine);
     /**
      * Уже подключённый, живущий дольше одного матча GameClient — передаётся
@@ -416,9 +396,6 @@ public class GameScreen extends InputAdapter implements Screen {
     // именно в момент падения, так что картинка совпадает с реальным
     // взрывом. Рисуются ПОСЛЕ тумана войны: игрок должен видеть, куда упал
     // его снаряд, даже если стрелял в неисследованную область.
-    private static final Color ARTILLERY_SHELL_COLOR = Color.valueOf("FF7043");
-    private static final Color ARTILLERY_EXPLOSION_COLOR = Color.valueOf("FF5722");
-    private static final Color ARTILLERY_RANGE_COLOR = Color.valueOf("FF7043");
     private static final float ARTILLERY_SHELL_RADIUS = 7f;
     private static final float ARTILLERY_EXPLOSION_DURATION = 0.6f;
     private static final float ARTILLERY_TARGET_MARKER_SIZE = 14f;
@@ -578,8 +555,6 @@ public class GameScreen extends InputAdapter implements Screen {
     // для проверки клика и превью стройки той же логикой, что и на сервере.
     private List<CraterSnapshot> craterSnapshots = new ArrayList<>();
     private final CraterField craters = new CraterField();
-    private static final Color CRATER_COLOR = Color.valueOf("3E2A1C");
-    private static final Color CRATER_CORE_COLOR = Color.valueOf("24170F");
     private static final int CRATER_EDGE_POINTS = 18;
 
     private static final float ERROR_TOAST_SECONDS = 3f;
@@ -587,8 +562,14 @@ public class GameScreen extends InputAdapter implements Screen {
     private float errorToastRemaining = 0f;
     private final GlyphLayout errorLayout = new GlyphLayout();
 
-    public GameScreen(GameClient client) {
+    public GameScreen(GameClient client, GameAssets assets) {
         this.client = client;
+        font = assets.font(GameAssets.GameFont.HEADLINE);
+        uiFont = assets.font(GameAssets.GameFont.UI);
+        buttonFont = assets.font(GameAssets.GameFont.BUTTON);
+        palette = assets.palette();
+        terrainRenderer = new TerrainRenderer(assets);
+        renderSystem = new RenderSystem(shapeRenderer, spriteBatch, assets);
         camera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
         hudCamera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
 
@@ -681,10 +662,10 @@ public class GameScreen extends InputAdapter implements Screen {
         }
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
+        uiFont.setColor(palette.get(GameColor.UI_ACCENT)); // до setText — раскладка запоминает цвет шрифта
         errorLayout.setText(uiFont, errorToastText);
-        uiFont.setColor(Color.valueOf("FFCA28"));
         uiFont.draw(spriteBatch, errorLayout, (HUD_WIDTH - errorLayout.width) / 2f, PANEL_Y + PANEL_HEIGHT + 34f);
-        uiFont.setColor(Color.WHITE);
+        uiFont.setColor(palette.get(GameColor.UI_TEXT));
         spriteBatch.end();
         spriteBatch.setProjectionMatrix(camera.combined);
     }
@@ -700,13 +681,13 @@ public class GameScreen extends InputAdapter implements Screen {
     public void onGameOver(GameOverMessage message) {
         if (message.draw) {
             gameOverText = "НИЧЬЯ";
-            font.setColor(Color.WHITE);
+            font.setColor(palette.get(GameColor.UI_TEXT));
         } else if (message.winnerPlayerId == client.getPlayerId()) {
             gameOverText = "ПОБЕДА";
-            font.setColor(Color.GREEN);
+            font.setColor(palette.get(GameColor.UI_POSITIVE));
         } else {
             gameOverText = "ПОРАЖЕНИЕ";
-            font.setColor(Color.RED);
+            font.setColor(palette.get(GameColor.UI_NEGATIVE));
         }
         dragging = false;
     }
@@ -856,7 +837,7 @@ public class GameScreen extends InputAdapter implements Screen {
      * Юнит — кружок, здание — квадрат (та же логика различения, что и в
      * тактическом виде, просто без индивидуальных значков по типу — на
      * таком отдалении они всё равно неразличимы на глаз), оба в цвете
-     * игрока (тот же RenderSystem.PLAYER_COLORS, чтобы кроссфейд не менял
+     * игрока (тот же Palette.player, что и у RenderSystem, чтобы кроссфейд не менял
      * ещё и цвет одновременно с формой). Рисуется ДО тумана войны (как и
      * тактический слой), чтобы неразведанные области оставались
      * притенёнными одинаково в обоих режимах.
@@ -885,7 +866,7 @@ public class GameScreen extends InputAdapter implements Screen {
                 // GameConstants.NEUTRAL_OWNER_ID, см. её javadoc) — не
                 // "чей-то" стратегический значок, у них вообще нет
                 // соответствующего playerColor. Без этой проверки
-                // PLAYER_COLORS[owner.playerId % ...] упал бы с
+                // palette.player(owner.playerId) упал бы с
                 // отрицательным индексом (-1 % 2 == -1 в Java). Сами
                 // обломки в стратегическом виде не рисуются вовсе —
                 // некрупный, временный объект, тактического значка
@@ -896,7 +877,7 @@ public class GameScreen extends InputAdapter implements Screen {
                 continue; // тот же принцип, что и в RenderSystem.isHiddenByFog — чужой значок в тумане вообще не рисуем
             }
 
-            Color playerColor = RenderSystem.PLAYER_COLORS[owner.playerId % RenderSystem.PLAYER_COLORS.length];
+            Color playerColor = palette.player(owner.playerId);
             boolean isBuilding = entity.getComponent(BuildingComponent.class) != null;
 
             if (!isBuilding && entity.getComponent(SelectedComponent.class) != null) {
@@ -930,7 +911,8 @@ public class GameScreen extends InputAdapter implements Screen {
         updateCamera(delta);
         elapsedTime += delta; // копится с начала экрана, не сбрасывается — нужен только для анимации (пульс луча стройки), не для геймплейной логики
 
-        Gdx.gl.glClearColor(0.1f, 0.1f, 0.12f, 1f);
+        Color background = palette.get(GameColor.UI_BACKGROUND);
+        Gdx.gl.glClearColor(background.r, background.g, background.b, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
         camera.update();
@@ -982,7 +964,7 @@ public class GameScreen extends InputAdapter implements Screen {
         if (gameOverText != null) {
             drawCenteredText(gameOverText);
         } else if (connectionStatusText != null) {
-            font.setColor(Color.LIGHT_GRAY);
+            font.setColor(palette.get(GameColor.UI_TEXT_DIM));
             drawCenteredText(connectionStatusText);
         } else {
             if (placingBuildingType != null) {
@@ -1040,7 +1022,8 @@ public class GameScreen extends InputAdapter implements Screen {
         for (CraterSnapshot crater : craterSnapshots) {
             // Полная яркость большую часть жизни, бледнеет в последней трети.
             float alpha = MathUtils.clamp(crater.life * 3f, 0f, 1f) * (1f - 0.7f * crater.fill) * 0.85f;
-            shapeRenderer.setColor(CRATER_COLOR.r, CRATER_COLOR.g, CRATER_COLOR.b, alpha);
+            Color edgeColor = palette.get(GameColor.CRATER);
+            shapeRenderer.setColor(edgeColor.r, edgeColor.g, edgeColor.b, alpha);
             float previousX = 0f;
             float previousY = 0f;
             float firstX = 0f;
@@ -1064,7 +1047,8 @@ public class GameScreen extends InputAdapter implements Screen {
                 previousX = x;
                 previousY = y;
             }
-            shapeRenderer.setColor(CRATER_CORE_COLOR.r, CRATER_CORE_COLOR.g, CRATER_CORE_COLOR.b, alpha);
+            Color craterCore = palette.get(GameColor.CRATER_CORE);
+            shapeRenderer.setColor(craterCore.r, craterCore.g, craterCore.b, alpha);
             shapeRenderer.circle(crater.x, crater.y, crater.radius * 0.45f, 20);
         }
         shapeRenderer.end();
@@ -1073,7 +1057,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
     private void drawIronDeposits() {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(IRON_DEPOSIT_COLOR);
+        shapeRenderer.setColor(palette.get(GameColor.IRON_DEPOSIT));
         for (float[] deposit : GameMap.current().ironDeposits()) {
             shapeRenderer.circle(deposit[0], deposit[1], IRON_DEPOSIT_RADIUS);
         }
@@ -1133,7 +1117,7 @@ public class GameScreen extends InputAdapter implements Screen {
     /** Зелёный — можно подтвердить кликом; красный — сейчас нельзя (см. updateBuildGhost, разная логика по типу здания). */
     private void drawBuildGhost() {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(buildGhostValid ? IRON_MINE_GHOST_VALID_COLOR : IRON_MINE_GHOST_INVALID_COLOR);
+        shapeRenderer.setColor(palette.get(buildGhostValid ? GameColor.GHOST_VALID : GameColor.GHOST_INVALID));
         float halfWidth = BuildingDefinitions.halfWidthFor(placingBuildingType);
         float halfHeight = BuildingDefinitions.halfHeightFor(placingBuildingType);
         shapeRenderer.rect(buildGhostX - halfWidth, buildGhostY - halfHeight, halfWidth * 2f, halfHeight * 2f);
@@ -1235,8 +1219,8 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
         for (int cx = 0; cx < gridWidth; cx++) {
             for (int cy = 0; cy < gridHeight; cy++) {
-                shapeRenderer.setColor(Pathfinding.isWaterCell(cx, cy) ? WATER_COLOR
-                        : Pathfinding.isRockCell(cx, cy) ? ROCK_DEBUG_COLOR : GRASS_COLOR);
+                shapeRenderer.setColor(palette.get(Pathfinding.isWaterCell(cx, cy) ? GameColor.DEBUG_WATER
+                        : Pathfinding.isRockCell(cx, cy) ? GameColor.DEBUG_ROCK : GameColor.DEBUG_GRASS));
                 shapeRenderer.rect(cx * cellSize, cy * cellSize, cellSize, cellSize);
             }
         }
@@ -1246,7 +1230,7 @@ public class GameScreen extends InputAdapter implements Screen {
     /** Маршрут каждого движущегося юнита — от его текущей (интерполированной) позиции через все оставшиеся точки. */
     private void drawDebugPaths() {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-        shapeRenderer.setColor(DEBUG_PATH_COLOR);
+        shapeRenderer.setColor(palette.get(GameColor.DEBUG_PATH));
 
         for (Entity entity : engine.getEntities()) {
             DebugPathComponent debugPath = entity.getComponent(DebugPathComponent.class);
@@ -1270,7 +1254,7 @@ public class GameScreen extends InputAdapter implements Screen {
     private void drawOverlayLines() {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
 
-        shapeRenderer.setColor(Color.DARK_GRAY);
+        shapeRenderer.setColor(palette.get(GameColor.MAP_BORDER));
         shapeRenderer.rect(0, 0, GameConstants.MAP_WIDTH, GameConstants.MAP_HEIGHT);
 
         if (dragging) {
@@ -1278,7 +1262,7 @@ public class GameScreen extends InputAdapter implements Screen {
             float y = Math.min(dragStartWorld.y, dragCurrentWorld.y);
             float width = Math.abs(dragCurrentWorld.x - dragStartWorld.x);
             float height = Math.abs(dragCurrentWorld.y - dragStartWorld.y);
-            shapeRenderer.setColor(Color.WHITE);
+            shapeRenderer.setColor(palette.get(GameColor.DRAG_BOX));
             shapeRenderer.rect(x, y, width, height);
         }
 
@@ -1317,7 +1301,7 @@ public class GameScreen extends InputAdapter implements Screen {
             return;
         }
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(ARTILLERY_SHELL_COLOR);
+        shapeRenderer.setColor(palette.get(GameColor.ARTILLERY_SHELL));
         for (ArtilleryShellVisual shell : activeShells) {
             float t = MathUtils.clamp(shell.elapsed / shell.duration, 0f, 1f);
             float x = MathUtils.lerp(shell.fromX, shell.toX, t);
@@ -1331,7 +1315,7 @@ public class GameScreen extends InputAdapter implements Screen {
             return;
         }
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-        shapeRenderer.setColor(ARTILLERY_EXPLOSION_COLOR);
+        shapeRenderer.setColor(palette.get(GameColor.ARTILLERY_EXPLOSION));
         for (ArtilleryExplosionVisual explosion : activeExplosions) {
             float t = MathUtils.clamp(explosion.elapsed / ARTILLERY_EXPLOSION_DURATION, 0f, 1f);
             float radius = explosion.radius * (0.3f + 0.7f * t);
@@ -1356,7 +1340,7 @@ public class GameScreen extends InputAdapter implements Screen {
         Vector2 center = artillery.getComponent(PositionComponent.class).position;
         float range = BuildingDefinitions.artilleryRangeFor(BuildingType.ARTILLERY);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-        shapeRenderer.setColor(ARTILLERY_RANGE_COLOR);
+        shapeRenderer.setColor(palette.get(GameColor.ARTILLERY_RANGE));
         shapeRenderer.circle(center.x, center.y, range, 128);
 
         TurretDisplayComponent barrel = artillery.getComponent(TurretDisplayComponent.class);
@@ -1376,9 +1360,9 @@ public class GameScreen extends InputAdapter implements Screen {
         }
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         for (Vector2 target : targets) {
-            drawDashedLine(center.x, center.y, target.x, target.y, ARTILLERY_RANGE_COLOR);
+            drawDashedLine(center.x, center.y, target.x, target.y, palette.get(GameColor.ARTILLERY_RANGE));
         }
-        shapeRenderer.setColor(ARTILLERY_EXPLOSION_COLOR);
+        shapeRenderer.setColor(palette.get(GameColor.ARTILLERY_EXPLOSION));
         float cross = ARTILLERY_TARGET_MARKER_SIZE;
         for (Vector2 target : targets) {
             shapeRenderer.rectLine(target.x - cross, target.y - cross, target.x + cross, target.y + cross, 3f);
@@ -1389,7 +1373,7 @@ public class GameScreen extends InputAdapter implements Screen {
         // Круг разброса: снаряд упадёт в любую точку внутри него.
         float spreadRadius = BuildingDefinitions.shellSpreadRadiusFor(BuildingType.ARTILLERY);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-        shapeRenderer.setColor(ARTILLERY_EXPLOSION_COLOR);
+        shapeRenderer.setColor(palette.get(GameColor.ARTILLERY_EXPLOSION));
         for (Vector2 target : targets) {
             shapeRenderer.circle(target.x, target.y, spreadRadius, 32);
         }
@@ -1428,7 +1412,7 @@ public class GameScreen extends InputAdapter implements Screen {
         }
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-        shapeRenderer.setColor(ARROW_COLOR);
+        shapeRenderer.setColor(palette.get(GameColor.ARROW));
 
         for (ArrowVisual arrow : activeArrows) {
             float t = MathUtils.clamp(arrow.elapsed / arrow.duration, 0f, 1f);
@@ -1475,8 +1459,8 @@ public class GameScreen extends InputAdapter implements Screen {
 
         PositionComponent position = building.getComponent(PositionComponent.class);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        drawDashedLine(position.position.x, position.position.y, production.rallyX, production.rallyY, RALLY_POINT_COLOR);
-        shapeRenderer.setColor(RALLY_POINT_COLOR);
+        drawDashedLine(position.position.x, position.position.y, production.rallyX, production.rallyY, palette.get(GameColor.RALLY_POINT));
+        shapeRenderer.setColor(palette.get(GameColor.RALLY_POINT));
         shapeRenderer.circle(production.rallyX, production.rallyY, RALLY_POINT_RADIUS);
         shapeRenderer.end();
     }
@@ -1528,19 +1512,19 @@ public class GameScreen extends InputAdapter implements Screen {
     private Color orderQueueColorFor(int typeOrdinal) {
         QueuedOrder.Type[] types = QueuedOrder.Type.values();
         if (typeOrdinal < 0 || typeOrdinal >= types.length) {
-            return ORDER_QUEUE_MOVE_COLOR;
+            return palette.get(GameColor.ORDER_MOVE);
         }
         switch (types[typeOrdinal]) {
             case ATTACK:
-                return ORDER_QUEUE_ATTACK_COLOR;
+                return palette.get(GameColor.ORDER_ATTACK);
             case BUILD:
-                return ORDER_QUEUE_BUILD_COLOR;
+                return palette.get(GameColor.ORDER_BUILD);
             case REPAIR:
-                return ORDER_QUEUE_REPAIR_COLOR;
+                return palette.get(GameColor.ORDER_REPAIR);
             case COLLECT:
-                return ORDER_QUEUE_COLLECT_COLOR;
+                return palette.get(GameColor.ORDER_COLLECT);
             default:
-                return ORDER_QUEUE_MOVE_COLOR;
+                return palette.get(GameColor.ORDER_MOVE);
         }
     }
 
@@ -1573,10 +1557,10 @@ public class GameScreen extends InputAdapter implements Screen {
         for (int i = 0; i < display.points.size(); i++) {
             PatrolPoint from = display.points.get(i);
             PatrolPoint to = display.points.get((i + 1) % display.points.size());
-            drawDashedLine(from.x, from.y, to.x, to.y, PATROL_ROUTE_COLOR);
+            drawDashedLine(from.x, from.y, to.x, to.y, palette.get(GameColor.PATROL_ROUTE));
         }
         for (PatrolPoint point : display.points) {
-            shapeRenderer.setColor(PATROL_ROUTE_COLOR);
+            shapeRenderer.setColor(palette.get(GameColor.PATROL_ROUTE));
             shapeRenderer.circle(point.x, point.y, ORDER_QUEUE_MARKER_RADIUS);
         }
         shapeRenderer.end();
@@ -1588,7 +1572,7 @@ public class GameScreen extends InputAdapter implements Screen {
      * "хвостом" до курсора (ещё не подтверждённая точка — подсказка, куда
      * легла бы следующая, кликни игрок прямо сейчас), и дальше от курсора
      * обратно к самой первой точке, замыкая предполагаемый цикл — другим,
-     * более тусклым цветом (PATROL_ROUTE_PREVIEW_COLOR), чтобы не путать
+     * более тусклым цветом (GameColor.PATROL_ROUTE_PREVIEW), чтобы не путать
      * с уже настоящими сегментами маршрута. Ничего не рисует, пока не
      * поставили ни одной точки.
      */
@@ -1603,14 +1587,14 @@ public class GameScreen extends InputAdapter implements Screen {
         float fromY = patrolPoints.get(0).y;
         for (int i = 1; i < patrolPoints.size(); i++) {
             Vector2 point = patrolPoints.get(i);
-            drawDashedLine(fromX, fromY, point.x, point.y, PATROL_ROUTE_COLOR);
+            drawDashedLine(fromX, fromY, point.x, point.y, palette.get(GameColor.PATROL_ROUTE));
             fromX = point.x;
             fromY = point.y;
         }
-        drawDashedLine(fromX, fromY, cursorWorld.x, cursorWorld.y, PATROL_ROUTE_PREVIEW_COLOR);
-        drawDashedLine(cursorWorld.x, cursorWorld.y, patrolPoints.get(0).x, patrolPoints.get(0).y, PATROL_ROUTE_PREVIEW_COLOR);
+        drawDashedLine(fromX, fromY, cursorWorld.x, cursorWorld.y, palette.get(GameColor.PATROL_ROUTE_PREVIEW));
+        drawDashedLine(cursorWorld.x, cursorWorld.y, patrolPoints.get(0).x, patrolPoints.get(0).y, palette.get(GameColor.PATROL_ROUTE_PREVIEW));
         for (Vector2 point : patrolPoints) {
-            shapeRenderer.setColor(PATROL_ROUTE_COLOR);
+            shapeRenderer.setColor(palette.get(GameColor.PATROL_ROUTE));
             shapeRenderer.circle(point.x, point.y, ORDER_QUEUE_MARKER_RADIUS);
         }
         shapeRenderer.end();
@@ -1640,7 +1624,7 @@ public class GameScreen extends InputAdapter implements Screen {
         patrolPoints.clear();
     }
 
-    /** Пунктирная линия — общая для точки сбора (RALLY_POINT_COLOR) и цепочки очереди приказов (см. drawOrderQueue), цвет передаёт вызывающий код, не жёстко зашит внутри. */
+    /** Пунктирная линия — общая для точки сбора (GameColor.RALLY_POINT) и цепочки очереди приказов (см. drawOrderQueue), цвет передаёт вызывающий код, не жёстко зашит внутри. */
     private void drawDashedLine(float x1, float y1, float x2, float y2, Color color) {
         float dx = x2 - x1;
         float dy = y2 - y1;
@@ -1682,7 +1666,7 @@ public class GameScreen extends InputAdapter implements Screen {
      * Перегоняет fogRevealed (FOG_GRID_WIDTH x FOG_GRID_HEIGHT булевых
      * значений с сервера, см. onWorldSnapshot) в fogPixmap — по одному
      * пикселю alpha-канала на клетку: непросвеченная клетка получает
-     * полную альфу (её и покрасит FOG_COLOR при отрисовке, см.
+     * полную альфу (её и покрасит GameColor.FOG при отрисовке, см.
      * drawFogOfWar), просвеченная — нулевую (совсем прозрачно, ничего не
      * рисуется). Затем сразу перезаливает fogTexture этим пикселем —
      * дальше её растягивает на всю карту сам GPU с билинейной
@@ -1731,7 +1715,7 @@ public class GameScreen extends InputAdapter implements Screen {
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         spriteBatch.begin();
-        spriteBatch.setColor(FOG_COLOR.r, FOG_COLOR.g, FOG_COLOR.b, FOG_COLOR.a);
+        spriteBatch.setColor(palette.get(GameColor.FOG));
         spriteBatch.draw(fogTexture, 0f, 0f, GameConstants.MAP_WIDTH, GameConstants.MAP_HEIGHT);
         // Сбрасываем тинт сразу же — иначе он "утёк" бы в следующий кадр
         // spriteBatch, например в drawResourcePanel/drawCenteredText,
@@ -1780,17 +1764,19 @@ public class GameScreen extends InputAdapter implements Screen {
         Gdx.gl.glDisable(GL20.GL_BLEND);
     }
 
+    private void setBeamColor(GameColor key, float alpha) {
+        Color color = palette.get(key);
+        shapeRenderer.setColor(color.r, color.g, color.b, alpha);
+    }
+
     private void drawSingleBuildBeam(float x1, float y1, float x2, float y2, float pulse) {
-        BEAM_OUTER_COLOR.a = 0.12f + 0.1f * pulse;
-        shapeRenderer.setColor(BEAM_OUTER_COLOR);
+        setBeamColor(GameColor.BEAM_OUTER, 0.12f + 0.1f * pulse);
         shapeRenderer.rectLine(x1, y1, x2, y2, 10f);
 
-        BEAM_MID_COLOR.a = 0.3f + 0.2f * pulse;
-        shapeRenderer.setColor(BEAM_MID_COLOR);
+        setBeamColor(GameColor.BEAM_MID, 0.3f + 0.2f * pulse);
         shapeRenderer.rectLine(x1, y1, x2, y2, 5f);
 
-        BEAM_CORE_COLOR.a = 0.55f + 0.35f * pulse;
-        shapeRenderer.setColor(BEAM_CORE_COLOR);
+        setBeamColor(GameColor.BEAM_CORE, 0.55f + 0.35f * pulse);
         shapeRenderer.rectLine(x1, y1, x2, y2, 2f);
 
         // "Бегущие" яркие сегменты вдоль луча, от строителя (x1,y1) к
@@ -1807,8 +1793,7 @@ public class GameScreen extends InputAdapter implements Screen {
         float period = BEAM_SEGMENT_LENGTH * 3f;
         float offset = (elapsedTime * BEAM_FLOW_SPEED) % period;
 
-        BEAM_CORE_COLOR.a = 0.9f;
-        shapeRenderer.setColor(BEAM_CORE_COLOR);
+        setBeamColor(GameColor.BEAM_CORE, 0.9f);
         for (float traveled = offset; traveled < length; traveled += period) {
             float segmentEnd = Math.min(traveled + BEAM_SEGMENT_LENGTH, length);
             shapeRenderer.rectLine(
@@ -1830,13 +1815,13 @@ public class GameScreen extends InputAdapter implements Screen {
     private void drawResourcePanel() {
         shapeRenderer.setProjectionMatrix(hudCamera.combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(Color.valueOf("222222"));
+        shapeRenderer.setColor(palette.get(GameColor.UI_PANEL));
         shapeRenderer.rect(RESOURCE_PANEL_X, RESOURCE_PANEL_Y, RESOURCE_PANEL_WIDTH, RESOURCE_PANEL_HEIGHT);
         shapeRenderer.end();
 
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
-        uiFont.setColor(Color.WHITE);
+        uiFont.setColor(palette.get(GameColor.UI_TEXT));
         // (int) — округление вниз для отображения; внутренний счёт остаётся дробным (float), см. myIron/myElectricity.
         uiFont.draw(spriteBatch, "Железо: " + (int) myIron, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 5f);
         uiFont.draw(spriteBatch, "Энергия: " + (int) myElectricity, RESOURCE_PANEL_X + 12f, RESOURCE_PANEL_Y + RESOURCE_PANEL_HEIGHT - 27f);
@@ -1859,7 +1844,7 @@ public class GameScreen extends InputAdapter implements Screen {
      */
     private void drawResourceRate(float rate, float y) {
         int rounded = Math.round(rate);
-        uiFont.setColor(rounded > 0 ? Color.GREEN : rounded < 0 ? Color.RED : Color.WHITE);
+        uiFont.setColor(palette.get(rounded > 0 ? GameColor.UI_POSITIVE : rounded < 0 ? GameColor.UI_NEGATIVE : GameColor.UI_TEXT));
         String text = rounded > 0 ? "+" + rounded : String.valueOf(rounded);
         uiFont.draw(spriteBatch, text, RESOURCE_PANEL_RATE_X, y);
     }
@@ -1913,7 +1898,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
     /** Тёмный прямоугольник плашки — общий для всех режимов, вызывается уже внутри открытого ShapeType.Filled. */
     private void drawPanelBackground() {
-        shapeRenderer.setColor(Color.valueOf("222222"));
+        shapeRenderer.setColor(palette.get(GameColor.UI_PANEL));
         shapeRenderer.rect(PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT);
     }
 
@@ -1946,7 +1931,7 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         drawPanelBackground();
 
-        shapeRenderer.setColor(Color.LIGHT_GRAY);
+        shapeRenderer.setColor(palette.get(GameColor.UI_BUTTON_LIGHT));
         for (int i = 0; i < producible.length; i++) {
             shapeRenderer.rect(actionButtonX(i), ACTION_BUTTON_Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT);
         }
@@ -1956,17 +1941,17 @@ public class GameScreen extends InputAdapter implements Screen {
             // shotCooldown: полная (зелёная) — башня готова стрелять.
             float cooldown = BuildingDefinitions.shotCooldownFor(buildingType);
             float reloaded = cooldown > 0f ? MathUtils.clamp(1f - artillery.cooldownRemaining / cooldown, 0f, 1f) : 1f;
-            shapeRenderer.setColor(Color.DARK_GRAY);
+            shapeRenderer.setColor(palette.get(GameColor.BAR_BACKGROUND));
             shapeRenderer.rect(RELOAD_BAR_X, RELOAD_BAR_Y, RELOAD_BAR_WIDTH, RELOAD_BAR_HEIGHT);
-            shapeRenderer.setColor(reloaded >= 1f ? Color.GREEN : Color.GOLD);
+            shapeRenderer.setColor(palette.get(reloaded >= 1f ? GameColor.BAR_RELOAD_READY : GameColor.BAR_RELOAD));
             shapeRenderer.rect(RELOAD_BAR_X, RELOAD_BAR_Y, RELOAD_BAR_WIDTH * reloaded, RELOAD_BAR_HEIGHT);
         }
 
         if (artillery != null && artillery.shells < BuildingDefinitions.shellCapacityFor(buildingType)) {
             float fraction = MathUtils.clamp(artillery.shellProgress / BuildingDefinitions.shellBuildTimeFor(buildingType), 0f, 1f);
-            shapeRenderer.setColor(Color.DARK_GRAY);
+            shapeRenderer.setColor(palette.get(GameColor.BAR_BACKGROUND));
             shapeRenderer.rect(PROGRESS_BAR_X, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT);
-            shapeRenderer.setColor(ARTILLERY_SHELL_COLOR);
+            shapeRenderer.setColor(palette.get(GameColor.ARTILLERY_SHELL));
             shapeRenderer.rect(PROGRESS_BAR_X, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH * fraction, PROGRESS_BAR_HEIGHT);
         }
 
@@ -1975,25 +1960,25 @@ public class GameScreen extends InputAdapter implements Screen {
                     ? UnitDefinitions.buildTimeFor(production.producingUnitType) : GameConstants.UNIT_BUILD_TIME;
             float fraction = MathUtils.clamp(production.progress / buildTime, 0f, 1f);
 
-            shapeRenderer.setColor(Color.DARK_GRAY);
+            shapeRenderer.setColor(palette.get(GameColor.BAR_BACKGROUND));
             shapeRenderer.rect(PROGRESS_BAR_X, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT);
-            shapeRenderer.setColor(Color.GREEN);
+            shapeRenderer.setColor(palette.get(GameColor.BAR_PRODUCTION));
             shapeRenderer.rect(PROGRESS_BAR_X, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH * fraction, PROGRESS_BAR_HEIGHT);
         }
 
-        shapeRenderer.setColor(Color.FIREBRICK);
+        shapeRenderer.setColor(palette.get(GameColor.UI_BUTTON_DEMOLISH));
         shapeRenderer.rect(DEMOLISH_BUTTON_X, DEMOLISH_BUTTON_Y, DEMOLISH_BUTTON_WIDTH, DEMOLISH_BUTTON_HEIGHT);
 
         shapeRenderer.end();
 
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
-        uiFont.setColor(Color.WHITE);
+        uiFont.setColor(palette.get(GameColor.UI_TEXT));
         uiFont.draw(spriteBatch, buildingTypeLabel(buildingType), PANEL_X + 15f, NAME_TEXT_Y);
         uiFont.draw(spriteBatch, "Здоровье: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
         for (int i = 0; i < producible.length; i++) {
             drawButtonLabel("+" + unitTypeLabel(producible[i]), actionButtonX(i), ACTION_BUTTON_Y,
-                    ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, BUTTON_LABEL_DARK);
+                    ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, palette.get(GameColor.UI_TEXT_DARK));
         }
         if (construction != null) {
             // Занимает то же место, где были бы кнопки очереди — их тут
@@ -2020,7 +2005,7 @@ public class GameScreen extends InputAdapter implements Screen {
             uiFont.draw(spriteBatch, shellStatus, PROGRESS_BAR_X + PROGRESS_BAR_WIDTH + 20f, PROGRESS_BAR_Y + 11f);
         }
         drawButtonLabel("Снести", DEMOLISH_BUTTON_X, DEMOLISH_BUTTON_Y,
-                DEMOLISH_BUTTON_WIDTH, DEMOLISH_BUTTON_HEIGHT, Color.WHITE);
+                DEMOLISH_BUTTON_WIDTH, DEMOLISH_BUTTON_HEIGHT, palette.get(GameColor.UI_TEXT));
         spriteBatch.end();
 
         // Возвращаем world-камеру шейп-рендереру и спрайт-батчу для следующего кадра.
@@ -2047,7 +2032,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
-        uiFont.setColor(Color.WHITE);
+        uiFont.setColor(palette.get(GameColor.UI_TEXT));
         uiFont.draw(spriteBatch, unitTypeLabel(unitType), PANEL_X + 15f, NAME_TEXT_Y);
         uiFont.draw(spriteBatch, "Здоровье: " + health.currentHealth + "/" + health.maxHealth, PANEL_X + 15f, HP_TEXT_Y);
         drawPatrolButtonLabel();
@@ -2087,7 +2072,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
-        uiFont.setColor(Color.WHITE);
+        uiFont.setColor(palette.get(GameColor.UI_TEXT));
         uiFont.draw(spriteBatch, title, PANEL_X + 15f, NAME_TEXT_Y);
         if (ironStock != null) {
             uiFont.draw(spriteBatch, "Железо: " + ironStock.currentHealth + "/" + ironStock.maxHealth,
@@ -2110,7 +2095,7 @@ public class GameScreen extends InputAdapter implements Screen {
         shapeRenderer.setProjectionMatrix(hudCamera.combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         drawPanelBackground();
-        shapeRenderer.setColor(Color.LIGHT_GRAY);
+        shapeRenderer.setColor(palette.get(GameColor.UI_BUTTON_LIGHT));
         for (int i = 0; i < BUILDABLE_TYPES.length; i++) {
             shapeRenderer.rect(actionButtonX(i), ACTION_BUTTON_Y, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT);
         }
@@ -2119,7 +2104,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
-        uiFont.setColor(Color.WHITE);
+        uiFont.setColor(palette.get(GameColor.UI_TEXT));
         if (selectedUnitIds.size() == 1) {
             uiFont.draw(spriteBatch, "Строитель", PANEL_X + 15f, NAME_TEXT_Y);
             Entity builder = entityFactory.getEntity(selectedUnitIds.iterator().next());
@@ -2132,7 +2117,7 @@ public class GameScreen extends InputAdapter implements Screen {
         }
         for (int i = 0; i < BUILDABLE_TYPES.length; i++) {
             drawButtonLabel(buildingButtonLabel(BUILDABLE_TYPES[i]), actionButtonX(i), ACTION_BUTTON_Y,
-                    ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, BUTTON_LABEL_DARK);
+                    ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, palette.get(GameColor.UI_TEXT_DARK));
         }
         drawPatrolButtonLabel();
         spriteBatch.end();
@@ -2151,7 +2136,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin();
-        uiFont.setColor(Color.WHITE);
+        uiFont.setColor(palette.get(GameColor.UI_TEXT));
         uiFont.draw(spriteBatch, "Выделено юнитов: " + selectedUnitIds.size(), PANEL_X + 15f, NAME_TEXT_Y);
         drawPatrolButtonLabel();
         spriteBatch.end();
@@ -2217,13 +2202,13 @@ public class GameScreen extends InputAdapter implements Screen {
      * карте, см. touchDown/finishPatrolPlacement).
      */
     private void drawPatrolButtonShape() {
-        shapeRenderer.setColor(placingPatrol ? PATROL_BUTTON_ACTIVE_COLOR : PATROL_BUTTON_COLOR);
+        shapeRenderer.setColor(palette.get(placingPatrol ? GameColor.UI_PATROL_BUTTON_ACTIVE : GameColor.UI_PATROL_BUTTON));
         shapeRenderer.rect(PATROL_BUTTON_X, PATROL_BUTTON_Y, PATROL_BUTTON_WIDTH, PATROL_BUTTON_HEIGHT);
     }
 
     private void drawPatrolButtonLabel() {
         drawButtonLabel(placingPatrol ? "Готово" : "Патруль", PATROL_BUTTON_X, PATROL_BUTTON_Y,
-                PATROL_BUTTON_WIDTH, PATROL_BUTTON_HEIGHT, BUTTON_LABEL_DARK);
+                PATROL_BUTTON_WIDTH, PATROL_BUTTON_HEIGHT, palette.get(GameColor.UI_TEXT_DARK));
     }
 
     // ---- Ввод ----
@@ -2909,13 +2894,9 @@ public class GameScreen extends InputAdapter implements Screen {
      */
     @Override
     public void dispose() {
-        renderSystem.dispose();
         terrainRenderer.dispose();
         shapeRenderer.dispose();
         spriteBatch.dispose();
-        font.dispose();
-        uiFont.dispose();
-        buttonFont.dispose();
         fogTexture.dispose();
         fogPixmap.dispose();
     }

@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.glutils.ShaderProgram;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.GdxRuntimeException;
+import ru.socol.supreme.assets.GameAssets;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.map.GameMap;
 
@@ -118,25 +119,24 @@ final class TerrainRenderer implements Disposable {
             + "    gl_FragColor = vec4(mix(land, water, isWater), 1.0);\n"
             + "}\n";
 
-    private final Texture grass = loadTiled("terrain/grass.jpg");
-    private final Texture dirt = loadTiled("terrain/dirt.jpg");
-    private final Texture waterShallow = loadTiled("terrain/water-shallow.jpg");
-    private final Texture waterDeep = loadTiled("terrain/water-deep.jpg");
+    // Бесшовные текстуры (повтор, mip-уровни) — из GameAssets, освобождаются там.
+    private final Texture grass;
+    private final Texture dirt;
+    private final Texture waterShallow;
+    private final Texture waterDeep;
+    // Маска и шейдер — свои, строятся здесь и освобождаются в dispose().
     private final Texture mask = buildMask();
     private final ShaderProgram shader;
 
-    TerrainRenderer() {
+    TerrainRenderer(GameAssets assets) {
+        grass = assets.texture(GameAssets.TERRAIN_GRASS);
+        dirt = assets.texture(GameAssets.TERRAIN_DIRT);
+        waterShallow = assets.texture(GameAssets.TERRAIN_WATER_SHALLOW);
+        waterDeep = assets.texture(GameAssets.TERRAIN_WATER_DEEP);
         shader = new ShaderProgram(VERTEX_SHADER, FRAGMENT_SHADER);
         if (!shader.isCompiled()) {
             throw new GdxRuntimeException("Шейдер земли не собрался: " + shader.getLog());
         }
-    }
-
-    private static Texture loadTiled(String path) {
-        Texture texture = new Texture(Gdx.files.internal(path), true);
-        texture.setFilter(Texture.TextureFilter.MipMapLinearLinear, Texture.TextureFilter.Linear);
-        texture.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat); // требует размер степени двойки — 1024
-        return texture;
     }
 
     /**
@@ -295,10 +295,6 @@ final class TerrainRenderer implements Disposable {
 
     @Override
     public void dispose() {
-        grass.dispose();
-        dirt.dispose();
-        waterShallow.dispose();
-        waterDeep.dispose();
         mask.dispose();
         shader.dispose();
     }

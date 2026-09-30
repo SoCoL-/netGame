@@ -1,12 +1,11 @@
 package ru.socol.supreme.systems;
 
-import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.MathUtils;
-import com.badlogic.gdx.utils.Disposable;
+import ru.socol.supreme.assets.GameAssets;
 
 /**
  * Двухслойный спрайт машины: корпус и отдельно вращающаяся башня, каждый
@@ -22,25 +21,28 @@ import com.badlogic.gdx.utils.Disposable;
  * Совмещение слоёв — точка погона на корпусе (hullPivot) совпадает с осью
  * вращения башни (turretPivot); обе точки скрипт печатает в пикселях
  * готовых текстур, Y вверх. Позиция сущности — центр корпуса.
+ *
+ * Текстуры (с mip-уровнями) грузит и освобождает GameAssets — спрайт их
+ * только берёт.
  */
-final class LayeredSprite implements Disposable {
+final class LayeredSprite {
 
     /** Стрелок "Клин". */
-    static LayeredSprite archer() {
-        return new LayeredSprite("archer", 30f, 47.4f, 71.04f, 25.19f, 43.27f);
+    static LayeredSprite archer(GameAssets assets) {
+        return new LayeredSprite(assets, "archer", 30f, 47.4f, 71.04f, 25.19f, 43.27f);
     }
 
     /** ПВО — "Заслон" (Бастион): гусеничное шасси и спаренные автопушки с радаром. */
-    static LayeredSprite antiAir() {
-        return new LayeredSprite("anti-air", 34f, 72.38f, 76.17f, 41.71f, 26.66f);
+    static LayeredSprite antiAir(GameAssets assets) {
+        return new LayeredSprite(assets, "anti-air", 34f, 72.38f, 76.17f, 41.71f, 26.66f);
     }
 
     /**
      * Артиллерийская башня — "Прилив" (Поток): корпус неподвижен, вращается
      * излучатель. Шире, чем в длину, — вписан в квадрат здания 100x100.
      */
-    static LayeredSprite artillery() {
-        return new LayeredSprite("artillery", 96f, 125.66f, 124.12f, 64.89f, 28.96f);
+    static LayeredSprite artillery(GameAssets assets) {
+        return new LayeredSprite(assets, "artillery", 96f, 125.66f, 124.12f, 64.89f, 28.96f);
     }
 
     private final Texture hull;
@@ -63,12 +65,12 @@ final class LayeredSprite implements Disposable {
      * @param hullWorldSize бо́льшая сторона корпуса в мировых единицах
      *                      (для сравнения: UNIT_RADIUS = 10)
      */
-    private LayeredSprite(String name, float hullWorldSize, float hullPivotX, float hullPivotY,
+    private LayeredSprite(GameAssets assets, String name, float hullWorldSize, float hullPivotX, float hullPivotY,
                           float turretPivotX, float turretPivotY) {
-        hull = load("units/" + name + "-hull.png");
-        hullTeam = load("units/" + name + "-hull-team.png");
-        turret = load("units/" + name + "-turret.png");
-        turretTeam = load("units/" + name + "-turret-team.png");
+        hull = assets.texture(GameAssets.unitTexturePath(name, "hull"));
+        hullTeam = assets.texture(GameAssets.unitTexturePath(name, "hull-team"));
+        turret = assets.texture(GameAssets.unitTexturePath(name, "turret"));
+        turretTeam = assets.texture(GameAssets.unitTexturePath(name, "turret-team"));
         hullRegion = new TextureRegion(hull);
         hullTeamRegion = new TextureRegion(hullTeam);
         turretRegion = new TextureRegion(turret);
@@ -78,15 +80,6 @@ final class LayeredSprite implements Disposable {
         this.turretPivotX = turretPivotX;
         this.turretPivotY = turretPivotY;
         scale = hullWorldSize / Math.max(hull.getWidth(), hull.getHeight());
-    }
-
-    private static Texture load(String path) {
-        // С mip-уровнями: при обычном масштабе камеры 128-пиксельная текстура
-        // ужимается до ~30 px, а в стратегическом виде ещё сильнее — без
-        // mipmap при таком уменьшении мелкие детали рябят.
-        Texture texture = new Texture(Gdx.files.internal(path), true);
-        texture.setFilter(Texture.TextureFilter.MipMapLinearLinear, Texture.TextureFilter.Linear);
-        return texture;
     }
 
     /**
@@ -130,13 +123,5 @@ final class LayeredSprite implements Disposable {
         batch.setColor(teamColor.r, teamColor.g, teamColor.b, alpha);
         batch.draw(team, left, bottom, originX, originY, width, height, 1f, 1f, degrees);
         batch.setColor(Color.WHITE);
-    }
-
-    @Override
-    public void dispose() {
-        hull.dispose();
-        hullTeam.dispose();
-        turret.dispose();
-        turretTeam.dispose();
     }
 }

@@ -3,6 +3,7 @@ package ru.socol.supreme;
 import com.badlogic.gdx.Game;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Screen;
+import ru.socol.supreme.assets.GameAssets;
 import ru.socol.supreme.network.GameClient;
 import ru.socol.supreme.shared.network.messages.BuildingExplosionEvent;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
@@ -52,6 +53,9 @@ public class Main extends Game implements GameClient.GameClientListener {
      */
     private LobbyRoomScreen roomScreen;
 
+    /** Шрифты, текстуры и цвета всех экранов (AssetManager) — загружаются в create(). */
+    private GameAssets assets;
+
     /** Зелёный счётчик FPS в правом верхнем углу — поверх любого экрана. */
     private FpsCounter fpsCounter;
 
@@ -70,8 +74,11 @@ public class Main extends Game implements GameClient.GameClientListener {
     public void create() {
         System.out.println("Main.create() started, serverHost = " + serverHost);
         Gdx.app.log("StartApp", "serverHost: " + serverHost);
-        fpsCounter = new FpsCounter();
-        browserScreen = new LobbyBrowserScreen(client);
+        // Все шрифты, текстуры и цвета — один раз, до первого экрана (см. GameAssets).
+        assets = new GameAssets();
+        assets.loadAll();
+        fpsCounter = new FpsCounter(assets);
+        browserScreen = new LobbyBrowserScreen(client, assets);
         setScreen(browserScreen);
         client.connect(serverHost, this);
     }
@@ -92,6 +99,7 @@ public class Main extends Game implements GameClient.GameClientListener {
     public void dispose() {
         super.dispose();
         fpsCounter.dispose();
+        assets.dispose(); // последним — экраны и счётчик FPS только брали ассеты
     }
 
     // ---- GameClient.GameClientListener — вызывается из сетевого потока KryoNet, см. постановку каждого метода ниже про Gdx.app.postRunnable ----
@@ -134,7 +142,7 @@ public class Main extends Game implements GameClient.GameClientListener {
                 if (roomScreen != null) {
                     roomScreen.dispose();
                 }
-                target = new LobbyRoomScreen(client, message);
+                target = new LobbyRoomScreen(client, assets, message);
                 roomScreen = target;
             }
             if (previous != target) {
@@ -153,7 +161,7 @@ public class Main extends Game implements GameClient.GameClientListener {
 
     @Override
     public void onGameStarted(GameStartedMessage message) {
-        Gdx.app.postRunnable(() -> setScreen(new GameScreen(client)));
+        Gdx.app.postRunnable(() -> setScreen(new GameScreen(client, assets)));
     }
 
     @Override

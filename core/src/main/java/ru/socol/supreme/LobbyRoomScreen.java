@@ -4,14 +4,17 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.Screen;
-import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector3;
+import ru.socol.supreme.assets.GameAssets;
+import ru.socol.supreme.assets.GameColor;
+import ru.socol.supreme.assets.Palette;
 import ru.socol.supreme.network.GameClient;
 import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.LobbyPhase;
@@ -52,9 +55,10 @@ public class LobbyRoomScreen extends InputAdapter implements Screen {
     private final OrthographicCamera camera = new OrthographicCamera();
     private final ShapeRenderer shapeRenderer = new ShapeRenderer();
     private final SpriteBatch spriteBatch = new SpriteBatch();
-    private final BitmapFont titleFont = Fonts.create(33);
-    private final BitmapFont font = Fonts.create(21);
-    private final BitmapFont countdownFont = Fonts.create(60);
+    private final BitmapFont titleFont;
+    private final BitmapFont font;
+    private final BitmapFont countdownFont;
+    private final Palette palette;
     private final GlyphLayout layout = new GlyphLayout();
 
     private int lobbyId;
@@ -67,8 +71,12 @@ public class LobbyRoomScreen extends InputAdapter implements Screen {
 
     private String statusText;
 
-    public LobbyRoomScreen(GameClient client, LobbyStateMessage initialState) {
+    public LobbyRoomScreen(GameClient client, GameAssets assets, LobbyStateMessage initialState) {
         this.client = client;
+        titleFont = assets.font(GameAssets.GameFont.TITLE);
+        font = assets.font(GameAssets.GameFont.ROOM);
+        countdownFont = assets.font(GameAssets.GameFont.COUNTDOWN);
+        palette = assets.palette();
         camera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
         applyState(initialState);
     }
@@ -103,7 +111,8 @@ public class LobbyRoomScreen extends InputAdapter implements Screen {
 
     @Override
     public void render(float delta) {
-        Gdx.gl.glClearColor(0.1f, 0.1f, 0.12f, 1f);
+        Color background = palette.get(GameColor.UI_BACKGROUND);
+        Gdx.gl.glClearColor(background.r, background.g, background.b, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
         camera.update();
@@ -118,20 +127,20 @@ public class LobbyRoomScreen extends InputAdapter implements Screen {
             float y = FIRST_SLOT_Y - slot * (SLOT_HEIGHT + 12f);
             boolean occupied = slot < slotPlayerName.length && slotPlayerName[slot] != null;
             boolean ready = slot < slotReady.length && slotReady[slot];
-            shapeRenderer.setColor(!occupied ? Color.valueOf("263238") : ready ? Color.valueOf("2E7D32") : Color.valueOf("37474F"));
+            shapeRenderer.setColor(palette.get(!occupied ? GameColor.UI_BUTTON_DISABLED : ready ? GameColor.UI_BUTTON_CONFIRM : GameColor.UI_BUTTON));
             shapeRenderer.rect(SLOT_X, y, SLOT_WIDTH, SLOT_HEIGHT);
         }
 
         if (!starting) {
-            shapeRenderer.setColor(ownReady ? Color.valueOf("B71C1C") : Color.valueOf("2E7D32"));
+            shapeRenderer.setColor(palette.get(ownReady ? GameColor.UI_BUTTON_CANCEL : GameColor.UI_BUTTON_CONFIRM));
             shapeRenderer.rect(READY_BUTTON_X, READY_BUTTON_Y, READY_BUTTON_WIDTH, READY_BUTTON_HEIGHT);
         }
-        shapeRenderer.setColor(Color.valueOf("616161"));
+        shapeRenderer.setColor(palette.get(GameColor.UI_BUTTON_NEUTRAL));
         shapeRenderer.rect(LEAVE_BUTTON_X, LEAVE_BUTTON_Y, LEAVE_BUTTON_WIDTH, LEAVE_BUTTON_HEIGHT);
         shapeRenderer.end();
 
         spriteBatch.begin();
-        titleFont.setColor(Color.WHITE);
+        titleFont.setColor(palette.get(GameColor.UI_TEXT));
         titleFont.draw(spriteBatch, name != null ? name : "Лобби", 40f, HUD_HEIGHT - 12f);
 
         for (int slot = 0; slot < GameConstants.MAX_PLAYERS; slot++) {
@@ -139,7 +148,7 @@ public class LobbyRoomScreen extends InputAdapter implements Screen {
             boolean occupied = slot < slotPlayerName.length && slotPlayerName[slot] != null;
             boolean ready = slot < slotReady.length && slotReady[slot];
             String label = occupied ? slotPlayerName[slot] : "Свободный слот";
-            font.setColor(Color.WHITE);
+            font.setColor(palette.get(GameColor.UI_TEXT));
             font.draw(spriteBatch, label, SLOT_X + 16f, y + SLOT_HEIGHT - 20f);
             if (occupied) {
                 String readyLabel = ready ? "Готов" : "Не готов";
@@ -150,11 +159,11 @@ public class LobbyRoomScreen extends InputAdapter implements Screen {
 
         if (starting) {
             String countdownText = "Старт через " + Math.max(0, (int) Math.ceil(countdownRemaining));
-            countdownFont.setColor(Color.valueOf("FFCA28"));
+            countdownFont.setColor(palette.get(GameColor.UI_ACCENT));
             layout.setText(countdownFont, countdownText);
             countdownFont.draw(spriteBatch, countdownText, (HUD_WIDTH - layout.width) / 2f, READY_BUTTON_Y + READY_BUTTON_HEIGHT + 20f);
         } else {
-            font.setColor(Color.WHITE);
+            font.setColor(palette.get(GameColor.UI_TEXT));
             String readyButtonLabel = ownReady ? "Не готов" : "Готов";
             layout.setText(font, readyButtonLabel);
             font.draw(spriteBatch, readyButtonLabel,
@@ -168,7 +177,7 @@ public class LobbyRoomScreen extends InputAdapter implements Screen {
                 LEAVE_BUTTON_Y + (LEAVE_BUTTON_HEIGHT + layout.height) / 2f);
 
         if (statusText != null) {
-            font.setColor(Color.valueOf("FFCA28"));
+            font.setColor(palette.get(GameColor.UI_ACCENT));
             layout.setText(font, statusText);
             font.draw(spriteBatch, statusText, (HUD_WIDTH - layout.width) / 2f, 200f);
         }
@@ -220,8 +229,5 @@ public class LobbyRoomScreen extends InputAdapter implements Screen {
     public void dispose() {
         shapeRenderer.dispose();
         spriteBatch.dispose();
-        titleFont.dispose();
-        font.dispose();
-        countdownFont.dispose();
     }
 }
