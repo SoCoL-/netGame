@@ -65,6 +65,7 @@ import ru.socol.supreme.shared.network.messages.RepairOrderRequest;
 import ru.socol.supreme.shared.network.messages.SetRallyPointRequest;
 import ru.socol.supreme.shared.network.messages.UnitSnapshot;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
+import ru.socol.supreme.shared.map.GameMap;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 import ru.socol.supreme.shared.pathfinding.SpatialHashGrid;
 import ru.socol.supreme.shared.systems.AggroSystem;
@@ -795,11 +796,11 @@ public class GameServer {
             return;
         }
 
-        if (request.depositIndex < 0 || request.depositIndex >= GameConstants.IRON_DEPOSITS.length) {
+        if (request.depositIndex < 0 || request.depositIndex >= GameMap.current().ironDeposits().length) {
             return; // некорректный индекс — либо баг клиента, либо модифицированный клиент
         }
 
-        float[] depositForCraterCheck = GameConstants.IRON_DEPOSITS[request.depositIndex];
+        float[] depositForCraterCheck = GameMap.current().ironDeposits()[request.depositIndex];
         float mineHalfWidth = BuildingDefinitions.halfWidthFor(BuildingType.IRON_MINE);
         float mineHalfHeight = BuildingDefinitions.halfHeightFor(BuildingType.IRON_MINE);
         if (craterField.overlapsRect(depositForCraterCheck[0] - mineHalfWidth, depositForCraterCheck[1] - mineHalfHeight,
@@ -813,7 +814,7 @@ public class GameServer {
             return;
         }
 
-        float[] deposit = GameConstants.IRON_DEPOSITS[request.depositIndex];
+        float[] deposit = GameMap.current().ironDeposits()[request.depositIndex];
         int minedBuildingUnitId = spawnBuilding(playerId, BuildingType.IRON_MINE, deposit[0], deposit[1]);
         assignBuildersToNewBuilding(playerId, minedBuildingUnitId, request.builderUnitIds, request.queue);
     }
@@ -862,7 +863,7 @@ public class GameServer {
 
     /** Занято ли месторождение — ищем среди unitsById здание добычи (строящееся или уже готовое) точно в этой точке. */
     private boolean isDepositOccupied(int depositIndex) {
-        float[] deposit = GameConstants.IRON_DEPOSITS[depositIndex];
+        float[] deposit = GameMap.current().ironDeposits()[depositIndex];
         for (Entity entity : unitsById.values()) {
             if (!BuildingSizes.isResourceBuilding(entity)) {
                 continue;
@@ -1486,8 +1487,7 @@ public class GameServer {
         buildingMarker.type = BuildingType.WRECK;
 
         WreckComponent wreckMarker = engine.createComponent(WreckComponent.class);
-        wreckMarker.underwater = x >= GameConstants.WATER_MIN_X && x <= GameConstants.WATER_MAX_X
-                && y >= GameConstants.WATER_MIN_Y && y <= GameConstants.WATER_MAX_Y;
+        wreckMarker.underwater = GameMap.current().isWaterAt(x, y);
 
         wreck.add(position).add(unitComponent).add(owner).add(ironStock).add(buildingMarker).add(wreckMarker);
 

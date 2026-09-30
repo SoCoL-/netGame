@@ -10,6 +10,7 @@ import com.badlogic.gdx.utils.Array;
 import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingSizes;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.map.GameMap;
 import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
@@ -163,10 +164,11 @@ public class CollisionSystem extends IteratingSystem {
             }
         }
 
-        // Подстраховка: если соседи всё же протолкнули юнита в воду — выталкиваем и оттуда.
-        pushOutOfRect(position,
-                GameConstants.WATER_MIN_X, GameConstants.WATER_MIN_Y,
-                GameConstants.WATER_MAX_X, GameConstants.WATER_MAX_Y);
+        // Подстраховка: если соседи всё же протолкнули юнита в воду — выталкиваем на ближайшую сушу.
+        float[] land = GameMap.current().nearestLandPoint(position.position.x, position.position.y, GameConstants.UNIT_RADIUS);
+        if (land != null) {
+            position.position.set(land[0], land[1]);
+        }
 
         // Финальная подстраховка: ни отталкивание от соседей, ни выталкивание
         // из воды/здания само по себе не знает о границах карты — без этого

@@ -12,6 +12,7 @@ import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.ArtilleryComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
+import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.network.messages.ArtilleryFireRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
@@ -477,7 +478,7 @@ class ArtilleryTest {
         disableSpread();
         artilleryOf(towerId).shells = 2;
         resources().electricity = 1000f;
-        UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal()); // взрыв задевает и своих
+        UnitSnapshot builder = builderInRange(); // взрыв задевает и своих
         int maxHealth = UnitDefinitions.healthFor(UnitType.BUILDER);
         int damage = BuildingDefinitions.shellDamageFor(ARTILLERY);
 
@@ -500,7 +501,7 @@ class ArtilleryTest {
         disableSpread();
         artilleryOf(towerId).shells = 1;
         resources().electricity = 1000f;
-        UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal());
+        UnitSnapshot builder = builderInRange();
         game.unitById(builder.unitId).getComponent(HealthComponent.class).currentHealth = 1;
 
         fireAndWaitForImpact(towerId, builder.x, builder.y);
@@ -515,11 +516,12 @@ class ArtilleryTest {
         disableSpread();
         artilleryOf(towerId).shells = 1;
         resources().electricity = 1000f;
-        UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal());
+        UnitSnapshot builder = builderInRange();
         float farX = builder.x + BuildingDefinitions.shellSplashRadiusFor(ARTILLERY) * 3f;
 
         fireAndWaitForImpact(towerId, farX, builder.y);
 
+        assertEquals(1, player0.sentOf(ProjectileFiredEvent.class).size(), "выстрел был");
         assertEquals(UnitDefinitions.healthFor(UnitType.BUILDER),
                 game.unitById(builder.unitId).getComponent(HealthComponent.class).currentHealth);
     }
@@ -598,6 +600,19 @@ class ArtilleryTest {
         UnitSnapshot ruins = ruinsAt(BuildingType.TURRET, AHEAD_X, AHEAD_Y);
         assertNotNull(ruins, "её руины остались");
         assertEquals(ruins.maxHealth, ruins.health, "руины от этого же снаряда урона не получили");
+    }
+
+    /**
+     * Свой строитель, переставленный в точку AHEAD — в досягаемость башни.
+     * Сам он стартует у дома, а дом — в точке старта с карты (GameMap),
+     * которая может быть где угодно относительно TOWER.
+     */
+    private UnitSnapshot builderInRange() {
+        UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal());
+        game.unitById(builder.unitId).getComponent(PositionComponent.class).position.set(AHEAD_X, AHEAD_Y);
+        builder.x = AHEAD_X;
+        builder.y = AHEAD_Y;
+        return builder;
     }
 
     private float flightTimeTo(UnitSnapshot target) {

@@ -58,6 +58,7 @@ import ru.socol.supreme.shared.network.messages.QueuedOrderPoint;
 import ru.socol.supreme.shared.network.messages.WorldSnapshot;
 import ru.socol.supreme.shared.craters.Crater;
 import ru.socol.supreme.shared.craters.CraterField;
+import ru.socol.supreme.shared.map.GameMap;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
 import java.util.ArrayList;
@@ -1072,7 +1073,7 @@ public class GameScreen extends InputAdapter implements Screen {
     private void drawIronDeposits() {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         shapeRenderer.setColor(IRON_DEPOSIT_COLOR);
-        for (float[] deposit : GameConstants.IRON_DEPOSITS) {
+        for (float[] deposit : GameMap.current().ironDeposits()) {
             shapeRenderer.circle(deposit[0], deposit[1], IRON_DEPOSIT_RADIUS);
         }
         shapeRenderer.end();
@@ -1096,8 +1097,8 @@ public class GameScreen extends InputAdapter implements Screen {
             float snapRadius = BuildingDefinitions.snapRadiusFor(BuildingType.IRON_MINE);
             float closestDistanceSq = snapRadius * snapRadius;
 
-            for (int i = 0; i < GameConstants.IRON_DEPOSITS.length; i++) {
-                float[] deposit = GameConstants.IRON_DEPOSITS[i];
+            for (int i = 0; i < GameMap.current().ironDeposits().length; i++) {
+                float[] deposit = GameMap.current().ironDeposits()[i];
                 float dx = cursorWorld.x - deposit[0];
                 float dy = cursorWorld.y - deposit[1];
                 float distanceSq = dx * dx + dy * dy;
@@ -1108,8 +1109,8 @@ public class GameScreen extends InputAdapter implements Screen {
             }
 
             if (ironMineSnapDepositIndex >= 0) {
-                buildGhostX = GameConstants.IRON_DEPOSITS[ironMineSnapDepositIndex][0];
-                buildGhostY = GameConstants.IRON_DEPOSITS[ironMineSnapDepositIndex][1];
+                buildGhostX = GameMap.current().ironDeposits()[ironMineSnapDepositIndex][0];
+                buildGhostY = GameMap.current().ironDeposits()[ironMineSnapDepositIndex][1];
             } else {
                 buildGhostX = cursorWorld.x;
                 buildGhostY = cursorWorld.y;

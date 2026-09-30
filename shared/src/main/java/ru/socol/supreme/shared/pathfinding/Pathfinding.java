@@ -5,6 +5,7 @@ import com.badlogic.gdx.math.Vector2;
 import ru.socol.supreme.shared.BuildingDefinitions;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.map.GameMap;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
@@ -21,8 +22,8 @@ import java.util.PriorityQueue;
 import java.util.Set;
 
 /**
- * Поиск пути по сетке в обход препятствий: прямоугольник воды посередине
- * карты (GameConstants.WATER_*, никогда не меняется) и footprint каждого
+ * Поиск пути по сетке в обход препятствий: вода по карте (GameMap,
+ * никогда не меняется за партию) и footprint каждого
  * СЕЙЧАС существующего здания — динамический список, а не что-то,
  * зафиксированное раз и навсегда. GameServer вызывает
  * addBuildingObstacle при появлении любого здания (в том числе ещё
@@ -251,9 +252,13 @@ public final class Pathfinding {
      * помимо разделения на "воздух/земля").
      */
     public static boolean isInsideWater(float x, float y) {
+        // Вода — клетки карты (GameMap), раздутые на PATH_CLEARANCE: точка
+        // "в воде", если вода в её клетке или в пределах запаса по любой из осей.
+        GameMap map = GameMap.current();
         float margin = GameConstants.PATH_CLEARANCE;
-        return x >= GameConstants.WATER_MIN_X - margin && x <= GameConstants.WATER_MAX_X + margin
-                && y >= GameConstants.WATER_MIN_Y - margin && y <= GameConstants.WATER_MAX_Y + margin;
+        return map.isWaterAt(x, y)
+                || map.isWaterAt(x - margin, y) || map.isWaterAt(x + margin, y)
+                || map.isWaterAt(x, y - margin) || map.isWaterAt(x, y + margin);
     }
 
     /**

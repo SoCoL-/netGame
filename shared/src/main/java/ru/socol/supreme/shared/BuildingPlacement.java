@@ -8,6 +8,7 @@ import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.craters.CraterField;
+import ru.socol.supreme.shared.map.GameMap;
 
 /**
  * Проверка "можно ли поставить здание в эту точку" для зданий, которые НЕ
@@ -74,9 +75,8 @@ public final class BuildingPlacement {
             return false; // вылезает за границы карты
         }
 
-        if (rectsOverlap(minX, minY, maxX, maxY,
-                GameConstants.WATER_MIN_X, GameConstants.WATER_MIN_Y, GameConstants.WATER_MAX_X, GameConstants.WATER_MAX_Y)) {
-            return false;
+        if (GameMap.current().rectTouchesWater(minX, minY, maxX, maxY)) {
+            return false; // на воде строить нельзя
         }
 
         float ownClearance = clearanceRadiusFor(type);

@@ -10,6 +10,10 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.GdxRuntimeException;
 import ru.socol.supreme.shared.GameConstants;
+import ru.socol.supreme.shared.map.GameMap;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Земля и вода из текстур (assets/terrain/*.jpg): бесшовные трава, грунт,
@@ -25,12 +29,11 @@ import ru.socol.supreme.shared.GameConstants;
  *    не "вода да/нет": билинейная выборка из грубой маски даёт точную и
  *    ровную линию берега, по нему же считаются пена и мокрый грунт;
  *  - B — глубина: 0 у берега, 1 в 600 единицах от него — мелководье
- *    плавно темнеет к середине водоёма.
- * Пока карты как данных нет, маска строится здесь же детерминированно
- * (одинаково у всех игроков): вода — прямоугольник GameConstants.WATER_*
- * (тот же, что у поиска пути), пятна грунта по шуму и полоса грунта вдоль
- * берега. Когда появятся файлы карт, достаточно грузить маску из них —
- * шейдер не изменится.
+ *    плавно темнеет к середине водоёма;
+ *  - A — скалы (1 — клетка скал).
+ * Вода и скалы берутся из карты (GameMap — та же сетка, по которой сервер
+ * считает проходимость), пятна грунта — детерминированный шум (одинаковый
+ * у всех игроков) плюс полоса грунта вдоль берега.
  *
  * Края не гладкие: порог трава/грунт и линия берега сдвигаются на
  * яркость текстуры травы (рваный край, берег "гуляет" на ~20 единиц).
@@ -85,6 +88,11 @@ final class TerrainRenderer implements Disposable {
             + "    float breakup = dot(grass, LUMA) - 0.3;\n"
             + "    float dirtBlend = smoothstep(0.35, 0.65, mask.r - breakup * 0.9);\n"
             + "    vec3 land = mix(grass, dirt, dirtBlend) * shade;\n"
+            // Скалы: серый камень из текстуры грунта, неровный по яркости травы; край рваный, как у грунта.
+            + "    float dirtLuma = dot(dirt, LUMA);\n"
+            + "    vec3 rock = mix(vec3(dirtLuma), dirt, 0.25) * (0.55 + 0.9 * dot(grass, LUMA)) * shade;\n"
+            + "    float rockBlend = smoothstep(0.4, 0.6, mask.a - breakup * 0.7);\n"
+            + "    land = mix(land, rock, rockBlend);\n"
             // Берег: 0.5 — кромка; шум сдвигает её на ~20 единиц в обе стороны.
             // Только крупные масштабы травы: мелкий шум рвал кромку на крапинки грунта в воде.
             + "    float broad = dot(texture2D(u_texture, v_tileUv * 0.053 + vec2(0.61, 0.08)).rgb, LUMA);\n"
@@ -157,30 +165,37 @@ final class TerrainRenderer implements Disposable {
         batch.setShader(null);
     }
 
-    /** Маска (см. javadoc класса): R — грунт, G — расстояние до берега, B — глубина. Детерминирована — у всех игроков одинаковая. */
+    /**
+     * Маска (см. javadoc класса): R — грунт, G — расстояние до берега,
+     * B — глубина, A — скалы. Строится по карте (GameMap) — у всех
+     * игроков одинаковая.
+     */
     private static Texture buildMask() {
+        GameMap map = GameMap.current();
         float cell = GameConstants.PATH_GRID_CELL_SIZE;
-        int width = MathUtils.ceil(GameConstants.MAP_WIDTH / cell);
-        int height = MathUtils.ceil(GameConstants.MAP_HEIGHT / cell);
+        int width = map.width();
+        int height = map.height();
+        float[][] shoreDistance = signedDistanceToWater(map);
         Pixmap pixmap = new Pixmap(width, height, Pixmap.Format.RGBA8888);
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 float worldX = (x + 0.5f) * cell;
                 float worldY = (y + 0.5f) * cell;
                 float noise = fbm(worldX / 900f, worldY / 900f);
-                float shoreDistance = signedDistanceToWater(worldX, worldY);
+                float distance = shoreDistance[x][y];
                 // Пятна: верхние ~15% значений шума.
                 float patches = MathUtils.clamp((noise - 0.58f) / 0.12f, 0f, 1f);
                 // Береговой грунт в пределах ~90..210 единиц от воды, ширина полосы "гуляет" по шуму.
                 float shoreWidth = 90f + 120f * noise;
-                float shoreDirt = 1f - MathUtils.clamp(shoreDistance / shoreWidth, 0f, 1f);
+                float shoreDirt = 1f - MathUtils.clamp(distance / shoreWidth, 0f, 1f);
                 float dirt = Math.max(patches, shoreDirt);
-                float shore = MathUtils.clamp(0.5f - shoreDistance / 200f, 0f, 1f);
-                float depth = MathUtils.clamp(-shoreDistance / 600f, 0f, 1f);
+                float shore = MathUtils.clamp(0.5f - distance / 200f, 0f, 1f);
+                float depth = MathUtils.clamp(-distance / 600f, 0f, 1f);
+                float rock = map.cell(x, y) == GameMap.Cell.ROCK ? 1f : 0f;
                 // Строка 0 Pixmap уходит в текстуру как v = 0 — это и есть низ карты
                 // (в шейдере v = y / высота карты), так что без переворота.
                 pixmap.drawPixel(x, y, Math.round(dirt * 255f) << 24 | Math.round(shore * 255f) << 16
-                        | Math.round(depth * 255f) << 8 | 0xFF);
+                        | Math.round(depth * 255f) << 8 | Math.round(rock * 255f));
             }
         }
         Texture texture = new Texture(pixmap);
@@ -190,17 +205,50 @@ final class TerrainRenderer implements Disposable {
         return texture;
     }
 
-    /** Расстояние до кромки воды: положительное на суше, отрицательное в воде. */
-    private static float signedDistanceToWater(float x, float y) {
-        float inside = Math.min(Math.min(x - GameConstants.WATER_MIN_X, GameConstants.WATER_MAX_X - x),
-                Math.min(y - GameConstants.WATER_MIN_Y, GameConstants.WATER_MAX_Y - y));
-        return inside > 0f ? -inside : distanceToWater(x, y);
-    }
-
-    private static float distanceToWater(float x, float y) {
-        float dx = Math.max(Math.max(GameConstants.WATER_MIN_X - x, 0f), x - GameConstants.WATER_MAX_X);
-        float dy = Math.max(Math.max(GameConstants.WATER_MIN_Y - y, 0f), y - GameConstants.WATER_MAX_Y);
-        return (float) Math.sqrt(dx * dx + dy * dy);
+    /**
+     * Для каждой клетки — расстояние от её центра до кромки воды:
+     * положительное на суше, отрицательное в воде. Кромка — посередине
+     * между центрами соседних клеток суши и воды, поэтому расстояние —
+     * до ближайшей клетки "другого берега" минус полклетки. Перебираются
+     * только пограничные клетки — их порядка тысячи, так что даже
+     * прямой перебор для 160x160 — доли секунды один раз при входе в игру.
+     */
+    private static float[][] signedDistanceToWater(GameMap map) {
+        int width = map.width();
+        int height = map.height();
+        float cell = GameConstants.PATH_GRID_CELL_SIZE;
+        List<int[]> landEdge = new ArrayList<>();
+        List<int[]> waterEdge = new ArrayList<>();
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                boolean water = map.isWaterCell(x, y);
+                boolean edge = (x > 0 && map.isWaterCell(x - 1, y) != water)
+                        || (x < width - 1 && map.isWaterCell(x + 1, y) != water)
+                        || (y > 0 && map.isWaterCell(x, y - 1) != water)
+                        || (y < height - 1 && map.isWaterCell(x, y + 1) != water);
+                if (edge) {
+                    (water ? waterEdge : landEdge).add(new int[]{x, y});
+                }
+            }
+        }
+        float farAway = 10f * cell;
+        float[][] result = new float[width][height];
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                boolean water = map.isWaterCell(x, y);
+                List<int[]> otherSide = water ? landEdge : waterEdge;
+                float bestSq = Float.MAX_VALUE;
+                for (int[] other : otherSide) {
+                    float dx = other[0] - x;
+                    float dy = other[1] - y;
+                    bestSq = Math.min(bestSq, dx * dx + dy * dy);
+                }
+                float distance = otherSide.isEmpty() ? farAway / cell : (float) Math.sqrt(bestSq);
+                distance = (distance - 0.5f) * cell;
+                result[x][y] = water ? -distance : distance;
+            }
+        }
+        return result;
     }
 
     /** Фрактальный value noise, 4 октавы, результат примерно в [0, 1]. */

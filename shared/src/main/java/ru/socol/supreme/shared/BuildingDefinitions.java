@@ -102,12 +102,10 @@ public final class BuildingDefinitions {
         return DEFINITIONS.get(type).storageCapacity;
     }
 
-    /** Место автоспавна дома игрока — в противоположных углах карты. Возвращает {x, y}. Единственное здание, которое сервер ставит сам при входе игрока — остальные строит сам игрок из меню (клавиша B). */
+    /** Место автоспавна дома игрока — точка старта с карты (GameMap). Возвращает {x, y}. Единственное здание, которое сервер ставит сам при входе игрока — остальные строит сам игрок из меню (клавиша B). */
     public static float[] homeSpawnPoint(int playerId) {
-        float margin = DEFINITIONS.get(BuildingType.HOME).spawnMargin;
-        float x = playerId == 0 ? margin : GameConstants.MAP_WIDTH - margin;
-        float y = playerId == 0 ? margin : GameConstants.MAP_HEIGHT - margin;
-        return new float[]{x, y};
+        float[] spawn = ru.socol.supreme.shared.map.GameMap.current().spawnPoint(playerId);
+        return new float[]{spawn[0], spawn[1]}; // копия — массив карты общий и неизменяемый
     }
 
     /**
