@@ -1,0 +1,175 @@
+{
+  "status": "initial_sizes_not_tested_in_game",
+  "alpha": "straight",
+  "view": "top_down",
+  "sprites": [
+    {
+      "file": "bush-01-compact.png",
+      "name": "Компактный куст",
+      "width": 1254,
+      "height": 1254,
+      "alphaMin": 0,
+      "alphaMax": 255,
+      "transparentPercent": 63.79,
+      "borderAlphaMax": 0,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "contentBoundsAlphaGreaterThan8": [
+        140,
+        170,
+        1117,
+        1087
+      ],
+      "redFringePixelsAlphaGreaterThan8": 0,
+      "initialAnchorNormalized": [
+        0.5,
+        0.5
+      ],
+      "suggestedVisibleWidthWorldUnits": 18
+    },
+    {
+      "file": "bush-02-spreading.png",
+      "name": "Раскидистый куст",
+      "width": 1536,
+      "height": 1024,
+      "alphaMin": 0,
+      "alphaMax": 254,
+      "transparentPercent": 63.14,
+      "borderAlphaMax": 0,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "contentBoundsAlphaGreaterThan8": [
+        92,
+        140,
+        1443,
+        884
+      ],
+      "redFringePixelsAlphaGreaterThan8": 0,
+      "initialAnchorNormalized": [
+        0.5,
+        0.5
+      ],
+      "suggestedVisibleWidthWorldUnits": 26
+    },
+    {
+      "file": "bush-03-dry.png",
+      "name": "Суховатый куст",
+      "width": 1254,
+      "height": 1254,
+      "alphaMin": 0,
+      "alphaMax": 255,
+      "transparentPercent": 64.14,
+      "borderAlphaMax": 1,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "contentBoundsAlphaGreaterThan8": [
+        94,
+        108,
+        1180,
+        1179
+      ],
+      "redFringePixelsAlphaGreaterThan8": 0,
+      "initialAnchorNormalized": [
+        0.5,
+        0.5
+      ],
+      "suggestedVisibleWidthWorldUnits": 22
+    },
+    {
+      "file": "tree-01-round.png",
+      "name": "Дерево с округлой кроной",
+      "width": 1254,
+      "height": 1254,
+      "alphaMin": 0,
+      "alphaMax": 255,
+      "transparentPercent": 41.73,
+      "borderAlphaMax": 1,
+      "cornerAlpha": [
+        0,
+        0,
+        1,
+        0
+      ],
+      "contentBoundsAlphaGreaterThan8": [
+        82,
+        77,
+        1218,
+        1176
+      ],
+      "redFringePixelsAlphaGreaterThan8": 0,
+      "initialAnchorNormalized": [
+        0.5,
+        0.5
+      ],
+      "suggestedVisibleWidthWorldUnits": 64
+    },
+    {
+      "file": "tree-02-airy.png",
+      "name": "Дерево с вытянутой кроной",
+      "width": 1254,
+      "height": 1254,
+      "alphaMin": 0,
+      "alphaMax": 255,
+      "transparentPercent": 52.7,
+      "borderAlphaMax": 1,
+      "cornerAlpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "contentBoundsAlphaGreaterThan8": [
+        94,
+        61,
+        1180,
+        1205
+      ],
+      "redFringePixelsAlphaGreaterThan8": 0,
+      "initialAnchorNormalized": [
+        0.5,
+        0.5
+      ],
+      "suggestedVisibleWidthWorldUnits": 56
+    },
+    {
+      "file": "tree-03-conifer.png",
+      "name": "Хвойное дерево",
+      "width": 1254,
+      "height": 1254,
+      "alphaMin": 0,
+      "alphaMax": 255,
+      "transparentPercent": 46.26,
+      "borderAlphaMax": 1,
+      "cornerAlpha": [
+        0,
+        0,
+        1,
+        0
+      ],
+      "contentBoundsAlphaGreaterThan8": [
+        33,
+        35,
+        1228,
+        1214
+      ],
+      "redFringePixelsAlphaGreaterThan8": 0,
+      "initialAnchorNormalized": [
+        0.5,
+        0.5
+      ],
+      "suggestedVisibleWidthWorldUnits": 52
+    }
+  ]
+}

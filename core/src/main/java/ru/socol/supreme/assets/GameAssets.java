@@ -11,6 +11,7 @@ import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGeneratorLoader;
 import com.badlogic.gdx.graphics.g2d.freetype.FreetypeFontLoader;
 import com.badlogic.gdx.utils.Disposable;
+import ru.socol.supreme.VegetationType;
 import ru.socol.supreme.shared.BuildingType;
 import ru.socol.supreme.shared.UnitType;
 
@@ -140,6 +141,9 @@ public final class GameAssets implements Disposable {
                 // Без повтора: спрайт рисуется целиком, края не должны "заворачиваться".
                 manager.load(unitTexturePath(name, layer), Texture.class, mipmapped(Texture.TextureWrap.ClampToEdge));
             }
+        }
+        for (VegetationType type : VegetationType.values()) {
+            manager.load(type.texturePath, Texture.class, mipmapped(Texture.TextureWrap.ClampToEdge));
         }
         for (String path : iconPaths()) {
             manager.load(path, Texture.class, mipmapped(Texture.TextureWrap.ClampToEdge));

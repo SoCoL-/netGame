@@ -331,6 +331,10 @@ public class GameScreen extends InputAdapter implements Screen {
     private final Palette palette;
     private final GameAssets assets;
     private final FogMemory fogMemory = new FogMemory();
+    private final VegetationRenderer vegetation;
+    // Списки для drawTreeCanopies — переиспользуются между кадрами.
+    private final List<Vector2> canopyUnits = new ArrayList<>();
+    private final List<float[]> canopyBuildings = new ArrayList<>();
     private final GlyphLayout buttonLayout = new GlyphLayout();
     private final OrthographicCamera camera = new OrthographicCamera();
     // Отдельная неподвижная камера для HUD (панель постройки) — рисуется в
@@ -577,6 +581,7 @@ public class GameScreen extends InputAdapter implements Screen {
         buttonFont = assets.font(GameAssets.GameFont.BUTTON);
         palette = assets.palette();
         this.assets = assets;
+        vegetation = new VegetationRenderer(assets);
         terrainRenderer = new TerrainRenderer(assets);
         renderSystem = new RenderSystem(shapeRenderer, spriteBatch, assets);
         camera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
@@ -851,6 +856,36 @@ public class GameScreen extends InputAdapter implements Screen {
      * тактический слой), чтобы неразведанные области оставались
      * притенёнными одинаково в обоих режимах.
      */
+    /**
+     * Кроны деревьев (VegetationRenderer) — над юнитами: над видимым юнитом
+     * крона полупрозрачная, на месте видимого здания не рисуется. Чужое под
+     * туманом не учитывается — иначе по кронам можно было бы угадать, где
+     * противник.
+     */
+    private void drawTreeCanopies(float strategicFactor) {
+        canopyUnits.clear();
+        canopyBuildings.clear();
+        for (Entity entity : engine.getEntities()) {
+            PositionComponent position = entity.getComponent(PositionComponent.class);
+            OwnerComponent owner = entity.getComponent(OwnerComponent.class);
+            if (position == null || owner == null || isHiddenByFog(owner, position)) {
+                continue;
+            }
+            if (entity.getComponent(BuildingComponent.class) != null) {
+                float halfWidth = BuildingSizes.halfWidth(entity);
+                float halfHeight = BuildingSizes.halfHeight(entity);
+                canopyBuildings.add(new float[]{position.position.x - halfWidth, position.position.y - halfHeight,
+                        position.position.x + halfWidth, position.position.y + halfHeight});
+            } else {
+                UnitTypeComponent unitType = entity.getComponent(UnitTypeComponent.class);
+                if (unitType != null && !UnitDefinitions.isAirUnit(unitType.type)) {
+                    canopyUnits.add(position.position); // авиация летает над кронами — её не прячет
+                }
+            }
+        }
+        vegetation.drawTrees(spriteBatch, camera, 1f - strategicFactor, canopyUnits, canopyBuildings);
+    }
+
     private void drawStrategicIcons(float alpha) {
         if (alpha <= 0f) {
             return;
@@ -963,6 +998,7 @@ public class GameScreen extends InputAdapter implements Screen {
         drawGround(); // до engine.update() — юниты должны рисоваться поверх земли/воды, а не под ними
         drawIronDeposits(strategicFactor, false); // видимые — до engine.update(): поверх земли, но под юнитами/зданиями
         drawCraters(); // шрамы на земле — тоже под юнитами и зданиями
+        vegetation.drawBushes(spriteBatch, camera, 1f - strategicFactor); // кусты — на земле, под юнитами
 
         // Кроссфейд тактический/стратегический вид (см. strategicFactor) —
         // тактический слой (RenderSystem, внутри engine.update) рисуется с
@@ -977,6 +1013,7 @@ public class GameScreen extends InputAdapter implements Screen {
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         engine.update(delta);
         Gdx.gl.glDisable(GL20.GL_BLEND);
+        drawTreeCanopies(strategicFactor); // кроны — над юнитами, но под стратегическими значками и туманом
         drawStrategicIcons(strategicFactor); // тоже до тумана войны — см. javadoc метода
 
         updateArrows(delta);
