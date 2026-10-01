@@ -111,33 +111,9 @@ public final class GameConstants {
     public static final float MAP_WIDTH = 8000f;
     public static final float MAP_HEIGHT = 8000f;
 
-    /**
-     * Препятствие посередине карты — вода. Блокирует ХОЖДЕНИЕ (юниты
-     * обходят её по Pathfinding), но не дальность атаки — стрелять через
-     * воду можно, это сознательное упрощение (нет отдельной проверки
-     * "линии обзора" для боя, только для движения).
-     */
-    public static final float WATER_MIN_X = 2800f;
-    public static final float WATER_MAX_X = 5200f;
-    public static final float WATER_MIN_Y = 2800f;
-    public static final float WATER_MAX_Y = 5200f;
+    // Вода, скалы, месторождения железа и точки старта — не константы, а
+    // данные карты: см. ru.socol.supreme.shared.map.GameMap (assets/maps/).
 
-    /**
-     * Месторождения железа — по 2 на игрока, симметрично, в открытом
-     * пространстве недалеко от его же дома/казармы (зазор от построек ~400
-     * юнитов при текущем размере карты — те же ~100, что и раньше, но
-     * пропорционально возросшие вместе с картой в 4 раза). Каждая запись —
-     * {x, y}. В отличие от воды/зданий, НЕ препятствие для движения — юниты
-     * спокойно проходят прямо через них, это просто точка на карте, а не
-     * физический объект. Здание добычи (см. IRON_MINE_* ниже) можно
-     * поставить только СЮДА, "прилипая" к одной из этих точек — см.
-     * GameScreen (превью при постройке) и GameServer.handlePlaceIronMine
-     * (серверная проверка).
-     */
-    public static final float[][] IRON_DEPOSITS = {
-            {2000f, 800f}, {800f, 2000f},     // игрок 0
-            {6000f, 7200f}, {7200f, 6000f},   // игрок 1
-    };
 
     /**
      * Базовая вместимость хранилища ресурса — доступна игроку всегда,
@@ -353,4 +329,22 @@ public final class GameConstants {
      * комнату лобби, а не переключает его мгновенно.
      */
     public static final float POST_GAME_OVER_DELAY_SECONDS = 3f;
+
+    // ---- Воронки (см. Crater/CraterField/CraterSystem) ----
+
+    /** Через сколько секунд воронка зарастает сама. */
+    public static final float CRATER_LIFETIME_SECONDS = 180f;
+
+    /** Во сколько раз медленнее едут наземные юниты внутри воронки. */
+    public static final float CRATER_SPEED_MULTIPLIER = 0.6f;
+
+    /** Насколько растёт радиус воронки при повторном взрыве внутри неё. */
+    public static final float CRATER_GROWTH_PER_HIT = 10f;
+
+    /** Больше этого радиуса воронка не растёт. */
+    public static final float CRATER_MAX_RADIUS = 120f;
+
+    /** Секунд работы одного строителя на засыпку воронки радиусом CRATER_FILL_REFERENCE_RADIUS (больше — пропорционально площади). */
+    public static final float CRATER_FILL_SECONDS = 3f;
+    public static final float CRATER_FILL_REFERENCE_RADIUS = 60f;
 }

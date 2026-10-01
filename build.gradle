@@ -75,18 +75,22 @@ eclipse.project.name = 'supreme_game' + '-parent'
 //   ./gradlew buildJars
 //   java -jar build/dist/server.jar
 //   java -jar build/dist/client.jar [хост-сервера]
-// units.json и buildings.json копируются той же командой из assets/ —
+// units.json, buildings.json и maps/ копируются той же командой из assets/ —
 // единственного места, где они лежат в репозитории. И сервер, и клиент
 // ищут их в текущей рабочей директории (см. UnitDefinitions,
 // BuildingDefinitions), так что оба jar-а найдут их, если запускать из
 // build/dist/.
 tasks.register('buildJars', Copy) {
   group = 'build'
-  description = 'Собирает client.jar и server.jar, копирует их и units.json/buildings.json в build/dist/.'
+  description = 'Собирает client.jar и server.jar, копирует их, units.json/buildings.json и maps/ в build/dist/.'
   dependsOn ':server:jar', ':lwjgl3:jar'
   from(project(':server').tasks.named('jar'))
   from(project(':lwjgl3').tasks.named('jar'))
   from(rootProject.file('assets/units.json'))
   from(rootProject.file('assets/buildings.json'))
+  // Карта (см. GameMap) — тоже из рабочей директории, в подпапке maps/.
+  from(rootProject.file('assets/maps')) {
+    into('maps')
+  }
   into(layout.buildDirectory.dir('dist'))
 }

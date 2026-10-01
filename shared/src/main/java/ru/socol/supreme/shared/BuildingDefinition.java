@@ -93,6 +93,23 @@ public class BuildingDefinition {
     public int ironCost;
     public int electricityCost;
 
+    /**
+     * Взрыв при разрушении (сейчас только у POWER_PLANT, у остальных 0):
+     * когда здание погибает от урона — в бою или от снаряда артиллерии, но
+     * не при добровольном сносе, — все здания (свои и чужие, кроме
+     * обломков), до ближайшей точки которых от его центра не дальше
+     * destructionBlastRadius, получают destructionBlastDamage урона.
+     * Погибшая от взрыва электростанция взрывается сама — цепная реакция.
+     */
+    public int destructionBlastDamage;
+    public float destructionBlastRadius;
+
+    /**
+     * Радиус воронки (см. Crater), которую оставляет взрыв: у ARTILLERY —
+     * каждый упавший снаряд, у POWER_PLANT — её разрушение. 0 — воронки нет.
+     */
+    public float craterRadius;
+
     // ---- Только для ARTILLERY (у остальных 0) ----
     //
     // Потребление электричества у артиллерии — через те же общие поля, что
@@ -127,6 +144,9 @@ public class BuildingDefinition {
      * половину этого угла. Иначе башня сначала доворачивается.
      */
     public float firingConeDegrees;
+
+    /** Перезарядка: минимум секунд между двумя выстрелами одной башни. */
+    public float shotCooldown;
 
     /** Скорость поворота ствола, градусы в секунду (60 — разворот на 180° за 3 с). */
     public float barrelTurnSpeed;

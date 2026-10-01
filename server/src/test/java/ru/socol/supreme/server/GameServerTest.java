@@ -11,7 +11,9 @@ import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
+import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.RepairComponent;
+import ru.socol.supreme.shared.map.GameMap;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
@@ -309,9 +311,8 @@ class GameServerTest {
 
     @Test
     void cannotPlaceBuildingInWaterOrOnTopOfAnotherBuilding() {
-        float waterCenterX = (GameConstants.WATER_MIN_X + GameConstants.WATER_MAX_X) / 2f;
-        float waterCenterY = (GameConstants.WATER_MIN_Y + GameConstants.WATER_MAX_Y) / 2f;
-        game.handlePlaceBuilding(player0, placeBuilding(BuildingType.POWER_PLANT, waterCenterX, waterCenterY));
+        float[] water = waterPoint();
+        game.handlePlaceBuilding(player0, placeBuilding(BuildingType.POWER_PLANT, water[0], water[1]));
         assertTrue(buildingsOf(0, BuildingType.POWER_PLANT).isEmpty());
         assertNotNull(player0.lastSent(ErrorResponse.class));
 
@@ -338,15 +339,15 @@ class GameServerTest {
 
         List<UnitSnapshot> mines = buildingsOf(0, BuildingType.IRON_MINE);
         assertEquals(1, mines.size());
-        assertEquals(GameConstants.IRON_DEPOSITS[0][0], mines.get(0).x, 0.001f);
-        assertEquals(GameConstants.IRON_DEPOSITS[0][1], mines.get(0).y, 0.001f);
+        assertEquals(GameMap.current().ironDeposits()[0][0], mines.get(0).x, 0.001f);
+        assertEquals(GameMap.current().ironDeposits()[0][1], mines.get(0).y, 0.001f);
 
         game.handlePlaceIronMine(player1, request);
         assertTrue(buildingsOf(1, BuildingType.IRON_MINE).isEmpty());
         assertNotNull(player1.lastSent(ErrorResponse.class));
 
         PlaceIronMineRequest outOfRange = new PlaceIronMineRequest();
-        outOfRange.depositIndex = GameConstants.IRON_DEPOSITS.length;
+        outOfRange.depositIndex = GameMap.current().ironDeposits().length;
         game.handlePlaceIronMine(player0, outOfRange);
         assertEquals(1, buildingsOf(0, BuildingType.IRON_MINE).size());
     }
@@ -413,6 +414,8 @@ class GameServerTest {
 
     @Test
     void unitMovesTowardTargetOverTime() {
+        // Сначала — на открытую траву: у дома (точка старта с карты) справа могут быть скалы.
+        game.unitById(builder(0).unitId).getComponent(PositionComponent.class).position.set(1500f, 1000f);
         UnitSnapshot before = builder(0);
         game.handleMoveUnit(player0, move(before.unitId, before.x + 300f, before.y, false));
 
@@ -620,5 +623,25 @@ class GameServerTest {
         int cellX = (int) (x / GameConstants.FOG_GRID_CELL_SIZE);
         int cellY = (int) (y / GameConstants.FOG_GRID_CELL_SIZE);
         return cellY * GameConstants.FOG_GRID_WIDTH + cellX;
+    }
+
+    /** Центр клетки глубоко в воде (все соседи в радиусе 3 клеток — тоже вода), чтобы электростанция 100x100 целиком попала в воду. */
+    private static float[] waterPoint() {
+        GameMap map = GameMap.current();
+        for (int cx = 3; cx < map.width() - 3; cx++) {
+            for (int cy = 3; cy < map.height() - 3; cy++) {
+                boolean deep = true;
+                for (int dx = -3; dx <= 3 && deep; dx++) {
+                    for (int dy = -3; dy <= 3 && deep; dy++) {
+                        deep = map.isWaterCell(cx + dx, cy + dy);
+                    }
+                }
+                if (deep) {
+                    float cell = GameConstants.PATH_GRID_CELL_SIZE;
+                    return new float[]{(cx + 0.5f) * cell, (cy + 0.5f) * cell};
+                }
+            }
+        }
+        throw new AssertionError("на карте нет воды");
     }
 }

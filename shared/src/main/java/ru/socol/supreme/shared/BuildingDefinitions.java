@@ -102,12 +102,10 @@ public final class BuildingDefinitions {
         return DEFINITIONS.get(type).storageCapacity;
     }
 
-    /** Место автоспавна дома игрока — в противоположных углах карты. Возвращает {x, y}. Единственное здание, которое сервер ставит сам при входе игрока — остальные строит сам игрок из меню (клавиша B). */
+    /** Место автоспавна дома игрока — точка старта с карты (GameMap). Возвращает {x, y}. Единственное здание, которое сервер ставит сам при входе игрока — остальные строит сам игрок из меню (клавиша B). */
     public static float[] homeSpawnPoint(int playerId) {
-        float margin = DEFINITIONS.get(BuildingType.HOME).spawnMargin;
-        float x = playerId == 0 ? margin : GameConstants.MAP_WIDTH - margin;
-        float y = playerId == 0 ? margin : GameConstants.MAP_HEIGHT - margin;
-        return new float[]{x, y};
+        float[] spawn = ru.socol.supreme.shared.map.GameMap.current().spawnPoint(playerId);
+        return new float[]{spawn[0], spawn[1]}; // копия — массив карты общий и неизменяемый
     }
 
     /**
@@ -171,6 +169,21 @@ public final class BuildingDefinitions {
         return DEFINITIONS.get(type).electricityCost;
     }
 
+    /** Урон взрыва при разрушении здания этого типа; 0 — не взрывается (все, кроме электростанции). */
+    public static int destructionBlastDamageFor(BuildingType type) {
+        return DEFINITIONS.get(type).destructionBlastDamage;
+    }
+
+    /** Радиус воронки от взрыва: у артиллерии — от снаряда, у электростанции — от её разрушения. 0 — не оставляет. */
+    public static float craterRadiusFor(BuildingType type) {
+        return DEFINITIONS.get(type).craterRadius;
+    }
+
+    /** Радиус взрыва при разрушении, от центра здания. */
+    public static float destructionBlastRadiusFor(BuildingType type) {
+        return DEFINITIONS.get(type).destructionBlastRadius;
+    }
+
     /** Дальность стрельбы артиллерии; 0 у всех остальных зданий. */
     public static float artilleryRangeFor(BuildingType type) {
         return DEFINITIONS.get(type).artilleryRange;
@@ -209,6 +222,11 @@ public final class BuildingDefinitions {
     /** Радиус круга разброса артиллерии вокруг точки прицеливания. */
     public static float shellSpreadRadiusFor(BuildingType type) {
         return DEFINITIONS.get(type).shellSpreadRadius;
+    }
+
+    /** Перезарядка артиллерии — минимум секунд между выстрелами. */
+    public static float shotCooldownFor(BuildingType type) {
+        return DEFINITIONS.get(type).shotCooldown;
     }
 
     /** Скорость поворота ствола артиллерии, градусы в секунду. */
@@ -292,6 +310,11 @@ public final class BuildingDefinitions {
         powerPlant.resourceType = ResourceType.ELECTRICITY;
         powerPlant.extractionRate = 150f;
         powerPlant.electricityCost = 50;
+        // Взрыв при разрушении: 500 урона зданиям, которые ближе чем на половину
+        // "радиуса" станции (50 / 2 = 25) от её стен — радиус от центра 50 + 25.
+        powerPlant.destructionBlastDamage = 500;
+        powerPlant.destructionBlastRadius = 75f;
+        powerPlant.craterRadius = 75f;
         definitions.put(BuildingType.POWER_PLANT, powerPlant);
 
         BuildingDefinition ironStorage = new BuildingDefinition();
@@ -366,6 +389,8 @@ public final class BuildingDefinitions {
         artillery.shellSpeed = 800f;
         artillery.firingConeDegrees = 20f;
         artillery.barrelTurnSpeed = 60f; // от края до края (180°) — за 3 секунды
+        artillery.shotCooldown = 1.5f;
+        artillery.craterRadius = 60f;
         artillery.shellSpreadRadius = 250f; // круг диаметром 500 ед. вокруг точки атаки
         definitions.put(BuildingType.ARTILLERY, artillery);
 

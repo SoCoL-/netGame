@@ -105,6 +105,9 @@ public class UnitSnapshot {
     /** Секунд прошло с начала постройки следующего снаряда (ArtilleryComponent.shellProgress). */
     public float artilleryShellProgress;
 
+    /** Секунд до конца перезарядки артиллерии (ArtilleryComponent.cooldownRemaining); 0 — готова стрелять. */
+    public float artilleryCooldownRemaining;
+
     /** Точки ещё не выполненных приказов на выстрел артиллерии, по порядку (ArtilleryComponent.pendingTargets). */
     public List<PathPoint> artilleryTargets = new ArrayList<>();
 

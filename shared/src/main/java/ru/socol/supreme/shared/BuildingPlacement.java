@@ -7,6 +7,8 @@ import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
+import ru.socol.supreme.shared.craters.CraterField;
+import ru.socol.supreme.shared.map.GameMap;
 
 /**
  * Проверка "можно ли поставить здание в эту точку" для зданий, которые НЕ
@@ -44,6 +46,23 @@ public final class BuildingPlacement {
      * здание производит юнитов (тогда зазор нужен вокруг НЕГО, чтобы
      * ЕГО собственное место появления юнита осталось свободным).
      */
+    /**
+     * То же, что canPlaceBuilding без воронок, плюс запрет строить на
+     * воронке (см. Crater): её сначала засыпает строитель. craters может
+     * быть null — тогда воронки не учитываются.
+     */
+    public static boolean canPlaceBuilding(BuildingType type, Iterable<Entity> entities, CraterField craters,
+                                           float x, float y) {
+        if (craters != null) {
+            float halfWidth = BuildingDefinitions.halfWidthFor(type);
+            float halfHeight = BuildingDefinitions.halfHeightFor(type);
+            if (craters.overlapsRect(x - halfWidth, y - halfHeight, x + halfWidth, y + halfHeight)) {
+                return false;
+            }
+        }
+        return canPlaceBuilding(type, entities, x, y);
+    }
+
     public static boolean canPlaceBuilding(BuildingType type, Iterable<Entity> entities, float x, float y) {
         float halfWidth = BuildingDefinitions.halfWidthFor(type);
         float halfHeight = BuildingDefinitions.halfHeightFor(type);
@@ -56,9 +75,8 @@ public final class BuildingPlacement {
             return false; // вылезает за границы карты
         }
 
-        if (rectsOverlap(minX, minY, maxX, maxY,
-                GameConstants.WATER_MIN_X, GameConstants.WATER_MIN_Y, GameConstants.WATER_MAX_X, GameConstants.WATER_MAX_Y)) {
-            return false;
+        if (GameMap.current().rectTouchesWaterOrRock(minX, minY, maxX, maxY)) {
+            return false; // на воде и на скалах строить нельзя
         }
 
         float ownClearance = clearanceRadiusFor(type);

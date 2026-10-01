@@ -4,14 +4,17 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.Screen;
-import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector3;
+import ru.socol.supreme.assets.GameAssets;
+import ru.socol.supreme.assets.GameColor;
+import ru.socol.supreme.assets.Palette;
 import ru.socol.supreme.network.GameClient;
 import ru.socol.supreme.shared.LobbyPhase;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
@@ -55,8 +58,9 @@ public class LobbyBrowserScreen extends InputAdapter implements Screen {
     private final OrthographicCamera camera = new OrthographicCamera();
     private final ShapeRenderer shapeRenderer = new ShapeRenderer();
     private final SpriteBatch spriteBatch = new SpriteBatch();
-    private final BitmapFont titleFont = new BitmapFont();
-    private final BitmapFont font = new BitmapFont();
+    private final BitmapFont titleFont;
+    private final BitmapFont font;
+    private final Palette palette;
     private final GlyphLayout layout = new GlyphLayout();
 
     private List<LobbySummary> lobbies = new ArrayList<>();
@@ -64,11 +68,12 @@ public class LobbyBrowserScreen extends InputAdapter implements Screen {
     /** Пока не null — рисуется вместо/поверх списка (ошибка сервера, статус подключения). null — список показывается как обычно. */
     private String statusText = "Подключение...";
 
-    public LobbyBrowserScreen(GameClient client) {
+    public LobbyBrowserScreen(GameClient client, GameAssets assets) {
         this.client = client;
+        titleFont = assets.font(GameAssets.GameFont.TITLE);
+        font = assets.font(GameAssets.GameFont.BODY);
+        palette = assets.palette();
         camera.setToOrtho(false, HUD_WIDTH, HUD_HEIGHT);
-        titleFont.getData().setScale(2.2f);
-        font.getData().setScale(1.3f);
     }
 
     /** Вызывается из Main при каждом LobbyListMessage — см. её же javadoc. */
@@ -94,7 +99,8 @@ public class LobbyBrowserScreen extends InputAdapter implements Screen {
 
     @Override
     public void render(float delta) {
-        Gdx.gl.glClearColor(0.1f, 0.1f, 0.12f, 1f);
+        Color background = palette.get(GameColor.UI_BACKGROUND);
+        Gdx.gl.glClearColor(background.r, background.g, background.b, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
         camera.update();
@@ -102,30 +108,30 @@ public class LobbyBrowserScreen extends InputAdapter implements Screen {
         spriteBatch.setProjectionMatrix(camera.combined);
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(Color.valueOf("2E7D32"));
+        shapeRenderer.setColor(palette.get(GameColor.UI_BUTTON_CONFIRM));
         shapeRenderer.rect(CREATE_BUTTON_X, CREATE_BUTTON_Y, CREATE_BUTTON_WIDTH, CREATE_BUTTON_HEIGHT);
 
         for (int i = 0; i < lobbies.size(); i++) {
             LobbySummary lobby = lobbies.get(i);
             float y = FIRST_ROW_Y - i * (ROW_HEIGHT + 8f);
             boolean joinable = lobby.phase == LobbyPhase.WAITING.ordinal() && lobby.occupiedSlots < lobby.maxSlots;
-            shapeRenderer.setColor(joinable ? Color.valueOf("37474F") : Color.valueOf("263238"));
+            shapeRenderer.setColor(palette.get(joinable ? GameColor.UI_BUTTON : GameColor.UI_BUTTON_DISABLED));
             shapeRenderer.rect(ROW_X, y, ROW_WIDTH, ROW_HEIGHT);
         }
         shapeRenderer.end();
 
         spriteBatch.begin();
-        titleFont.setColor(Color.WHITE);
-        titleFont.draw(spriteBatch, "Лобби", 40f, HUD_HEIGHT - 30f);
+        titleFont.setColor(palette.get(GameColor.UI_TEXT));
+        titleFont.draw(spriteBatch, "Лобби", 40f, HUD_HEIGHT - 12f);
 
-        font.setColor(Color.WHITE);
+        font.setColor(palette.get(GameColor.UI_TEXT));
         layout.setText(font, "Создать");
         font.draw(spriteBatch, "Создать",
                 CREATE_BUTTON_X + (CREATE_BUTTON_WIDTH - layout.width) / 2f,
                 CREATE_BUTTON_Y + (CREATE_BUTTON_HEIGHT + layout.height) / 2f);
 
         if (lobbies.isEmpty() && statusText == null) {
-            font.setColor(Color.LIGHT_GRAY);
+            font.setColor(palette.get(GameColor.UI_TEXT_DIM));
             font.draw(spriteBatch, "Пока нет открытых комнат — создайте свою", ROW_X, FIRST_ROW_Y + ROW_HEIGHT + 20f);
         }
 
@@ -133,7 +139,7 @@ public class LobbyBrowserScreen extends InputAdapter implements Screen {
             LobbySummary lobby = lobbies.get(i);
             float y = FIRST_ROW_Y - i * (ROW_HEIGHT + 8f);
             boolean joinable = lobby.phase == LobbyPhase.WAITING.ordinal() && lobby.occupiedSlots < lobby.maxSlots;
-            font.setColor(joinable ? Color.WHITE : Color.GRAY);
+            font.setColor(palette.get(joinable ? GameColor.UI_TEXT : GameColor.UI_TEXT_DISABLED));
             font.draw(spriteBatch, lobby.name, ROW_X + 16f, y + ROW_HEIGHT - 14f);
             String status = lobby.phase == LobbyPhase.IN_GAME.ordinal() ? "матч идёт"
                     : lobby.phase == LobbyPhase.STARTING.ordinal() ? "стартует..."
@@ -143,7 +149,7 @@ public class LobbyBrowserScreen extends InputAdapter implements Screen {
         }
 
         if (statusText != null) {
-            font.setColor(Color.valueOf("FFCA28"));
+            font.setColor(palette.get(GameColor.UI_ACCENT));
             layout.setText(font, statusText);
             font.draw(spriteBatch, statusText, (HUD_WIDTH - layout.width) / 2f, 60f);
         }
@@ -224,7 +230,5 @@ public class LobbyBrowserScreen extends InputAdapter implements Screen {
     public void dispose() {
         shapeRenderer.dispose();
         spriteBatch.dispose();
-        titleFont.dispose();
-        font.dispose();
     }
 }

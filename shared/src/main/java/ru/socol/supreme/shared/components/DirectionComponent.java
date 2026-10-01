@@ -21,10 +21,18 @@ public class DirectionComponent implements Component, Pool.Poolable {
 
     public float speed = 0f;
 
+    /**
+     * Множитель скорости на этот тик — CraterSystem ставит
+     * CRATER_SPEED_MULTIPLIER, пока наземный юнит внутри воронки, иначе 1.
+     * MovementSystem двигает на speed * speedMultiplier.
+     */
+    public float speedMultiplier = 1f;
+
     @Override
     public void reset() {
         moving = false;
         speed = 0f;
+        speedMultiplier = 1f;
         direction.set(0f, 0f);
         target.set(0f, 0f);
     }

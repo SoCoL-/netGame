@@ -267,6 +267,7 @@ class EntityFactoryTest {
         UnitSnapshot ready = buildingSnapshot(50, BuildingType.ARTILLERY, 1500f, 1500f);
         ready.artilleryShells = 3;
         ready.artilleryShellProgress = 2.5f;
+        ready.artilleryCooldownRemaining = 0.7f;
         ready.artilleryTargets.add(new PathPoint(3000f, 3100f));
         ready.turretDirX = 0f;
         ready.turretDirY = 1f;
@@ -276,6 +277,7 @@ class EntityFactoryTest {
         assertNotNull(artillery);
         assertEquals(3, artillery.shells);
         assertEquals(2.5f, artillery.shellProgress);
+        assertEquals(0.7f, artillery.cooldownRemaining, "перезарядка — для индикатора в панели");
         assertEquals(1, artillery.pendingTargets.size());
         assertEquals(3100f, artillery.pendingTargets.get(0).y);
         assertEquals(1f, factory.getEntity(50).getComponent(TurretDisplayComponent.class).dirY,

@@ -12,10 +12,12 @@ import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.AircraftComponent;
 import ru.socol.supreme.shared.components.AttackComponent;
+import ru.socol.supreme.shared.components.BuildingComponent;
 import ru.socol.supreme.shared.components.DirectionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.components.UnitTypeComponent;
+import ru.socol.supreme.shared.map.GameMap;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
 
 import java.util.Map;
@@ -124,6 +126,10 @@ public class CombatSystem extends IteratingSystem {
     /** Переиспользуемый вектор для точки подхода при погоне — не аллоцируем новый каждый тик на каждого атакующего. */
     private final Vector2 approachPoint = new Vector2();
 
+    /** Позиции для стрельбы в обход скал (см. findFiringPosition): доли дистанции выстрела и число направлений. */
+    private static final float[] FIRING_POSITION_RADII = {1f, 0.7f, 0.45f};
+    private static final int FIRING_POSITION_ANGLES = 24;
+
     /** Переиспользуемый вектор для направления на цель — только для проверки конуса стрельбы авиации, см. её ниже. */
     private final Vector2 toTargetDirection = new Vector2();
 
@@ -187,7 +193,24 @@ public class CombatSystem extends IteratingSystem {
 
         float distance = myPosition.position.dst(targetPosition.position);
 
-        if (distance > attackRange) {
+        // Прямая наводка сквозь скалы невозможна (GameMap.lineOfFireClear).
+        // Авиация стреляет сверху, а по авиации — вверх, над скалами, так
+        // что это касается только боя земля-земля (здания — тоже земля).
+        UnitTypeComponent targetTypeForFire = UNIT_TYPE.get(target);
+        boolean directFire = attacker.getComponent(AircraftComponent.class) == null
+                && !(targetTypeForFire != null && UnitDefinitions.isAirUnit(targetTypeForFire.type));
+        GameMap map = GameMap.current();
+        boolean clearShot = !directFire || map.lineOfFireClear(myPosition.position.x, myPosition.position.y,
+                targetPosition.position.x, targetPosition.position.y);
+
+        if (distance <= attackRange && !clearShot && attacker.getComponent(BuildingComponent.class) != null) {
+            // Турель: цель за скалой, а сдвинуться турель не может — бросаем
+            // цель, AggroSystem подберёт ту, что видна.
+            attacker.remove(AttackComponent.class);
+            return;
+        }
+
+        if (distance > attackRange || !clearShot) {
             // Идём не в точный центр цели, а в точку на отрезке между нами
             // и целью, на расстоянии attackRange от неё (с небольшим
             // отступом — см. approachDistance ниже) — туда, откуда уже
@@ -232,6 +255,16 @@ public class CombatSystem extends IteratingSystem {
             float approachDistance = Math.max(0f, attackRange - GameConstants.ARRIVE_THRESHOLD);
             approachPoint.set(myPosition.position).sub(targetPosition.position).nor()
                     .scl(approachDistance).add(targetPosition.position);
+            if (directFire && !map.lineOfFireClear(approachPoint.x, approachPoint.y,
+                    targetPosition.position.x, targetPosition.position.y)) {
+                // С прямой линии подхода цель закрыта скалой — ищем другую
+                // позицию на дистанции выстрела, откуда её видно.
+                if (!findFiringPosition(map, myPosition, targetPosition, approachDistance)) {
+                    attacker.remove(AttackComponent.class); // стрелять неоткуда — цель недосягаема
+                    direction.moving = false;
+                    return;
+                }
+            }
             pathfinding.setDestination(attacker, myPosition, direction, approachPoint.x, approachPoint.y);
             return;
         }
@@ -305,5 +338,41 @@ public class CombatSystem extends IteratingSystem {
                     unitDestroyedListener, buildingDestroyedListener);
             attacker.remove(AttackComponent.class);
         }
+    }
+
+    /**
+     * Ищет позицию для стрельбы по цели в обход скал: точки на окружностях
+     * вокруг цели (сначала на полной дистанции выстрела, потом ближе),
+     * проходимые и с чистой линией огня. Берёт ближайшую к атакующему и
+     * кладёт её в approachPoint. false — такой точки нет.
+     */
+    private boolean findFiringPosition(GameMap map, PositionComponent attacker, PositionComponent target, float approachDistance) {
+        float bestDistanceSq = Float.MAX_VALUE;
+        float bestX = 0f;
+        float bestY = 0f;
+        for (float fraction : FIRING_POSITION_RADII) {
+            float radius = approachDistance * fraction;
+            for (int i = 0; i < FIRING_POSITION_ANGLES; i++) {
+                double angle = 2.0 * Math.PI * i / FIRING_POSITION_ANGLES;
+                float x = target.position.x + (float) Math.cos(angle) * radius;
+                float y = target.position.y + (float) Math.sin(angle) * radius;
+                if (x < 0f || y < 0f || x > GameConstants.MAP_WIDTH || y > GameConstants.MAP_HEIGHT
+                        || pathfinding.isBlocked(x, y, false)
+                        || !map.lineOfFireClear(x, y, target.position.x, target.position.y)) {
+                    continue;
+                }
+                float distanceSq = attacker.position.dst2(x, y);
+                if (distanceSq < bestDistanceSq) {
+                    bestDistanceSq = distanceSq;
+                    bestX = x;
+                    bestY = y;
+                }
+            }
+            if (bestDistanceSq < Float.MAX_VALUE) {
+                approachPoint.set(bestX, bestY);
+                return true;
+            }
+        }
+        return false;
     }
 }

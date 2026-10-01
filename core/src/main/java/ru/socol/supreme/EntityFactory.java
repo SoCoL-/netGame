@@ -332,6 +332,7 @@ public class EntityFactory {
         }
         artillery.shells = snapshot.artilleryShells;
         artillery.shellProgress = snapshot.artilleryShellProgress;
+        artillery.cooldownRemaining = snapshot.artilleryCooldownRemaining;
         artillery.pendingTargets.clear();
         for (PathPoint target : snapshot.artilleryTargets) {
             artillery.pendingTargets.add(new Vector2(target.x, target.y));

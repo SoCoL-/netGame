@@ -6,6 +6,8 @@ import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import ru.socol.supreme.assets.GameAssets;
+import ru.socol.supreme.assets.GameColor;
 
 /**
  * Счётчик кадров в секунду — зелёный текст в правом верхнем углу окна.
@@ -18,13 +20,14 @@ class FpsCounter {
     private static final float MARGIN = 10f;
 
     private final SpriteBatch batch = new SpriteBatch();
-    private final BitmapFont font = new BitmapFont();
+    private final BitmapFont font;
+    private final Color color;
     private final OrthographicCamera camera = new OrthographicCamera();
     private final GlyphLayout layout = new GlyphLayout();
 
-    FpsCounter() {
-        font.setColor(Color.GREEN);
-        font.getData().setScale(1.3f);
+    FpsCounter(GameAssets assets) {
+        font = assets.font(GameAssets.GameFont.UI);
+        color = assets.palette().get(GameColor.UI_FPS);
         resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
     }
 
@@ -34,6 +37,7 @@ class FpsCounter {
     }
 
     void draw() {
+        font.setColor(color); // шрифт общий с панелями игры — цвет задаём каждый раз, до раскладки
         layout.setText(font, "FPS: " + Gdx.graphics.getFramesPerSecond());
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
@@ -42,7 +46,6 @@ class FpsCounter {
     }
 
     void dispose() {
-        batch.dispose();
-        font.dispose();
+        batch.dispose(); // шрифт — из GameAssets, освобождается там
     }
 }

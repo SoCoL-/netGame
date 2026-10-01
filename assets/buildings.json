@@ -48,7 +48,10 @@
     "resourceType": "ELECTRICITY",
     "extractionRate": 150,
     "electricityCost": 50,
-    "sightRadius": 420
+    "sightRadius": 420,
+    "destructionBlastDamage": 500,
+    "destructionBlastRadius": 75,
+    "craterRadius": 75
   },
   {
     "type": "IRON_STORAGE",
@@ -117,7 +120,9 @@
     "shellSpeed": 800,
     "firingConeDegrees": 20,
     "barrelTurnSpeed": 60,
-    "shellSpreadRadius": 250
+    "shellSpreadRadius": 250,
+    "shotCooldown": 1.5,
+    "craterRadius": 60
   },
   {
     "type": "WRECK",

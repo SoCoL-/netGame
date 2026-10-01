@@ -14,6 +14,7 @@ import ru.socol.supreme.shared.GameConstants;
 import ru.socol.supreme.shared.UnitDefinitions;
 import ru.socol.supreme.shared.components.ArtilleryComponent;
 import ru.socol.supreme.shared.components.BuildingComponent;
+import ru.socol.supreme.shared.components.BuildingRubbleComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
 import ru.socol.supreme.shared.components.OwnerComponent;
 import ru.socol.supreme.shared.components.PositionComponent;
@@ -22,6 +23,8 @@ import ru.socol.supreme.shared.components.UnitTypeComponent;
 import ru.socol.supreme.shared.components.WreckComponent;
 import ru.socol.supreme.shared.network.messages.PlayerResources;
 import ru.socol.supreme.shared.pathfinding.Pathfinding;
+
+import ru.socol.supreme.shared.craters.CraterField;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -53,9 +56,9 @@ import java.util.Random;
  *
  * Полёт. Урон наносится не в момент выстрела, а при падении, через
  * расстояние / shellSpeed секунд. Взрыв задевает всё в радиусе
- * shellSplashRadius, и своих тоже, кроме авиации (снаряд наземный), юнитов
- * под водой и обломков. Гибель от взрыва — через тот же
- * EntityDestruction, что и в обычном бою (обломки, руины, препятствия).
+ * shellSplashRadius, и своих тоже, включая руины зданий, кроме авиации
+ * (снаряд наземный), юнитов под водой и обломков юнитов. Гибель от
+ * взрыва — через тот же EntityDestruction, что и в обычном бою (обломки, руины, препятствия).
  *
  * Живёт в shared, но запускается только на сервере.
  */
@@ -81,13 +84,15 @@ public class ArtillerySystem extends IteratingSystem {
         final float targetY;
         final int damage;
         final float splashRadius;
+        final float craterRadius;
         float remainingFlightTime;
 
-        Shell(float targetX, float targetY, int damage, float splashRadius, float flightTime) {
+        Shell(float targetX, float targetY, int damage, float splashRadius, float craterRadius, float flightTime) {
             this.targetX = targetX;
             this.targetY = targetY;
             this.damage = damage;
             this.splashRadius = splashRadius;
+            this.craterRadius = craterRadius;
             this.remainingFlightTime = flightTime;
         }
     }
@@ -98,6 +103,7 @@ public class ArtillerySystem extends IteratingSystem {
     private final CombatSystem.UnitDestroyedListener unitDestroyedListener;
     private final CombatSystem.BuildingDestroyedListener buildingDestroyedListener;
     private final ShellLaunchedListener shellLaunchedListener;
+    private final CraterField craterField;
     private final List<Shell> shellsInFlight = new ArrayList<>();
     private Random random = new Random();
     private Engine engine;
@@ -106,7 +112,7 @@ public class ArtillerySystem extends IteratingSystem {
                            Pathfinding pathfinding,
                            CombatSystem.UnitDestroyedListener unitDestroyedListener,
                            CombatSystem.BuildingDestroyedListener buildingDestroyedListener,
-                           ShellLaunchedListener shellLaunchedListener) {
+                           ShellLaunchedListener shellLaunchedListener, CraterField craterField) {
         super(Family.all(ArtilleryComponent.class, BuildingComponent.class, OwnerComponent.class,
                 PositionComponent.class).get(), 2);
         this.unitsById = unitsById;
@@ -115,6 +121,7 @@ public class ArtillerySystem extends IteratingSystem {
         this.unitDestroyedListener = unitDestroyedListener;
         this.buildingDestroyedListener = buildingDestroyedListener;
         this.shellLaunchedListener = shellLaunchedListener;
+        this.craterField = craterField;
     }
 
     @Override
@@ -145,10 +152,13 @@ public class ArtillerySystem extends IteratingSystem {
     /**
      * Поворачивает ствол к первой цели из очереди (не больше чем на
      * barrelTurnSpeed * deltaTime за тик, кратчайшим путём) и стреляет,
-     * как только цель в конусе стрельбы.
+     * как только цель в конусе стрельбы и закончилась перезарядка
+     * (shotCooldown после предыдущего выстрела). Во время перезарядки ствол
+     * продолжает доворачиваться к следующей цели.
      */
     private void aimAndFire(Entity entity, ArtilleryComponent artillery, BuildingType type,
                             PlayerResources resources, float deltaTime) {
+        artillery.cooldownRemaining = Math.max(0f, artillery.cooldownRemaining - deltaTime);
         if (artillery.pendingTargets.isEmpty()) {
             return;
         }
@@ -164,6 +174,9 @@ public class ArtillerySystem extends IteratingSystem {
         if (Math.abs(angleDifference(desiredAngle, artillery.barrelAngle)) > halfCone + 0.0001f) {
             return; // ещё доворачиваемся
         }
+        if (artillery.cooldownRemaining > 0f) {
+            return; // перезарядка
+        }
 
         int shotCost = BuildingDefinitions.shotElectricityCostFor(type);
         if (artillery.shells <= 0 || resources.electricity < shotCost - GameConstants.RESOURCE_EPSILON) {
@@ -172,6 +185,7 @@ public class ArtillerySystem extends IteratingSystem {
 
         artillery.pendingTargets.remove(0);
         artillery.shells--;
+        artillery.cooldownRemaining = BuildingDefinitions.shotCooldownFor(type);
         resources.electricity = Math.max(0f, resources.electricity - shotCost);
 
         // Разброс: случайная точка круга радиусом spread вокруг цели. sqrt —
@@ -241,7 +255,7 @@ public class ArtillerySystem extends IteratingSystem {
         float speed = BuildingDefinitions.shellSpeedFor(type);
         float flightTime = speed > 0f ? distance / speed : 0f;
         shellsInFlight.add(new Shell(toX, toY, BuildingDefinitions.shellDamageFor(type),
-                BuildingDefinitions.shellSplashRadiusFor(type), flightTime));
+                BuildingDefinitions.shellSplashRadiusFor(type), BuildingDefinitions.craterRadiusFor(type), flightTime));
         return flightTime;
     }
 
@@ -271,6 +285,11 @@ public class ArtillerySystem extends IteratingSystem {
     }
 
     private void explode(Shell shell) {
+        // Шрам на карте — воронка (или углубление уже существующей), см. CraterField.
+        if (craterField != null && shell.craterRadius > 0f) {
+            craterField.addExplosion(shell.targetX, shell.targetY, shell.craterRadius);
+        }
+
         // Сначала только урон и список погибших, уничтожение — отдельным
         // проходом: EntityDestruction удаляет из unitsById, по которому мы
         // сейчас итерируемся.
@@ -280,7 +299,8 @@ public class ArtillerySystem extends IteratingSystem {
                 continue;
             }
             HealthComponent health = entity.getComponent(HealthComponent.class);
-            health.currentHealth -= shell.damage;
+            // Не ниже нуля — у руин это остаток железа.
+            health.currentHealth = Math.max(0, health.currentHealth - shell.damage);
             if (health.currentHealth <= 0) {
                 killed.add(entity);
             }
@@ -293,9 +313,15 @@ public class ArtillerySystem extends IteratingSystem {
     }
 
     private boolean isHitBy(Shell shell, Entity entity) {
-        if (entity.getComponent(WreckComponent.class) != null) {
-            return false; // обломки — не боевая цель, а источник железа
+        if (entity.getComponent(WreckComponent.class) != null
+                && entity.getComponent(BuildingRubbleComponent.class) == null) {
+            return false; // обломки юнитов — не цель, а источник железа
         }
+        // Руины зданий (BuildingRubbleComponent) задеваем: взрыв отнимает их
+        // железо, при нуле они исчезают — так важное здание можно выбить
+        // насовсем, не дав отстроить его на старом месте со скидкой. Руины,
+        // появившиеся от попадания этого же снаряда, в список целей не
+        // попадают (они создаются уже после подсчёта урона, см. explode).
         HealthComponent health = entity.getComponent(HealthComponent.class);
         PositionComponent position = entity.getComponent(PositionComponent.class);
         if (health == null || position == null) {

@@ -11,11 +11,13 @@ import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.network.NetworkRegistration;
 import ru.socol.supreme.shared.network.messages.ArtilleryFireRequest;
 import ru.socol.supreme.shared.network.messages.AttackUnitRequest;
+import ru.socol.supreme.shared.network.messages.BuildingExplosionEvent;
 import ru.socol.supreme.shared.network.messages.BuildOrderRequest;
 import ru.socol.supreme.shared.network.messages.CollectOrderRequest;
 import ru.socol.supreme.shared.network.messages.CreateLobbyRequest;
 import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
+import ru.socol.supreme.shared.network.messages.FillCraterRequest;
 import ru.socol.supreme.shared.network.messages.GameOverMessage;
 import ru.socol.supreme.shared.network.messages.GameStartedMessage;
 import ru.socol.supreme.shared.network.messages.JoinLobbyRequest;
@@ -85,6 +87,9 @@ public class GameClient implements Disposable {
         /** Чисто косметическое: дальнобойный юнит выстрелил (см. javadoc ProjectileFiredEvent, кто именно) — нарисовать летящий снаряд. Урон уже применён на сервере. */
         void onProjectileFired(ProjectileFiredEvent event);
 
+        /** Чисто косметическое: разрушенное здание (электростанция) взорвалось — нарисовать взрыв. Урон уже применён на сервере. */
+        void onBuildingExplosion(BuildingExplosionEvent event);
+
         /** Не удалось подключиться (таймаут/сеть/сервер недоступен) — сообщение для отображения игроку. */
         void onConnectFailed(String message);
     }
@@ -142,6 +147,10 @@ public class GameClient implements Disposable {
                 } else if (object instanceof ProjectileFiredEvent) {
                     if (GameClient.this.listener != null) {
                         GameClient.this.listener.onProjectileFired((ProjectileFiredEvent) object);
+                    }
+                } else if (object instanceof BuildingExplosionEvent) {
+                    if (GameClient.this.listener != null) {
+                        GameClient.this.listener.onBuildingExplosion((BuildingExplosionEvent) object);
                     }
                 }
             }
@@ -231,6 +240,14 @@ public class GameClient implements Disposable {
         request.builderUnitId = builderUnitId;
         request.targetWreckUnitId = targetWreckUnitId;
         request.queue = queue;
+        client.sendTCP(request);
+    }
+
+    /** Строителю засыпать воронку — см. javadoc FillCraterRequest. */
+    public void requestFillCrater(int builderUnitId, int craterId) {
+        FillCraterRequest request = new FillCraterRequest();
+        request.builderUnitId = builderUnitId;
+        request.craterId = craterId;
         client.sendTCP(request);
     }
 

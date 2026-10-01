@@ -12,7 +12,9 @@ import ru.socol.supreme.shared.UnitType;
 import ru.socol.supreme.shared.components.ArtilleryComponent;
 import ru.socol.supreme.shared.components.ConstructionComponent;
 import ru.socol.supreme.shared.components.HealthComponent;
+import ru.socol.supreme.shared.components.PositionComponent;
 import ru.socol.supreme.shared.network.messages.ArtilleryFireRequest;
+import ru.socol.supreme.shared.network.messages.DemolishBuildingRequest;
 import ru.socol.supreme.shared.network.messages.ErrorResponse;
 import ru.socol.supreme.shared.network.messages.FogSnapshot;
 import ru.socol.supreme.shared.network.messages.PlaceBuildingRequest;
@@ -179,6 +181,7 @@ class ArtilleryTest {
         assertEquals(5f, BuildingDefinitions.idleConsumptionRateFor(ARTILLERY), 0.001f);
         assertEquals(200, BuildingDefinitions.shotElectricityCostFor(ARTILLERY));
         assertEquals(250f, BuildingDefinitions.shellSpreadRadiusFor(ARTILLERY), 0.001f, "радиус круга разброса");
+        assertEquals(1.5f, BuildingDefinitions.shotCooldownFor(ARTILLERY), 0.001f);
     }
 
     @Test
@@ -324,11 +327,32 @@ class ArtilleryTest {
         fire(towerId, AHEAD_X + 100f, AHEAD_Y);
         fire(towerId, AHEAD_X, AHEAD_Y + 100f);
 
-        tickFor(0.5f);
+        tickFor(2 * BuildingDefinitions.shotCooldownFor(ARTILLERY) + 0.5f);
 
         assertTrue(artilleryOf(towerId).pendingTargets.isEmpty());
         assertEquals(0, artilleryOf(towerId).shells);
         assertEquals(3, player0.sentOf(ProjectileFiredEvent.class).size());
+    }
+
+    @Test
+    void shotsAreSeparatedByCooldown() {
+        int towerId = buildTower();
+        artilleryOf(towerId).shells = 2;
+        resources().electricity = 1000f;
+        float cooldown = BuildingDefinitions.shotCooldownFor(ARTILLERY);
+        fire(towerId, AHEAD_X, AHEAD_Y);
+        fire(towerId, AHEAD_X, AHEAD_Y); // та же точка — доворачиваться не нужно
+
+        game.tick(0.01f);
+        assertEquals(1, player0.sentOf(ProjectileFiredEvent.class).size(), "первый выстрел сразу");
+        assertEquals(cooldown, unitById(towerId).artilleryCooldownRemaining, 0.05f,
+                "клиент получает оставшееся время перезарядки — для индикатора");
+
+        tickFor(cooldown - 0.2f);
+        assertEquals(1, player0.sentOf(ProjectileFiredEvent.class).size(), "второй ждёт перезарядку");
+
+        tickFor(0.3f);
+        assertEquals(2, player0.sentOf(ProjectileFiredEvent.class).size(), "после перезарядки — второй выстрел");
     }
 
     // ---- Конус стрельбы и поворот ствола ----
@@ -433,7 +457,7 @@ class ArtilleryTest {
         for (int i = 0; i < shots; i++) {
             fire(towerId, AHEAD_X, AHEAD_Y);
         }
-        tickFor(1f);
+        tickFor(shots * BuildingDefinitions.shotCooldownFor(ARTILLERY) + 1f);
 
         assertEquals(shots, player0.sentOf(ProjectileFiredEvent.class).size());
         float largestDeviation = 0f;
@@ -454,7 +478,7 @@ class ArtilleryTest {
         disableSpread();
         artilleryOf(towerId).shells = 2;
         resources().electricity = 1000f;
-        UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal()); // взрыв задевает и своих
+        UnitSnapshot builder = builderInRange(); // взрыв задевает и своих
         int maxHealth = UnitDefinitions.healthFor(UnitType.BUILDER);
         int damage = BuildingDefinitions.shellDamageFor(ARTILLERY);
 
@@ -477,7 +501,7 @@ class ArtilleryTest {
         disableSpread();
         artilleryOf(towerId).shells = 1;
         resources().electricity = 1000f;
-        UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal());
+        UnitSnapshot builder = builderInRange();
         game.unitById(builder.unitId).getComponent(HealthComponent.class).currentHealth = 1;
 
         fireAndWaitForImpact(towerId, builder.x, builder.y);
@@ -492,13 +516,103 @@ class ArtilleryTest {
         disableSpread();
         artilleryOf(towerId).shells = 1;
         resources().electricity = 1000f;
-        UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal());
+        UnitSnapshot builder = builderInRange();
         float farX = builder.x + BuildingDefinitions.shellSplashRadiusFor(ARTILLERY) * 3f;
 
         fireAndWaitForImpact(towerId, farX, builder.y);
 
+        assertEquals(1, player0.sentOf(ProjectileFiredEvent.class).size(), "выстрел был");
         assertEquals(UnitDefinitions.healthFor(UnitType.BUILDER),
                 game.unitById(builder.unitId).getComponent(HealthComponent.class).currentHealth);
+    }
+
+    /** Ставит своё здание type в (x, y) сразу достроенным и с полным здоровьем. */
+    private int placeFinished(BuildingType type, float x, float y) {
+        PlaceBuildingRequest request = new PlaceBuildingRequest();
+        request.buildingType = type.ordinal();
+        request.x = x;
+        request.y = y;
+        game.handlePlaceBuilding(player0, request);
+        for (UnitSnapshot unit : game.buildWorldSnapshot().units) {
+            if (unit.building && unit.buildingType == type.ordinal() && unit.x == x && unit.y == y) {
+                game.unitById(unit.unitId).remove(ConstructionComponent.class);
+                HealthComponent health = game.unitById(unit.unitId).getComponent(HealthComponent.class);
+                health.currentHealth = health.maxHealth;
+                return unit.unitId;
+            }
+        }
+        throw new AssertionError("здание " + type + " не поставлено в (" + x + ", " + y + ")");
+    }
+
+    /** Сносит своё здание — на его месте остаются именные руины. */
+    private void demolish(int buildingId) {
+        DemolishBuildingRequest request = new DemolishBuildingRequest();
+        request.buildingUnitId = buildingId;
+        game.handleDemolishBuilding(player0, request);
+    }
+
+    /** Руины здания type в точке (x, y), или null. */
+    private UnitSnapshot ruinsAt(BuildingType type, float x, float y) {
+        for (UnitSnapshot unit : game.buildWorldSnapshot().units) {
+            if (unit.rubbleOriginalBuildingType == type.ordinal() && unit.x == x && unit.y == y) {
+                return unit;
+            }
+        }
+        return null;
+    }
+
+    // ---- Руины ----
+
+    @Test
+    void shellTakesIronFromRuinsAndCanWipeThemOut() {
+        int towerId = buildTower();
+        disableSpread();
+        artilleryOf(towerId).shells = 2;
+        resources().electricity = 1000f;
+        int damage = BuildingDefinitions.shellDamageFor(ARTILLERY);
+        // Богатые руины (другой артиллерии) переживут один снаряд, бедные (турели) — нет.
+        demolish(placeFinished(ARTILLERY, AHEAD_X, AHEAD_Y));
+        float turretX = AHEAD_X + 800f;
+        demolish(placeFinished(BuildingType.TURRET, turretX, AHEAD_Y - 800f));
+        int richIron = ruinsAt(ARTILLERY, AHEAD_X, AHEAD_Y).health;
+        assertTrue(richIron > damage, "в руинах артиллерии железа больше, чем урон снаряда");
+        assertTrue(ruinsAt(BuildingType.TURRET, turretX, AHEAD_Y - 800f).health <= damage);
+
+        fireAndWaitForImpact(towerId, AHEAD_X, AHEAD_Y);
+        fireAndWaitForImpact(towerId, turretX, AHEAD_Y - 800f);
+
+        assertEquals(richIron - damage, ruinsAt(ARTILLERY, AHEAD_X, AHEAD_Y).health, "снаряд отнял железо у руин");
+        assertNull(ruinsAt(BuildingType.TURRET, turretX, AHEAD_Y - 800f), "бедные руины выбиты насовсем");
+    }
+
+    @Test
+    void shellThatDestroysBuildingDoesNotHitItsFreshRuins() {
+        int towerId = buildTower();
+        disableSpread();
+        artilleryOf(towerId).shells = 1;
+        resources().electricity = 1000f;
+        int turretId = placeFinished(BuildingType.TURRET, AHEAD_X, AHEAD_Y);
+        game.unitById(turretId).getComponent(HealthComponent.class).currentHealth = 1;
+
+        fireAndWaitForImpact(towerId, AHEAD_X, AHEAD_Y);
+
+        assertNull(game.unitById(turretId), "турель уничтожена");
+        UnitSnapshot ruins = ruinsAt(BuildingType.TURRET, AHEAD_X, AHEAD_Y);
+        assertNotNull(ruins, "её руины остались");
+        assertEquals(ruins.maxHealth, ruins.health, "руины от этого же снаряда урона не получили");
+    }
+
+    /**
+     * Свой строитель, переставленный в точку AHEAD — в досягаемость башни.
+     * Сам он стартует у дома, а дом — в точке старта с карты (GameMap),
+     * которая может быть где угодно относительно TOWER.
+     */
+    private UnitSnapshot builderInRange() {
+        UnitSnapshot builder = find(0, false, UnitType.BUILDER.ordinal());
+        game.unitById(builder.unitId).getComponent(PositionComponent.class).position.set(AHEAD_X, AHEAD_Y);
+        builder.x = AHEAD_X;
+        builder.y = AHEAD_Y;
+        return builder;
     }
 
     private float flightTimeTo(UnitSnapshot target) {
